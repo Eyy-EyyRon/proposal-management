@@ -17,12 +17,6 @@ export default function SignupPage() {
             </p>
           </div>
 
-          <div className="relative mt-8 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
-            <InfoPill title="Account" text="Create your login in under a minute" />
-            <InfoPill title="Templates" text="Reuse docs and Google Docs links" />
-            <InfoPill title="Storage" text="Built for uploaded files and assets" />
-            <InfoPill title="Tracking" text="Prepare for proposal analytics" />
-          </div>
         </section>
 
         <section className="bg-slate-50 flex-1 p-6 sm:p-8">
@@ -30,12 +24,9 @@ export default function SignupPage() {
             <div className="mx-auto w-full max-w-md rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_18px_60px_-30px_rgba(15,23,42,0.3)] sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="font-sans text-sm font-semibold uppercase tracking-[0.25em] text-indigo-600">
-                    Create account
-                  </p>
-                  <h2 className="mt-2 font-serif text-2xl font-semibold text-slate-950">
-                    Start managing proposals in minutes
-                  </h2>
+                  <h1 className="mt-2 font-serif text-2xl font-semibold text-slate-950">
+                 Create account
+                  </h1>
                 </div>
               </div>
 
@@ -47,17 +38,6 @@ export default function SignupPage() {
               </div>
 
               <div className="mt-5 space-y-4 text-sm text-slate-600">
-                <label className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span className="leading-6">
-                    I agree to the terms and understand that proposals, templates, and signatures will
-                    be stored securely for my workspace.
-                  </span>
-                </label>
-
                 <div className="flex items-center justify-between gap-4">
                   <a className="font-medium text-indigo-600 transition hover:text-indigo-700" href="/">
                     Already have an account?
@@ -75,15 +55,6 @@ export default function SignupPage() {
                 >
                   Sign in instead
                 </a>
-              </div>
-
-              <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-                <p className="font-sans text-sm font-semibold text-slate-900">What you get</p>
-                <ul className="mt-3 space-y-2 font-sans text-sm leading-6 text-slate-600">
-                  <li>• A private workspace for proposals and templates</li>
-                  <li>• A reusable signing flow for clients</li>
-                  <li>• Secure storage for documents and uploaded files</li>
-                </ul>
               </div>
             </div>
           </div>

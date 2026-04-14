@@ -3,7 +3,7 @@ export default function Home() {
     <main className="min-h-screen bg-slate-950 px-4 py-6 font-sans text-slate-100 sm:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-6xl overflow-hidden rounded-[2rem] border border-white/10 bg-white/5 shadow-[0_30px_100px_-35px_rgba(15,23,42,0.85)] backdrop-blur xl:grid-cols-[0.95fr_1.05fr]">
         <section className="relative flex flex-col justify-between overflow-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.35),_transparent_32%),linear-gradient(180deg,_rgba(15,23,42,0.95),_rgba(15,23,42,0.88))] p-8 sm:p-10 xl:border-b-0 xl:border-r">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),transparent_40%),linear-gradient(225deg,rgba(255,255,255,0.05),transparent_35%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(9, 9, 32, 0.08),transparent_40%),linear-gradient(225deg,rgb(48, 48, 100),transparent_35%)]" />
           <div className="relative">
             <p className="font-sans text-xs font-semibold uppercase tracking-[0.35em] text-indigo-300">
               Proposal Management System
@@ -17,12 +17,6 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="relative mt-12 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
-            <InfoPill title="Authentication" text="Email and password sign in" />
-            <InfoPill title="Access" text="Protected dashboard after login" />
-            <InfoPill title="Security" text="Firebase-ready session flow" />
-            <InfoPill title="Scaling" text="Prepared for Firestore and Storage" />
-          </div>
         </section>
 
         <section className="bg-slate-50 p-6 sm:p-8">
@@ -64,15 +58,6 @@ export default function Home() {
                 >
                   Create account
                 </a>
-              </div>
-
-              <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-                <p className="font-sans text-sm font-semibold text-slate-900">What happens next</p>
-                <ul className="mt-3 space-y-2 font-sans text-sm leading-6 text-slate-600">
-                  <li>• Authentication gates the app before dashboard access</li>
-                  <li>• Proposal data loads only after a successful sign in</li>
-                  <li>• Logout returns the user to this screen</li>
-                </ul>
               </div>
             </div>
           </div>
