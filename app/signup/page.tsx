@@ -25,9 +25,9 @@ export default function SignupPage() {
           </div>
         </section>
 
-        <section className="bg-slate-50 p-6 sm:p-8">
-          <div className="mx-auto flex h-full max-w-xl flex-col justify-center">
-            <div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_18px_60px_-30px_rgba(15,23,42,0.3)] sm:p-8">
+        <section className="bg-slate-50 flex-1 p-6 sm:p-8">
+          <div className="flex h-full flex-col justify-center">
+            <div className="mx-auto w-full max-w-md rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_18px_60px_-30px_rgba(15,23,42,0.3)] sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-sans text-sm font-semibold uppercase tracking-[0.25em] text-indigo-600">
@@ -62,14 +62,11 @@ export default function SignupPage() {
                   <a className="font-medium text-indigo-600 transition hover:text-indigo-700" href="/">
                     Already have an account?
                   </a>
-                  <a className="font-medium text-indigo-600 transition hover:text-indigo-700" href="#">
-                    Forgot password?
-                  </a>
                 </div>
               </div>
 
               <div className="mt-7 grid gap-3 sm:grid-cols-2">
-                <button className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300">
+                <button className="rounded-2xl !bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:!bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300" style={{backgroundColor: 'rgb(2, 6, 23)'}}>
                   Create account
                 </button>
                 <a

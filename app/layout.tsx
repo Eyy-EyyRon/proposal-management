@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
-import { Merriweather, Poppins, Inter } from "next/font/google";
+import { Merriweather, Poppins } from "next/font/google";
 import "./globals.css";
-import { cn } from "@/lib/utils";
-
-const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
 const poppins = Poppins({
   variable: "--font-geist-sans",
@@ -30,7 +27,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", poppins.variable, merriweather.variable, "font-sans", inter.variable)}
+      className={`${poppins.variable} ${merriweather.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

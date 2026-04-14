@@ -1,173 +1,119 @@
-const navigation = [
-  { label: "Dashboard", active: true },
-  { label: "Proposals" },
-  { label: "Templates" },
-  { label: "Create Proposal" },
-  { label: "Analytics" },
-];
+import Link from "next/link";
+import { FileText, Eye, CheckCircle, XCircle, FilePlus, LayoutTemplate, ArrowRight, Clock } from "lucide-react";
+import { Topbar } from "@/components/topbar";
+import { StatCard } from "@/components/stat-card";
+import { ProposalTable, type Proposal } from "@/components/proposal-table";
+import { StatusBadge } from "@/components/status-badge";
 
-const quickStats = [
-  { label: "Active proposals", value: "128" },
-  { label: "Pending signatures", value: "19" },
-  { label: "Templates", value: "12" },
-  { label: "Acceptance rate", value: "74%" },
+const stats = [
+  { label: "Total Proposals", value: "48",  icon: FileText,     trend: "+12%", trendUp: true,  accent: "indigo" },
+  { label: "Viewed",          value: "31",  icon: Eye,          trend: "+5",   trendUp: true,  accent: "blue"   },
+  { label: "Accepted",        value: "22",  icon: CheckCircle,  trend: "74%",  trendUp: true,  accent: "green"  },
+  { label: "Rejected",        value: "6",   icon: XCircle,      trend: "-2",   trendUp: false, accent: "red"    },
+] as const;
+
+const mockProposals: Proposal[] = [
+  { id: "1", client: "Northstar Inc.",   email: "ops@northstar.com",    status: "Viewed",    date: "Apr 14, 2026" },
+  { id: "2", client: "Ariana Cole",      email: "ariana@cole.co",       status: "Sent",      date: "Apr 13, 2026" },
+  { id: "3", client: "Dana Liu",         email: "dana@liudesign.io",    status: "Accepted",  date: "Apr 12, 2026" },
+  { id: "4", client: "Robert Hayes",     email: "r.hayes@venture.com",  status: "Rejected",  date: "Apr 11, 2026" },
+  { id: "5", client: "Lena Whitmore",    email: "lena@whitmore.co",     status: "Sent",      date: "Apr 10, 2026" },
 ];
 
 const recentActivity = [
-  "Northstar proposal viewed 12 minutes ago",
-  "Template updated for quarterly retainer",
-  "New proposal sent to Ariana Cole",
-  "Client accepted and signature recorded",
+  { id: "a1", text: "Dana Liu accepted the proposal",   time: "2h ago",  status: "Accepted" as const },
+  { id: "a2", text: "Northstar Inc. viewed your link",  time: "4h ago",  status: "Viewed" as const },
+  { id: "a3", text: "Robert Hayes declined",             time: "1d ago",  status: "Rejected" as const },
+  { id: "a4", text: "Proposal sent to Ariana Cole",      time: "1d ago",  status: "Sent" as const },
 ];
 
 export default function DashboardPage() {
   return (
-    <main className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-7xl gap-6 lg:grid-cols-[280px_1fr]">
-        <aside className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-[0_30px_100px_-35px_rgba(15,23,42,0.8)] backdrop-blur">
-          <div className="mb-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-300">
-              Proposal Management System
-            </p>
-            <h1 className="mt-3 font-serif text-3xl font-semibold text-white">
-              Admin Dashboard
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              Manage proposals, templates, and analytics from one workspace.
-            </p>
-          </div>
+    <main className="flex min-h-screen flex-col">
+      <Topbar title="Dashboard" />
 
-          <nav className="space-y-2">
-            {navigation.map((item) => (
-              <a
-                key={item.label}
-                href="#"
-                className={`flex items-center rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                  item.active
-                    ? "bg-white text-slate-950"
-                    : "text-slate-300 hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                <span>{item.label}</span>
-              </a>
-            ))}
-          </nav>
-
-          <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-200">
-              Workspace
-            </p>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Firebase Auth, Firestore, and Storage ready.
+      <div className="flex flex-1 flex-col gap-5 p-6">
+        {/* Greeting */}
+        <div className="flex items-end justify-between">
+          <div>
+            <h2 className="font-sans text-lg font-semibold text-slate-900">
+              Good evening, Admin
+            </h2>
+            <p className="mt-0.5 text-[13px] text-slate-500">
+              Here&apos;s a snapshot of your proposals.
             </p>
           </div>
-        </aside>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/templates/new"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <LayoutTemplate className="h-3.5 w-3.5" />
+              New template
+            </Link>
+            <Link
+              href="/dashboard/create-proposal"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
+            >
+              <FilePlus className="h-3.5 w-3.5" />
+              New proposal
+            </Link>
+          </div>
+        </div>
 
-        <section className="space-y-6">
-          <header className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-[0_30px_100px_-35px_rgba(15,23,42,0.8)] backdrop-blur sm:p-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.25em] text-indigo-300">
-                  Overview
-                </p>
-                <h2 className="mt-2 font-serif text-3xl font-semibold text-white">
-                  Welcome back, Admin
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                  Track proposal progress, manage templates, and monitor client activity.
-                </p>
-              </div>
+        {/* Stats */}
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {stats.map((s) => (
+            <StatCard key={s.label} {...s} />
+          ))}
+        </section>
 
-              <div className="flex gap-3">
-                <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10">
-                  Create proposal
-                </button>
-                <button className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200">
-                  Sign out
-                </button>
-              </div>
-            </div>
-          </header>
+        {/* Main Content Grid */}
+        <div className="grid gap-5 lg:grid-cols-3">
+          {/* Proposals Table — spans 2 cols */}
+          <div className="lg:col-span-2">
+            <ProposalTable proposals={mockProposals} />
+          </div>
 
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {quickStats.map((stat) => (
-              <article
-                key={stat.label}
-                className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5 shadow-[0_24px_70px_-34px_rgba(15,23,42,0.75)]"
-              >
-                <p className="text-sm text-slate-400">{stat.label}</p>
-                <p className="mt-3 font-serif text-3xl font-semibold text-white">{stat.value}</p>
-              </article>
-            ))}
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-[0_24px_70px_-34px_rgba(15,23,42,0.75)] sm:p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.24em] text-indigo-300">
-                    Proposals
-                  </p>
-                  <h3 className="mt-2 font-serif text-2xl font-semibold text-white">
-                    Recent proposal activity
-                  </h3>
-                </div>
-                <a className="text-sm font-medium text-indigo-300 transition hover:text-indigo-200" href="#">
-                  View all
-                </a>
-              </div>
-
-              <div className="mt-5 overflow-hidden rounded-2xl border border-white/10">
-                <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr_0.7fr] bg-white/5 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  <span>Client</span>
-                  <span>Value</span>
-                  <span>Status</span>
-                  <span>Updated</span>
-                </div>
-                <div className="divide-y divide-white/10 bg-slate-950/40">
-                  {[
-                    ["Northstar", "$12,500", "Viewed", "12m ago"],
-                    ["Ariana Cole", "$8,200", "Sent", "1h ago"],
-                    ["Dana Liu", "$4,800", "Accepted", "Yesterday"],
-                    ["Robert Hayes", "$16,000", "Rejected", "Yesterday"],
-                  ].map(([client, value, status, updated]) => (
-                    <div
-                      key={`${client}-${status}`}
-                      className="grid grid-cols-[1.5fr_0.8fr_0.8fr_0.7fr] items-center gap-4 px-4 py-4 text-sm"
-                    >
-                      <span className="font-medium text-white">{client}</span>
-                      <span className="text-slate-300">{value}</span>
-                      <span className="inline-flex w-fit rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-200">
-                        {status}
-                      </span>
-                      <span className="text-slate-400">{updated}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          {/* Activity Feed */}
+          <div className="rounded-xl border border-slate-200/80 bg-white">
+            <div className="flex items-center justify-between px-5 py-4">
+              <h3 className="text-sm font-semibold text-slate-900">Activity</h3>
+              <Clock className="h-4 w-4 text-slate-400" />
             </div>
 
-            <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-[0_24px_70px_-34px_rgba(15,23,42,0.75)] sm:p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-indigo-300">
-                Activity
-              </p>
-              <h3 className="mt-2 font-serif text-2xl font-semibold text-white">
-                Recent events
-              </h3>
-
-              <div className="mt-5 space-y-4">
-                {recentActivity.map((item, index) => (
-                  <div key={item} className="flex gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-semibold text-white">
-                      {index + 1}
+            <div className="px-5 pb-4">
+              <div className="space-y-0">
+                {recentActivity.map((item, i) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-start gap-3 py-3 ${
+                      i !== recentActivity.length - 1 ? "border-b border-slate-100/80" : ""
+                    }`}
+                  >
+                    <div className="mt-0.5">
+                      <StatusBadge status={item.status} />
                     </div>
-                    <p className="text-sm leading-6 text-slate-300">{item}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] leading-snug text-slate-700">
+                        {item.text}
+                      </p>
+                      <p className="mt-0.5 text-[12px] text-slate-400">{item.time}</p>
+                    </div>
                   </div>
                 ))}
               </div>
+
+              <Link
+                href="/dashboard/proposals"
+                className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+              >
+                View all activity
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
-          </section>
-        </section>
+          </div>
+        </div>
       </div>
     </main>
   );
