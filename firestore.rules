@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── USERS ───────────────────────────────────────────────
+    // Only the authenticated owner can read/write their own profile.
+    match /users/{userId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    // ─── TEMPLATES ───────────────────────────────────────────
+    // Only the authenticated owner can CRUD their own templates.
+    match /templates/{templateId} {
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+
+      allow read, update, delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // ─── PROPOSALS ───────────────────────────────────────────
+    // Owner: full CRUD (list queries must filter by userId).
+    // Public: can GET a single doc by ID (client portal).
+    // Public: can UPDATE only status/signature fields.
+    match /proposals/{proposalId} {
+
+      // Anyone with the document ID can read a single proposal.
+      allow get: if true;
+
+      // Only authenticated owner can list (dashboard queries).
+      allow list: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      // Only authenticated owner can create.
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+
+      // Only authenticated owner can delete.
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      // Update: two paths — owner (full) or public (restricted fields).
+      allow update: if
+        // Path 1: Authenticated owner — unrestricted update
+        (request.auth != null && resource.data.userId == request.auth.uid)
+        ||
+        // Path 2: Public (unauthenticated) — restricted to these fields only
+        (
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
+          // Immutable fields cannot be tampered with
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.templateId == resource.data.templateId
+          && request.resource.data.clientName == resource.data.clientName
+          && request.resource.data.clientEmail == resource.data.clientEmail
+          && request.resource.data.createdAt == resource.data.createdAt
+        );
+    }
+
+    // ─── ANALYTICS ───────────────────────────────────────────
+    // Read: only the authenticated owner.
+    // Write: only Cloud Functions via Admin SDK (bypasses rules).
+    match /analytics/{userId} {
+      allow read: if request.auth != null
+        && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // ─── DENY ALL OTHER PATHS ────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

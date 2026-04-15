@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Bell, Eye, CheckCircle, XCircle, FileText } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 
 interface TopbarProps {
   title: string;
@@ -49,6 +50,11 @@ const mockNotifications = [
 export function Topbar({ title }: TopbarProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { profile } = useAuth();
+
+  const initials = profile
+    ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
+    : "U";
 
   const unreadCount = mockNotifications.filter(n => !n.read).length;
 
@@ -133,7 +139,7 @@ export function Topbar({ title }: TopbarProps) {
         <div className="ml-1 h-5 w-px bg-slate-200" />
 
         <button className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white transition hover:bg-slate-800">
-          A
+          {initials}
         </button>
       </div>
     </header>

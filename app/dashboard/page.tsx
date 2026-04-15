@@ -1,9 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import { FileText, Eye, CheckCircle, XCircle, FilePlus, LayoutTemplate, ArrowRight, Clock } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { ProposalTable, type Proposal } from "@/components/proposal-table";
 import { StatusBadge } from "@/components/status-badge";
+import { useAuth } from "@/contexts/auth-context";
 
 const stats = [
   { label: "Total Proposals", value: "48",  icon: FileText,     trend: "+12%", trendUp: true,  accent: "indigo" },
@@ -28,6 +31,10 @@ const recentActivity = [
 ];
 
 export default function DashboardPage() {
+  const { profile } = useAuth();
+  const greeting = getGreeting();
+  const firstName = profile?.firstName ?? "there";
+
   return (
     <main className="flex min-h-screen flex-col">
       <Topbar title="Dashboard" />
@@ -37,7 +44,7 @@ export default function DashboardPage() {
         <div className="flex items-end justify-between">
           <div>
             <h2 className="font-sans text-lg font-semibold text-slate-900">
-              Good evening, Admin
+              {greeting}, {firstName}
             </h2>
             <p className="mt-0.5 text-[13px] text-slate-500">
               Here&apos;s a snapshot of your proposals.
@@ -117,4 +124,11 @@ export default function DashboardPage() {
       </div>
     </main>
   );
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 }

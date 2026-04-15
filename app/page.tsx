@@ -1,10 +1,100 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { signIn, signUp, resetPassword } from "@/lib/auth";
 
 export default function Home() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+
   // Upgraded state to handle all three views
   const [view, setView] = useState<"login" | "signup" | "forgot">("login");
+
+  // Form fields
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+
+  // UI state
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resetSent, setResetSent] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace("/dashboard");
+    }
+  }, [user, authLoading, router]);
+
+  // Clear error when switching views
+  useEffect(() => {
+    setError(null);
+    setResetSent(false);
+  }, [view]);
+
+  const handleSignIn = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await signIn(email, password);
+      // onAuthStateChanged will trigger redirect
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sign in failed.";
+      setError(msg.replace("Firebase: ", ""));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignUp = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("First name and last name are required.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await signUp(email, password, firstName.trim(), lastName.trim());
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sign up failed.";
+      setError(msg.replace("Firebase: ", ""));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Reset failed.";
+      setError(msg.replace("Firebase: ", ""));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Show nothing while checking auth (prevents flash)
+  if (authLoading) {
+    return (
+      <main className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-white" />
+      </main>
+    );
+  }
+
+  // Already signed in — redirect is in progress
+  if (user) return null;
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-6 font-sans text-slate-100 sm:px-8 lg:px-12 flex items-center justify-center">
@@ -118,31 +208,37 @@ export default function Home() {
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">Please enter your details to sign in.</p>
 
-                <div className="mt-8 grid gap-5">
-                  <Field label="Email address" placeholder="you@company.com" />
-                  <Field label="Password" placeholder="Enter your password" type="password" />
-                </div>
+                <form onSubmit={handleSignIn}>
+                  <div className="mt-8 grid gap-5">
+                    <Field label="Email address" placeholder="you@company.com" value={email} onChange={setEmail} />
+                    <Field label="Password" placeholder="Enter your password" type="password" value={password} onChange={setPassword} />
+                  </div>
 
-                <div className="mt-6 flex items-center justify-between gap-4 text-sm">
-                  <label className="flex items-center gap-2.5 cursor-pointer group">
-                    <div className="relative flex items-center justify-center">
-                      <input type="checkbox" className="peer h-4 w-4 appearance-none rounded border border-slate-300 bg-slate-50 checked:border-[#780116] checked:bg-[#780116] focus:ring-2 focus:ring-[#DB7C26]/30 focus:ring-offset-1 transition-all" />
-                      <svg className="absolute w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <span className="text-slate-600 group-hover:text-slate-900 transition-colors">Remember me</span>
-                  </label>
-                  <button type="button" onClick={() => setView("forgot")} className="font-medium text-[#C32F27] transition-colors hover:text-[#D8572A]">
-                    Forgot password?
-                  </button>
-                </div>
+                  {error && view === "login" && (
+                    <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+                  )}
 
-                <div className="mt-8">
-                  <button className="w-full rounded-xl bg-[#780116] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#780116]/20 transition-all duration-200 hover:bg-[#C32F27] hover:shadow-xl hover:shadow-[#C32F27]/20 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30">
-                    Sign in to account
-                  </button>
-                </div>
+                  <div className="mt-6 flex items-center justify-between gap-4 text-sm">
+                    <label className="flex items-center gap-2.5 cursor-pointer group">
+                      <div className="relative flex items-center justify-center">
+                        <input type="checkbox" className="peer h-4 w-4 appearance-none rounded border border-slate-300 bg-slate-50 checked:border-[#780116] checked:bg-[#780116] focus:ring-2 focus:ring-[#DB7C26]/30 focus:ring-offset-1 transition-all" />
+                        <svg className="absolute w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-slate-600 group-hover:text-slate-900 transition-colors">Remember me</span>
+                    </label>
+                    <button type="button" onClick={() => setView("forgot")} className="font-medium text-[#C32F27] transition-colors hover:text-[#D8572A]">
+                      Forgot password?
+                    </button>
+                  </div>
+
+                  <div className="mt-8">
+                    <button type="submit" disabled={loading} className="w-full rounded-xl bg-[#780116] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#780116]/20 transition-all duration-200 hover:bg-[#C32F27] hover:shadow-xl hover:shadow-[#C32F27]/20 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30 disabled:opacity-50 disabled:pointer-events-none">
+                      {loading && view === "login" ? "Signing in..." : "Sign in to account"}
+                    </button>
+                  </div>
+                </form>
               </div>
 
               {/* Signup Form */}
@@ -156,20 +252,26 @@ export default function Home() {
                 </h1>
                 <p className="mt-2 text-sm text-slate-500">Start your 14-day free trial. No credit card required.</p>
 
-                <div className="mt-8 grid gap-5">
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <Field label="First name" placeholder="Alex" />
-                    <Field label="Last name" placeholder="Morgan" />
+                <form onSubmit={handleSignUp}>
+                  <div className="mt-8 grid gap-5">
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <Field label="First name" placeholder="Alex" value={firstName} onChange={setFirstName} />
+                      <Field label="Last name" placeholder="Morgan" value={lastName} onChange={setLastName} />
+                    </div>
+                    <Field label="Email address" placeholder="you@company.com" value={email} onChange={setEmail} />
+                    <Field label="Password" placeholder="Create a password" type="password" value={password} onChange={setPassword} />
                   </div>
-                  <Field label="Email address" placeholder="you@company.com" />
-                  <Field label="Password" placeholder="Create a password" type="password" />
-                </div>
 
-                <div className="mt-8">
-                  <button className="w-full rounded-xl bg-[#780116] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#780116]/20 transition-all duration-200 hover:bg-[#C32F27] hover:shadow-xl hover:shadow-[#C32F27]/20 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30">
-                    Create your workspace
-                  </button>
-                </div>
+                  {error && view === "signup" && (
+                    <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+                  )}
+
+                  <div className="mt-8">
+                    <button type="submit" disabled={loading} className="w-full rounded-xl bg-[#780116] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#780116]/20 transition-all duration-200 hover:bg-[#C32F27] hover:shadow-xl hover:shadow-[#C32F27]/20 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30 disabled:opacity-50 disabled:pointer-events-none">
+                      {loading && view === "signup" ? "Creating workspace..." : "Create your workspace"}
+                    </button>
+                  </div>
+                </form>
                 
                 <p className="mt-6 text-center text-xs text-slate-400 leading-relaxed">
                   By signing up, you agree to our <a href="#" className="text-slate-600 hover:text-slate-900 underline underline-offset-2 transition-colors">Terms of Service</a> and <a href="#" className="text-slate-600 hover:text-slate-900 underline underline-offset-2 transition-colors">Privacy Policy</a>.
@@ -193,23 +295,34 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="mt-8 grid gap-5">
-                  <Field label="Email address" placeholder="you@company.com" />
-                </div>
+                <form onSubmit={handleResetPassword}>
+                  <div className="mt-8 grid gap-5">
+                    <Field label="Email address" placeholder="you@company.com" value={email} onChange={setEmail} />
+                  </div>
 
+                  {error && view === "forgot" && (
+                    <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+                  )}
 
-                <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                  <button className="w-full rounded-xl bg-[#780116] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#780116]/20 transition-all duration-200 hover:bg-[#C32F27] hover:shadow-xl hover:shadow-[#C32F27]/20 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30">
-                    Send reset link
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setView("login")}
-                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3.5 text-sm font-semibold text-slate-600 transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30"
-                  >
-                    Back to sign in
-                  </button>
-                </div>
+                  {resetSent && (
+                    <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                      Reset link sent! Check your inbox.
+                    </p>
+                  )}
+
+                  <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                    <button type="submit" disabled={loading || resetSent} className="w-full rounded-xl bg-[#780116] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#780116]/20 transition-all duration-200 hover:bg-[#C32F27] hover:shadow-xl hover:shadow-[#C32F27]/20 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30 disabled:opacity-50 disabled:pointer-events-none">
+                      {loading && view === "forgot" ? "Sending..." : "Send reset link"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setView("login")}
+                      className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3.5 text-sm font-semibold text-slate-600 transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-[#F7B538]/30"
+                    >
+                      Back to sign in
+                    </button>
+                  </div>
+                </form>
               </div>
 
             </div>
@@ -224,10 +337,14 @@ function Field({
   label,
   placeholder,
   type = "text",
+  value,
+  onChange,
 }: {
   label: string;
   placeholder: string;
   type?: string;
+  value: string;
+  onChange: (val: string) => void;
 }) {
   return (
     <label className="block group">
@@ -237,6 +354,9 @@ function Field({
       <input
         type={type}
         placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required
         className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 font-sans text-slate-900 outline-none transition-all placeholder:text-slate-400 hover:bg-slate-50 focus:border-[#DB7C26] focus:bg-white focus:ring-[3px] focus:ring-[#F7B538]/20 focus:shadow-sm"
       />
     </label>

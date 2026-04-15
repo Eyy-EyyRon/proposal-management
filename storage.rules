@@ -1,0 +1,35 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ─── TEMPLATES ───────────────────────────────────────────
+    // Only authenticated owner can upload/read/delete their own templates.
+    match /templates/{userId}/{templateId}/{fileName} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    // ─── SIGNATURES ──────────────────────────────────────────
+    // Anyone (unauthenticated client) can upload a signature for a proposal.
+    // Read is allowed for anyone (to display in the dashboard/portal).
+    match /signatures/{proposalId}/{fileName} {
+      allow read: if true;
+      allow write: if request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // ─── PROPOSAL PDFs ──────────────────────────────────────
+    // Anyone with the path can read (client portal).
+    // Only authenticated users can write (generated on create).
+    match /proposals/{proposalId}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Deny everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
