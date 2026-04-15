@@ -10,6 +10,14 @@ service cloud.firestore {
         && request.auth.uid == userId;
     }
 
+    // ─── ORGANIZATION SETTINGS ───────────────────────────────
+    // Only the authenticated owner can read/write their org settings.
+    // Doc ID must equal the user's UID.
+    match /orgSettings/{userId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
+
     // ─── TEMPLATES ───────────────────────────────────────────
     // Only the authenticated owner can CRUD their own templates.
     match /templates/{templateId} {
@@ -35,7 +43,8 @@ service cloud.firestore {
 
       // Only authenticated owner can create.
       allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == "sent";
 
       // Only authenticated owner can delete.
       allow delete: if request.auth != null
@@ -50,15 +59,34 @@ service cloud.firestore {
         (
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
+          // Status transitions: only allow sent→viewed, sent/viewed→accepted/rejected
+          && (
+            (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
+            || (resource.data.status == "viewed" && request.resource.data.status in ["accepted", "rejected"])
+          )
           // Immutable fields cannot be tampered with
           && request.resource.data.userId == resource.data.userId
           && request.resource.data.templateId == resource.data.templateId
+          && request.resource.data.templateName == resource.data.templateName
           && request.resource.data.templateFileUrl == resource.data.templateFileUrl
           && request.resource.data.templateGdocUrl == resource.data.templateGdocUrl
           && request.resource.data.clientName == resource.data.clientName
           && request.resource.data.clientEmail == resource.data.clientEmail
+          && request.resource.data.fieldValues == resource.data.fieldValues
           && request.resource.data.createdAt == resource.data.createdAt
         );
+    }
+
+    // ─── NOTIFICATIONS ─────────────────────────────────────────
+    // Read + update: only the authenticated owner (mark as read).
+    // Create/delete: only Cloud Functions via Admin SDK.
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
+      allow create, delete: if false;
     }
 
     // ─── ANALYTICS ───────────────────────────────────────────

@@ -7,8 +7,8 @@
   },
   "functions": [
     {
-      "source": "functions",
       "codebase": "default",
+      "source": "functions",
       "disallowLegacyRuntimeConfig": true,
       "ignore": [
         "node_modules",
@@ -18,22 +18,23 @@
         "*.local"
       ],
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint",
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
     }
   ],
-  "apphosting": {
-    "backendId": "proposal-ms-backend",
-    "rootDir": "",
-    "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log",
-      "functions"
-    ]
-  },
+  "apphosting": [
+    {
+      "backendId": "proposalms-backend",
+      "rootDir": "/",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "functions"
+      ]
+    }
+  ],
   "storage": {
     "rules": "storage.rules"
   }

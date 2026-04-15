@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Check, Upload, Link as LinkIcon } from "lucide-react";
+import { FileText, Check, Upload, Link as LinkIcon, Loader2 } from "lucide-react";
 
 interface Template {
   id: string;
@@ -20,16 +20,16 @@ interface ProposalFormProps {
   onSubmit: (data: {
     templateId: string;
     fieldValues: Record<string, string>;
-  }) => void;
+  }) => Promise<void>;
+  submitting?: boolean;
 }
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100";
 
-export function ProposalForm({ templates, onSubmit }: ProposalFormProps) {
+export function ProposalForm({ templates, onSubmit, submitting = false }: ProposalFormProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
-  const [isCreating, setIsCreating] = useState(false);
 
   const handleTemplateSelect = (template: Template) => {
     setSelectedTemplate(template);
@@ -52,12 +52,10 @@ export function ProposalForm({ templates, onSubmit }: ProposalFormProps) {
       return;
     }
 
-    setIsCreating(true);
-    onSubmit({
+    await onSubmit({
       templateId: selectedTemplate.id,
       fieldValues,
     });
-    setIsCreating(false);
   };
 
   const inputType = (type: string) => {
@@ -157,10 +155,11 @@ export function ProposalForm({ templates, onSubmit }: ProposalFormProps) {
         </button>
         <button
           type="submit"
-          disabled={!selectedTemplate || isCreating}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={!selectedTemplate || submitting}
+          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {isCreating ? "Creating..." : "Create proposal"}
+          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {submitting ? "Creating..." : "Create proposal"}
         </button>
       </div>
     </form>

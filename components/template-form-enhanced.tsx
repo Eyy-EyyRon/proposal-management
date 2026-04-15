@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Plus, X, Upload, Link, FileText, Mail, Phone, Calendar, Type, Check } from "lucide-react";
+import { Plus, X, Upload, Link, FileText, Mail, Phone, Calendar, Type, Check, Loader2 } from "lucide-react";
+import { extractFieldsFromDocx } from "@/lib/docx-parser";
 
 interface TemplateField {
   id: string;
@@ -16,7 +17,10 @@ interface TemplateFormEnhancedProps {
     sourceType: "docx" | "gdocs";
     sourceValue: string;
     fields: TemplateField[];
-  }) => void;
+    file: File | null;
+    extractedPlaceholders: string[];
+  }) => Promise<void>;
+  submitting?: boolean;
 }
 
 const fieldIcons = {
@@ -26,7 +30,7 @@ const fieldIcons = {
   date: Calendar,
 };
 
-export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
+export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateFormEnhancedProps) {
   const [name, setName] = useState("");
   const [sourceType, setSourceType] = useState<"docx" | "gdocs">("docx");
   const [sourceValue, setSourceValue] = useState("");
@@ -36,6 +40,9 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
     { id: "1", name: "Client Name", type: "text", required: true },
     { id: "2", name: "Email", type: "email", required: true },
   ]);
+  const [extractedPlaceholders, setExtractedPlaceholders] = useState<string[]>([]);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const formatFileSize = (bytes: number) => {
@@ -44,7 +51,7 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     if (!file.name.endsWith(".docx")) {
       alert("Please upload a .docx file");
       return;
@@ -55,6 +62,30 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
     }
     setSelectedFile(file);
     setSourceValue(file.name);
+    setParseError(null);
+
+    // Auto-extract {fieldName} placeholders from the docx
+    setParsing(true);
+    try {
+      const placeholders = await extractFieldsFromDocx(file);
+      setExtractedPlaceholders(placeholders);
+      if (placeholders.length > 0) {
+        // Auto-populate dynamic fields from extracted placeholders
+        const autoFields: TemplateField[] = placeholders.map((p, i) => {
+          const lower = p.toLowerCase();
+          let type: TemplateField["type"] = "text";
+          if (lower.includes("email")) type = "email";
+          else if (lower.includes("phone")) type = "phone";
+          else if (lower.includes("date")) type = "date";
+          return { id: `auto-${i}`, name: p, type, required: true };
+        });
+        setFields(autoFields);
+      }
+    } catch {
+      setParseError("Could not parse document. Fields were not auto-extracted.");
+    } finally {
+      setParsing(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -70,6 +101,8 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
   const removeFile = () => {
     setSelectedFile(null);
     setSourceValue("");
+    setExtractedPlaceholders([]);
+    setParseError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -106,16 +139,18 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
   };
 
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !sourceValue) return;
     
     const validFields = fields.filter(f => f.name.trim());
-    onSubmit({
+    await onSubmit({
       name,
       sourceType,
       sourceValue,
       fields: validFields,
+      file: selectedFile,
+      extractedPlaceholders,
     });
   };
 
@@ -189,6 +224,7 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
                         </p>
                         <p className="text-[12px] text-slate-400">
                           {formatFileSize(selectedFile.size)}
+                          {parsing && " — Scanning for fields..."}
                         </p>
                       </div>
                       <button
@@ -252,6 +288,24 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
                       Valid Google Docs link
                     </p>
                   )}
+                </div>
+              )}
+              {/* Parse feedback */}
+              {parsing && (
+                <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                  <p className="text-[12px] text-slate-500">Scanning document for placeholder fields...</p>
+                </div>
+              )}
+              {parseError && (
+                <p className="text-[12px] text-amber-600">{parseError}</p>
+              )}
+              {!parsing && extractedPlaceholders.length > 0 && (
+                <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  <p className="text-[12px] text-emerald-700">
+                    Found {extractedPlaceholders.length} placeholder{extractedPlaceholders.length !== 1 ? "s" : ""}: {extractedPlaceholders.join(", ")}
+                  </p>
                 </div>
               )}
             </div>
@@ -394,10 +448,11 @@ export function TemplateFormEnhanced({ onSubmit }: TemplateFormEnhancedProps) {
         </button>
         <button
           onClick={handleSubmit}
-          disabled={!name || !sourceValue}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={!name || !sourceValue || submitting}
+          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Create template
+          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {submitting ? "Creating..." : "Create template"}
         </button>
       </div>
     </>
