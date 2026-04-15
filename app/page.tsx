@@ -213,6 +213,44 @@ export default function Home() {
               </div>
 
             </div>
+
+            {/* Dev Login - Quick Access for Testing */}
+            <div className="mt-6 rounded-xl border border-amber-200/60 bg-amber-50/50 p-4">
+              <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-amber-700">
+                Dev Login (Quick Access)
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => {
+                    localStorage.setItem("hyacinth_user", JSON.stringify({
+                      uid: "super-123",
+                      email: "admin@hyacinth.com",
+                      displayName: "Super Admin",
+                      role: "super-admin"
+                    }));
+                    window.location.href = "/super-admin";
+                  }}
+                  className="rounded-lg bg-[#800000] px-3 py-2 text-[12px] font-medium text-white transition hover:bg-[#660000]"
+                >
+                  Login as Super Admin
+                </button>
+                <button
+                  onClick={() => {
+                    localStorage.setItem("hyacinth_user", JSON.stringify({
+                      uid: "admin-456",
+                      email: "user@hyacinth.com",
+                      displayName: "Regular Admin",
+                      role: "admin"
+                    }));
+                    window.location.href = "/staff-dashboard";
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  Login as Admin
+                </button>
+              </div>
+            </div>
+
           </div>
         </section>
       </div>
