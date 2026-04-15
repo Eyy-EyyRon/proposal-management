@@ -7,7 +7,7 @@ import { TemplateFormEnhanced } from "@/components/template-form-enhanced";
 import { Topbar } from "@/components/topbar";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { createTemplate } from "@/lib/firestore";
+import { createTemplate, updateTemplate } from "@/lib/firestore";
 import { uploadTemplateFile } from "@/lib/storage";
 
 export default function NewTemplatePage() {
@@ -29,9 +29,6 @@ export default function NewTemplatePage() {
     setError(null);
 
     try {
-      let fileUrl: string | null = null;
-      let filePath: string | null = null;
-
       // 1. Create the Firestore doc first to get the template ID
       const templateId = await createTemplate({
         userId: user.uid,
@@ -49,22 +46,20 @@ export default function NewTemplatePage() {
         })),
       });
 
-      // 2. Upload the .docx file to Storage (if applicable)
+      // 2. Upload the .docx file to Storage + update Firestore doc
       if (data.sourceType === "docx" && data.file) {
         const result = await uploadTemplateFile(user.uid, templateId, data.file);
-        fileUrl = result.url;
-        filePath = result.path;
-
-        // 3. Update the template doc with the file URL/path
-        const { doc, updateDoc } = await import("firebase/firestore");
-        const { db } = await import("@/lib/firebase");
-        await updateDoc(doc(db, "templates", templateId), { fileUrl, filePath });
+        await updateTemplate(templateId, {
+          fileUrl: result.url,
+          filePath: result.path,
+        });
       }
 
       router.push("/dashboard/templates");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to create template";
       setError(message);
+      console.error("Template creation error:", err);
     } finally {
       setSubmitting(false);
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Eye, CheckCircle, XCircle, BellOff } from "lucide-react";
+import { Bell, Eye, CheckCircle, XCircle, BellOff, Search } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -77,6 +77,20 @@ export function Topbar({ title }: TopbarProps) {
       <h1 className="text-[15px] font-semibold text-slate-900">{title}</h1>
 
       <div className="flex items-center gap-2">
+        {/* Search trigger */}
+        <button
+          onClick={() => {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
+          }}
+          className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-[12px] text-slate-400 transition hover:border-slate-300 hover:text-slate-600 sm:inline-flex"
+        >
+          <Search className="h-3 w-3" />
+          Search…
+          <kbd className="ml-1 rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
+            ⌘K
+          </kbd>
+        </button>
+
         {/* Notifications */}
         <div ref={ref} className="relative">
           <button

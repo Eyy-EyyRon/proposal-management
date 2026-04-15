@@ -7,7 +7,7 @@ import { StatusBadge, type ProposalStatus as BadgeStatus } from "@/components/st
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth } from "@/contexts/auth-context";
-import { getUserProposals, archiveProposal, type Proposal } from "@/lib/firestore";
+import { subscribeToProposals, archiveProposal, type Proposal } from "@/lib/firestore";
 import { exportProposalsCsv, exportProposalsJson } from "@/lib/export-utils";
 
 type StatusFilter = "all" | "sent" | "viewed" | "accepted" | "rejected" | "archived";
@@ -60,18 +60,11 @@ export default function ProposalsPage() {
 
   useEffect(() => {
     if (!user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await getUserProposals(user.uid);
-        if (!cancelled) setProposals(data);
-      } catch (err) {
-        console.error("Failed to load proposals:", err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+    const unsub = subscribeToProposals(user.uid, (data) => {
+      setProposals(data);
+      setLoading(false);
+    });
+    return unsub;
   }, [user]);
 
   const active = proposals.filter(p => p.status !== "archived");

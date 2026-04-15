@@ -1,0 +1,149 @@
+[debug] [2026-04-15T17:03:44.225Z] ----------------------------------------------------------------------
+[debug] [2026-04-15T17:03:44.227Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Administrator\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy
+[debug] [2026-04-15T17:03:44.227Z] CLI Version:   15.14.0
+[debug] [2026-04-15T17:03:44.227Z] Platform:      win32
+[debug] [2026-04-15T17:03:44.227Z] Node Version:  v24.14.1
+[debug] [2026-04-15T17:03:44.227Z] Time:          Thu Apr 16 2026 01:03:44 GMT+0800 (Singapore Standard Time)
+[debug] [2026-04-15T17:03:44.227Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-04-15T17:03:45.187Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-15T17:03:45.188Z] > authorizing via signed-in user (ahronp@hyacinthindustriesllc.com)
+[debug] [2026-04-15T17:03:45.188Z] [iam] checking project proposal-management-1d4ec for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]
+[debug] [2026-04-15T17:03:45.189Z] Checked if tokens are valid: false, expires at: 1776273410059
+[debug] [2026-04-15T17:03:45.189Z] Checked if tokens are valid: false, expires at: 1776273410059
+[debug] [2026-04-15T17:03:45.189Z] > refreshing access token with scopes: []
+[debug] [2026-04-15T17:03:45.190Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-04-15T17:03:45.191Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-04-15T17:03:45.452Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-04-15T17:03:45.452Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-04-15T17:03:45.456Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions [none]
+[debug] [2026-04-15T17:03:45.457Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions  x-goog-user-project=proposal-management-1d4ec
+[debug] [2026-04-15T17:03:45.457Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[debug] [2026-04-15T17:03:46.754Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions 200
+[debug] [2026-04-15T17:03:46.754Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[debug] [2026-04-15T17:03:46.754Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:46.754Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:46.754Z] >>> [apiv2][query] POST https://iam.googleapis.com/v1/projects/proposal-management-1d4ec/serviceAccounts/proposal-management-1d4ec@appspot.gserviceaccount.com:testIamPermissions [none]
+[debug] [2026-04-15T17:03:46.754Z] >>> [apiv2][body] POST https://iam.googleapis.com/v1/projects/proposal-management-1d4ec/serviceAccounts/proposal-management-1d4ec@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[debug] [2026-04-15T17:03:48.833Z] <<< [apiv2][status] POST https://iam.googleapis.com/v1/projects/proposal-management-1d4ec/serviceAccounts/proposal-management-1d4ec@appspot.gserviceaccount.com:testIamPermissions 200
+[debug] [2026-04-15T17:03:48.833Z] <<< [apiv2][body] POST https://iam.googleapis.com/v1/projects/proposal-management-1d4ec/serviceAccounts/proposal-management-1d4ec@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[info] 
+[info] === Deploying to 'proposal-management-1d4ec'...
+[info] 
+[info] i  deploying storage, firestore, functions, apphosting 
+[info] Running command: npm --prefix "$RESOURCE_DIR" run build
+[info] +  functions: Finished running predeploy script. 
+[info] i  storage: ensuring required API firebasestorage.googleapis.com is enabled... 
+[debug] [2026-04-15T17:03:51.492Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:51.492Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:51.492Z] >>> [apiv2][query] GET https://firebasestorage.googleapis.com/v1alpha/projects/proposal-management-1d4ec/defaultBucket [none]
+[debug] [2026-04-15T17:03:52.754Z] <<< [apiv2][status] GET https://firebasestorage.googleapis.com/v1alpha/projects/proposal-management-1d4ec/defaultBucket 200
+[debug] [2026-04-15T17:03:52.754Z] <<< [apiv2][body] GET https://firebasestorage.googleapis.com/v1alpha/projects/proposal-management-1d4ec/defaultBucket {"name":"projects/proposal-management-1d4ec/defaultBucket","location":"US-CENTRAL1","bucket":{"name":"projects/proposal-management-1d4ec/buckets/proposal-management-1d4ec.firebasestorage.app"},"storageClass":"REGIONAL"}
+[info] i  firebase.storage: checking storage.rules for compilation errors... 
+[debug] [2026-04-15T17:03:52.755Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:52.755Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:52.755Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test [none]
+[debug] [2026-04-15T17:03:52.755Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test [omitted]
+[debug] [2026-04-15T17:03:54.507Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test 200
+[debug] [2026-04-15T17:03:54.507Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test {}
+[info] +  firebase.storage: rules file storage.rules compiled successfully 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-04-15T17:03:54.509Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:54.509Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:54.509Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/proposal-management-1d4ec/databases/(default) [none]
+[debug] [2026-04-15T17:03:55.957Z] <<< [apiv2][status] GET https://firestore.googleapis.com/v1/projects/proposal-management-1d4ec/databases/(default) 200
+[debug] [2026-04-15T17:03:55.957Z] <<< [apiv2][body] GET https://firestore.googleapis.com/v1/projects/proposal-management-1d4ec/databases/(default) {"name":"projects/proposal-management-1d4ec/databases/(default)","uid":"d1c3a65e-6e4b-4ddc-a514-510d63703969","createTime":"2026-04-15T13:17:57.041118Z","updateTime":"2026-04-15T13:17:57.041118Z","locationId":"nam5","type":"FIRESTORE_NATIVE","concurrencyMode":"PESSIMISTIC","versionRetentionPeriod":"3600s","earliestVersionTime":"2026-04-15T16:03:55.774656Z","appEngineIntegrationMode":"DISABLED","keyPrefix":"s","pointInTimeRecoveryEnablement":"POINT_IN_TIME_RECOVERY_DISABLED","deleteProtectionState":"DELETE_PROTECTION_DISABLED","databaseEdition":"STANDARD","freeTier":true,"realtimeUpdatesMode":"REALTIME_UPDATES_MODE_ENABLED","etag":"INWK65ur8JMDMI2PtYn575MD"}
+[info] i  firestore: reading indexes from firestore.indexes.json... 
+[info] i  cloud.firestore: checking firestore.rules for compilation errors... 
+[debug] [2026-04-15T17:03:55.958Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:55.958Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:55.958Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test [none]
+[debug] [2026-04-15T17:03:55.958Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test [omitted]
+[debug] [2026-04-15T17:03:57.440Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test 200
+[debug] [2026-04-15T17:03:57.440Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/proposal-management-1d4ec:test {}
+[info] +  cloud.firestore: rules file firestore.rules compiled successfully 
+[debug] [2026-04-15T17:03:57.441Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:57.441Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:57.441Z] >>> [apiv2][query] GET https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec [none]
+[debug] [2026-04-15T17:03:58.482Z] <<< [apiv2][status] GET https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec 200
+[debug] [2026-04-15T17:03:58.483Z] <<< [apiv2][body] GET https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec {"projectNumber":"424258487010","projectId":"proposal-management-1d4ec","lifecycleState":"ACTIVE","name":"Proposal-Management","labels":{"firebase":"enabled","firebase-core":"disabled"},"createTime":"2026-04-14T16:24:55.235Z","parent":{"type":"organization","id":"107862117958"}}
+[info] i  functions: preparing codebase default for deployment 
+[info] i  functions: ensuring required API cloudfunctions.googleapis.com is enabled... 
+[info] i  functions: ensuring required API cloudbuild.googleapis.com is enabled... 
+[info] i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled... 
+[debug] [2026-04-15T17:03:58.484Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:58.484Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:03:58.484Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/proposal-management-1d4ec/adminSdkConfig [none]
+[debug] [2026-04-15T17:03:59.642Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/proposal-management-1d4ec/adminSdkConfig 200
+[debug] [2026-04-15T17:03:59.642Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/proposal-management-1d4ec/adminSdkConfig {"projectId":"proposal-management-1d4ec","storageBucket":"proposal-management-1d4ec.firebasestorage.app"}
+[debug] [2026-04-15T17:03:59.643Z] Validating nodejs source
+[debug] [2026-04-15T17:04:00.459Z] > [functions] package.json contents: {
+  "name": "functions",
+  "scripts": {
+    "lint": "eslint .",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^7.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.12.0",
+    "@typescript-eslint/parser": "^5.12.0",
+    "eslint": "^8.9.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-plugin-import": "^2.25.4",
+    "firebase-functions-test": "^3.4.1",
+    "typescript": "^6.0.0"
+  },
+  "private": true
+}
+[debug] [2026-04-15T17:04:00.459Z] Building nodejs source
+[info] i  functions: Loading and analyzing source code for codebase default to determine what to deploy 
+[debug] [2026-04-15T17:04:00.460Z] Could not find functions.yaml. Must use http discovery
+[debug] [2026-04-15T17:04:00.467Z] Found firebase-functions binary at 'C:\Users\Administrator\Desktop\proposalms\functions\node_modules\.bin\firebase-functions'
+[info] Serving at port 8590
+
+[debug] [2026-04-15T17:04:00.859Z] Got response from /__/functions.yaml {"endpoints":{"onProposalUpdate":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":10,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"eventTrigger":{"eventType":"google.cloud.firestore.document.v1.updated","eventFilters":{"database":"(default)","namespace":"(default)"},"eventFilterPathPatterns":{"document":"proposals/{proposalId}"},"retry":false},"entryPoint":"onProposalUpdate"}},"specVersion":"v1alpha1","requiredAPIs":[],"extensions":{}}
+[info] i  extensions: ensuring required API firebaseextensions.googleapis.com is enabled... 
+[debug] [2026-04-15T17:04:04.882Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-15T17:04:04.882Z] > authorizing via signed-in user (ahronp@hyacinthindustriesllc.com)
+[debug] [2026-04-15T17:04:04.882Z] [iam] checking project proposal-management-1d4ec for permissions ["firebase.projects.get","firebaseextensions.instances.list"]
+[debug] [2026-04-15T17:04:04.882Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:04.882Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:04.882Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions [none]
+[debug] [2026-04-15T17:04:04.882Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions  x-goog-user-project=proposal-management-1d4ec
+[debug] [2026-04-15T17:04:04.882Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions {"permissions":["firebase.projects.get","firebaseextensions.instances.list"]}
+[debug] [2026-04-15T17:04:05.938Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions 200
+[debug] [2026-04-15T17:04:05.938Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions {"permissions":["firebase.projects.get","firebaseextensions.instances.list"]}
+[debug] [2026-04-15T17:04:05.938Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:05.939Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:05.939Z] >>> [apiv2][query] GET https://firebaseextensions.googleapis.com/v1beta/projects/proposal-management-1d4ec/instances pageSize=100&pageToken=
+[debug] [2026-04-15T17:04:07.308Z] <<< [apiv2][status] GET https://firebaseextensions.googleapis.com/v1beta/projects/proposal-management-1d4ec/instances 200
+[debug] [2026-04-15T17:04:07.308Z] <<< [apiv2][body] GET https://firebaseextensions.googleapis.com/v1beta/projects/proposal-management-1d4ec/instances {}
+[info] i  functions: preparing functions directory for uploading... 
+[info] i  functions: packaged C:\Users\Administrator\Desktop\proposalms\functions (100.78 KB) for uploading 
+[debug] [2026-04-15T17:04:07.338Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:07.338Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:07.338Z] >>> [apiv2][query] GET https://cloudfunctions.googleapis.com/v1/projects/proposal-management-1d4ec/locations/-/functions [none]
+[debug] [2026-04-15T17:04:08.349Z] <<< [apiv2][status] GET https://cloudfunctions.googleapis.com/v1/projects/proposal-management-1d4ec/locations/-/functions 200
+[debug] [2026-04-15T17:04:08.350Z] <<< [apiv2][body] GET https://cloudfunctions.googleapis.com/v1/projects/proposal-management-1d4ec/locations/-/functions {}
+[debug] [2026-04-15T17:04:08.350Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:08.350Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:08.350Z] >>> [apiv2][query] GET https://cloudfunctions.googleapis.com/v2/projects/proposal-management-1d4ec/locations/-/functions filter=environment%3D%22GEN_2%22
+[debug] [2026-04-15T17:04:10.040Z] <<< [apiv2][status] GET https://cloudfunctions.googleapis.com/v2/projects/proposal-management-1d4ec/locations/-/functions 200
+[debug] [2026-04-15T17:04:10.040Z] <<< [apiv2][body] GET https://cloudfunctions.googleapis.com/v2/projects/proposal-management-1d4ec/locations/-/functions {"functions":[{"name":"projects/proposal-management-1d4ec/locations/us-central1/functions/onProposalUpdate","buildConfig":{"build":"projects/424258487010/locations/us-central1/builds/87dd512c-be56-494e-adfe-3f77f1856169","runtime":"nodejs22","entryPoint":"onProposalUpdate","source":{"storageSource":{"bucket":"gcf-v2-sources-424258487010-us-central1","object":"onProposalUpdate/function-source.zip","generation":"1776271367396373"}},"environmentVariables":{"GOOGLE_NODE_RUN_SCRIPTS":""},"dockerRepository":"projects/proposal-management-1d4ec/locations/us-central1/repositories/gcf-artifacts","sourceProvenance":{"resolvedStorageSource":{"bucket":"gcf-v2-sources-424258487010-us-central1","object":"onProposalUpdate/function-source.zip","generation":"1776271367396373"}},"dockerRegistry":"ARTIFACT_REGISTRY","serviceAccount":"projects/proposal-management-1d4ec/serviceAccounts/424258487010-compute@developer.gserviceaccount.com","automaticUpdatePolicy":{}},"serviceConfig":{"service":"projects/proposal-management-1d4ec/locations/us-central1/services/onproposalupdate","timeoutSeconds":60,"environmentVariables":{"FIREBASE_CONFIG":"{\"projectId\":\"proposal-management-1d4ec\",\"storageBucket\":\"proposal-management-1d4ec.firebasestorage.app\"}","GCLOUD_PROJECT":"proposal-management-1d4ec","EVENTARC_CLOUD_EVENT_SOURCE":"projects/proposal-management-1d4ec/locations/us-central1/services/onProposalUpdate","FUNCTION_SIGNATURE_TYPE":"cloudevent","FUNCTION_TARGET":"onProposalUpdate","LOG_EXECUTION_ID":"true"},"maxInstanceCount":10,"ingressSettings":"ALLOW_ALL","uri":"https://onproposalupdate-yxdnknohga-uc.a.run.app","serviceAccountEmail":"424258487010-compute@developer.gserviceaccount.com","availableMemory":"256Mi","allTrafficOnLatestRevision":true,"revision":"onproposalupdate-00001-yug","maxInstanceRequestConcurrency":80,"availableCpu":"1"},"eventTrigger":{"trigger":"projects/proposal-management-1d4ec/locations/nam5/triggers/onproposalupdate-425301","triggerRegion":"nam5","eventType":"google.cloud.firestore.document.v1.updated","eventFilters":[{"attribute":"database","value":"(default)"},{"attribute":"namespace","value":"(default)"},{"attribute":"document","value":"proposals/{proposalId}","operator":"match-path-pattern"}],"pubsubTopic":"projects/proposal-management-1d4ec/topics/eventarc-nam5-onproposalupdate-425301-045","serviceAccountEmail":"424258487010-compute@developer.gserviceaccount.com","retryPolicy":"RETRY_POLICY_DO_NOT_RETRY"},"state":"ACTIVE","updateTime":"2026-04-15T16:44:18.335861212Z","labels":{"deployment-tool":"cli-firebase","firebase-functions-hash":"498f58f378ef37aca196773ffb7e1d6ec6a95ab2"},"environment":"GEN_2","url":"https://us-central1-proposal-management-1d4ec.cloudfunctions.net/onProposalUpdate","createTime":"2026-04-15T16:42:48.070171628Z","satisfiesPzi":true}]}
+[debug] [2026-04-15T17:04:10.041Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:10.041Z] Checked if tokens are valid: true, expires at: 1776276224452
+[debug] [2026-04-15T17:04:10.041Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/proposal-management-1d4ec/databases/(default) [none]

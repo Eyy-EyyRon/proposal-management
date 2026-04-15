@@ -2,6 +2,7 @@
 
 import { Sidebar } from "@/components/sidebar";
 import { AuthGuard } from "@/components/auth-guard";
+import { CommandPalette } from "@/components/command-palette";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -11,6 +12,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="pl-60">
           {children}
         </div>
+        <CommandPalette />
       </div>
     </AuthGuard>
   );

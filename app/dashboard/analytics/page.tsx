@@ -13,6 +13,18 @@ import {
   BarChart3,
   Loader2,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 import { useAuth } from "@/contexts/auth-context";
 import { getUserProposals, type Proposal } from "@/lib/firestore";
 import { exportProposalsCsv, exportProposalsJson } from "@/lib/export-utils";
@@ -104,7 +116,13 @@ export default function AnalyticsPage() {
     return buckets;
   }, [filtered, rangeMs]);
 
-  const maxSent = Math.max(...timeline.map((d) => d.sent), 1);
+  // ── Status distribution (donut) ─────────────────────
+  const statusDist = useMemo(() => [
+    { name: "Sent",     value: filtered.filter((p) => p.status === "sent").length,     color: "#94a3b8" },
+    { name: "Viewed",   value: viewedCount - acceptedCount - rejectedCount,             color: "#38bdf8" },
+    { name: "Accepted", value: acceptedCount,                                           color: "#34d399" },
+    { name: "Rejected", value: rejectedCount,                                           color: "#fb7185" },
+  ].filter((d) => d.value > 0), [filtered, viewedCount, acceptedCount, rejectedCount]);
 
   // ── Template performance ──────────────────────────────
   const templatePerf = useMemo(() => {
@@ -181,74 +199,148 @@ export default function AnalyticsPage() {
               <StatCard label="Avg. Time to Sign" value={avgSign}                   icon={Clock}       accent="indigo" />
             </section>
 
-            {/* Funnel + Activity Chart */}
+            {/* Charts Row: Funnel + Donut */}
             <div className="grid gap-5 lg:grid-cols-2">
-              {/* Funnel */}
+              {/* Sales Funnel */}
               <div className="rounded-xl border border-slate-200/80 bg-white">
                 <div className="flex items-center justify-between px-5 py-4">
-                  <h3 className="text-sm font-semibold text-slate-900">Conversion Funnel</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">Sales Funnel</h3>
                   <span className="text-[12px] text-slate-400">Last {dateOptions.find((d) => d.value === dateRange)?.label}</span>
                 </div>
                 <div className="px-5 pb-5">
-                  <div className="space-y-2">
-                    {funnel.map((step, i) => (
-                      <div key={step.stage}>
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="text-[13px] font-medium text-slate-700">{step.stage}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[13px] font-semibold text-slate-900">{step.count}</span>
-                            <span className="text-[11px] text-slate-400">{step.pct}%</span>
+                  <div className="space-y-1">
+                    {funnel.map((step, i) => {
+                      const widthPct = Math.max(step.pct, 8);
+                      const convRate = i > 0 && funnel[i - 1].count > 0
+                        ? ((step.count / funnel[i - 1].count) * 100).toFixed(0)
+                        : null;
+                      return (
+                        <div key={step.stage}>
+                          {i > 0 && (
+                            <div className="flex items-center justify-center gap-1 py-1">
+                              <ArrowDownRight className="h-3 w-3 text-slate-300" />
+                              <span className="text-[10px] font-medium text-slate-400">{convRate}%</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <div
+                                className={`${step.color} flex items-center justify-between rounded-lg px-3 py-2.5 transition-all duration-500`}
+                                style={{ width: `${widthPct}%`, minWidth: "120px" }}
+                              >
+                                <span className="text-[12px] font-semibold text-slate-700">{step.stage}</span>
+                                <span className="text-[12px] font-bold text-slate-800">{step.count}</span>
+                              </div>
+                            </div>
+                            <span className="w-12 text-right text-[11px] font-medium text-slate-400">{step.pct}%</span>
                           </div>
                         </div>
-                        <div className="h-2 w-full rounded-full bg-slate-100">
-                          <div className={`h-2 rounded-full ${step.color} transition-all duration-500`} style={{ width: `${step.pct}%` }} />
-                        </div>
-                        {i < funnel.length - 1 && (
-                          <div className="my-1 flex justify-center">
-                            <ArrowDownRight className="h-3 w-3 text-slate-300" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
 
-              {/* Activity Chart */}
+              {/* Status Distribution Donut */}
               <div className="rounded-xl border border-slate-200/80 bg-white">
                 <div className="flex items-center justify-between px-5 py-4">
-                  <h3 className="text-sm font-semibold text-slate-900">Daily Activity</h3>
-                  <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                      <span className="h-2 w-2 rounded-full bg-slate-300" /> Sent
-                    </span>
-                    <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400" /> Accepted
-                    </span>
-                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900">Status Distribution</h3>
                 </div>
-                <div className="px-5 pb-5">
-                  {timeline.length === 0 ? (
-                    <p className="py-10 text-center text-[13px] text-slate-400">No data for this period</p>
+                <div className="flex items-center justify-center px-5 pb-5">
+                  {statusDist.length === 0 ? (
+                    <p className="py-10 text-[13px] text-slate-400">No data</p>
                   ) : (
-                    <div className="flex items-end gap-1.5" style={{ height: 140 }}>
-                      {timeline.map((day) => {
-                        const sentH = (day.sent / maxSent) * 100;
-                        const accH = (day.accepted / maxSent) * 100;
-                        const weekday = new Date(day.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" });
-                        return (
-                          <div key={day.date} className="group flex flex-1 flex-col items-center gap-1">
-                            <div className="relative flex w-full items-end justify-center gap-0.5" style={{ height: 110 }}>
-                              <div className="w-2.5 rounded-t bg-slate-200 transition-all group-hover:bg-slate-300" style={{ height: `${sentH}%` }} title={`${day.sent} sent`} />
-                              <div className="w-2.5 rounded-t bg-emerald-300 transition-all group-hover:bg-emerald-400" style={{ height: `${accH}%` }} title={`${day.accepted} accepted`} />
-                            </div>
-                            <span className="text-[10px] text-slate-400">{weekday}</span>
+                    <div className="flex items-center gap-6">
+                      <div style={{ width: 180, height: 180 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={statusDist}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={80}
+                              paddingAngle={3}
+                              dataKey="value"
+                              strokeWidth={0}
+                            >
+                              {statusDist.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="space-y-2">
+                        {statusDist.map((d) => (
+                          <div key={d.name} className="flex items-center gap-2">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-[12px] text-slate-600">{d.name}</span>
+                            <span className="ml-auto text-[12px] font-semibold text-slate-800">{d.value}</span>
                           </div>
-                        );
-                      })}
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* Pipeline Area Chart */}
+            <div className="rounded-xl border border-slate-200/80 bg-white">
+              <div className="flex items-center justify-between px-5 py-4">
+                <h3 className="text-sm font-semibold text-slate-900">Pipeline Activity</h3>
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-indigo-300" /> Sent
+                  </span>
+                  <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" /> Accepted
+                  </span>
+                </div>
+              </div>
+              <div className="px-2 pb-4" style={{ height: 240 }}>
+                {timeline.length === 0 ? (
+                  <p className="flex h-full items-center justify-center text-[13px] text-slate-400">No data for this period</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={timeline} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradSent" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="gradAcc" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        tick={{ fontSize: 11, fill: "#94a3b8" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "#94a3b8" }}
+                        axisLine={false}
+                        tickLine={false}
+                        allowDecimals={false}
+                      />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+                        labelFormatter={(d) => new Date(String(d) + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                      />
+                      <Area type="monotone" dataKey="sent" stroke="#818cf8" fill="url(#gradSent)" strokeWidth={2} dot={false} />
+                      <Area type="monotone" dataKey="accepted" stroke="#34d399" fill="url(#gradAcc)" strokeWidth={2} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
 

@@ -9,8 +9,9 @@ import {
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { StatusBadge } from "@/components/status-badge";
+import { EmptyState } from "@/components/empty-state";
 import { useAuth } from "@/contexts/auth-context";
-import { getUserProposals, type Proposal } from "@/lib/firestore";
+import { subscribeToProposals, type Proposal } from "@/lib/firestore";
 import {
   subscribeToNotifications,
   type AppNotification,
@@ -59,16 +60,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await getUserProposals(user.uid);
-        if (!cancelled) setProposals(data);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+    const unsub = subscribeToProposals(user.uid, (data) => {
+      setProposals(data);
+      setLoading(false);
+    });
+    return unsub;
   }, [user]);
 
   useEffect(() => {
@@ -144,9 +140,15 @@ export default function DashboardPage() {
                   </Link>
                 </div>
                 {recentProposals.length === 0 ? (
-                  <div className="flex flex-col items-center py-14 text-center">
-                    <FileText className="h-8 w-8 text-slate-200" />
-                    <p className="mt-3 text-[13px] text-slate-400">No proposals yet</p>
+                  <div className="px-5 pb-5">
+                    <EmptyState
+                      icon={FileText}
+                      title="No proposals yet"
+                      description="Send your first proposal to a client. Their activity will appear here in real-time."
+                      actionLabel="Create proposal"
+                      actionHref="/dashboard/create-proposal"
+                      gradient="from-indigo-500/5 via-violet-500/5 to-sky-500/5"
+                    />
                   </div>
                 ) : (
                   <div className="overflow-x-auto">

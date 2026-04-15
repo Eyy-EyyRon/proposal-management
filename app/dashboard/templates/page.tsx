@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Plus, Upload, Link as LinkIcon, Search, Trash2, Loader2 } from "lucide-react";
+import { FileText, Plus, Upload, Link as LinkIcon, Search, Trash2, Loader2, LayoutTemplate } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
 import { getUserTemplates, deleteTemplate, type Template } from "@/lib/firestore";
@@ -81,24 +82,13 @@ export default function TemplatesPage() {
             <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
           </div>
         ) : templates.length === 0 ? (
-          <div className="rounded-xl border border-slate-200/80 bg-white">
-            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
-                <FileText className="h-5 w-5 text-slate-400" />
-              </div>
-              <p className="mt-4 text-sm font-semibold text-slate-800">No templates yet</p>
-              <p className="mt-1 max-w-[260px] text-[13px] leading-relaxed text-slate-500">
-                Create your first template to start sending proposals.
-              </p>
-              <Link
-                href="/dashboard/templates/new"
-                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Create template
-              </Link>
-            </div>
-          </div>
+          <EmptyState
+            icon={LayoutTemplate}
+            title="No templates yet"
+            description="Create your first reusable template with dynamic fields to start sending polished proposals."
+            actionLabel="Create template"
+            actionHref="/dashboard/templates/new"
+          />
         ) : (
           <div className="rounded-xl border border-slate-200/80 bg-white">
             {/* Toolbar */}

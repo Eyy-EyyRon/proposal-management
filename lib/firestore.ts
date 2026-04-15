@@ -7,6 +7,7 @@ import {
   getDocs,
   deleteDoc,
   updateDoc,
+  onSnapshot,
   query,
   where,
   orderBy,
@@ -85,6 +86,16 @@ export async function getTemplate(templateId: string): Promise<Template | null> 
   return { id: snap.id, ...snap.data() } as Template;
 }
 
+export async function updateTemplate(
+  templateId: string,
+  data: Partial<Pick<Template, "fileUrl" | "filePath" | "name" | "description">>
+): Promise<void> {
+  await updateDoc(doc(db, "templates", templateId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function deleteTemplate(templateId: string): Promise<void> {
   await deleteDoc(doc(db, "templates", templateId));
 }
@@ -157,6 +168,22 @@ export async function getUserProposals(userId: string): Promise<Proposal[]> {
     id: d.id,
     ...d.data(),
   })) as Proposal[];
+}
+
+export function subscribeToProposals(
+  userId: string,
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("userId", "==", userId),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
+    );
+  });
 }
 
 export async function getProposal(proposalId: string): Promise<Proposal | null> {
