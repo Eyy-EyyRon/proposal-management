@@ -91,7 +91,7 @@ export async function deleteTemplate(templateId: string): Promise<void> {
 
 // ─── PROPOSAL TYPES ─────────────────────────────────────────
 
-export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected";
+export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "archived";
 
 export interface Proposal {
   id: string;
@@ -198,6 +198,14 @@ export async function acceptProposal(
 export async function rejectProposal(proposalId: string): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
     status: "rejected",
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Archive proposal (soft-delete) */
+export async function archiveProposal(proposalId: string): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "archived",
     updatedAt: serverTimestamp(),
   });
 }

@@ -12,6 +12,7 @@ import {
 } from "@/lib/firestore";
 import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
+import { exportProposalPdf } from "@/lib/export-utils";
 
 type SignatureMode = "type" | "upload";
 type ViewState = "loading" | "not-found" | "document" | "accepted" | "rejected";
@@ -25,6 +26,8 @@ export default function ProposalPortalPage() {
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [documentHtml, setDocumentHtml] = useState<string>("");
   const [renderError, setRenderError] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const documentRef = useRef<HTMLDivElement>(null);
 
   // Signature
   const [signatureMode, setSignatureMode] = useState<SignatureMode>("type");
@@ -249,13 +252,37 @@ export default function ProposalPortalPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => window.print()}
-            className="hidden items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50 sm:inline-flex"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Print
-          </button>
+          <div className="hidden items-center gap-2 sm:flex">
+            <button
+              onClick={async () => {
+                if (!documentRef.current || !proposal) return;
+                setPdfLoading(true);
+                try {
+                  await exportProposalPdf(
+                    documentRef.current,
+                    `proposal-${proposal.clientName.replace(/\s+/g, "-").toLowerCase()}.pdf`
+                  );
+                } finally {
+                  setPdfLoading(false);
+                }
+              }}
+              disabled={pdfLoading || !documentHtml}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-violet-700 disabled:opacity-50"
+            >
+              {pdfLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              Download PDF
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
+            >
+              Print
+            </button>
+          </div>
         </div>
       </header>
 
@@ -265,7 +292,7 @@ export default function ProposalPortalPage() {
 
           {/* ── Document Panel ──────────────────────────────── */}
           <section>
-            <div className="rounded-3xl border border-slate-200/60 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl">
+            <div ref={documentRef} className="rounded-3xl border border-slate-200/60 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl">
               <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-4">
                 <Sparkles className="h-4 w-4 text-violet-500" />
                 <h2 className="text-[13px] font-semibold text-slate-700">Proposal Document</h2>

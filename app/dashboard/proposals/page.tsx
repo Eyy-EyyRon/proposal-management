@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2 } from "lucide-react";
+import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Archive, Download } from "lucide-react";
 import { StatusBadge, type ProposalStatus as BadgeStatus } from "@/components/status-badge";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth } from "@/contexts/auth-context";
-import { getUserProposals, type Proposal } from "@/lib/firestore";
+import { getUserProposals, archiveProposal, type Proposal } from "@/lib/firestore";
+import { exportProposalsCsv, exportProposalsJson } from "@/lib/export-utils";
 
-type StatusFilter = "all" | "sent" | "viewed" | "accepted" | "rejected";
+type StatusFilter = "all" | "sent" | "viewed" | "accepted" | "rejected" | "archived";
 
 function formatTs(ts: { seconds: number } | null): string {
   if (!ts) return "";
@@ -26,6 +27,7 @@ function toBadgeStatus(s: string): BadgeStatus {
     viewed: "Viewed",
     accepted: "Accepted",
     rejected: "Rejected",
+    archived: "Archived",
   };
   return map[s] ?? "Sent";
 }
@@ -54,6 +56,7 @@ export default function ProposalsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -71,12 +74,14 @@ export default function ProposalsPage() {
     return () => { cancelled = true; };
   }, [user]);
 
+  const active = proposals.filter(p => p.status !== "archived");
   const counts = {
-    total: proposals.length,
-    sent: proposals.filter(p => p.status === "sent").length,
-    viewed: proposals.filter(p => p.status === "viewed").length,
-    accepted: proposals.filter(p => p.status === "accepted").length,
-    rejected: proposals.filter(p => p.status === "rejected").length,
+    total: active.length,
+    sent: active.filter(p => p.status === "sent").length,
+    viewed: active.filter(p => p.status === "viewed").length,
+    accepted: active.filter(p => p.status === "accepted").length,
+    rejected: active.filter(p => p.status === "rejected").length,
+    archived: proposals.filter(p => p.status === "archived").length,
   };
 
   const tabs: { key: StatusFilter; label: string; count: number }[] = [
@@ -85,6 +90,7 @@ export default function ProposalsPage() {
     { key: "viewed",   label: "Viewed",   count: counts.viewed },
     { key: "accepted", label: "Accepted", count: counts.accepted },
     { key: "rejected", label: "Rejected", count: counts.rejected },
+    { key: "archived", label: "Archived", count: counts.archived },
   ];
 
   const filteredProposals = proposals.filter(proposal => {
@@ -93,9 +99,15 @@ export default function ProposalsPage() {
       proposal.clientName.toLowerCase().includes(q) ||
       proposal.clientEmail.toLowerCase().includes(q) ||
       proposal.templateName.toLowerCase().includes(q);
-    const matchesStatus = statusFilter === "all" || proposal.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    if (statusFilter === "all") return matchesSearch && proposal.status !== "archived";
+    if (statusFilter === "archived") return matchesSearch && proposal.status === "archived";
+    return matchesSearch && proposal.status === statusFilter;
   });
+
+  const handleArchive = async (proposalId: string) => {
+    await archiveProposal(proposalId);
+    setProposals((prev) => prev.map((p) => p.id === proposalId ? { ...p, status: "archived" as const } : p));
+  };
 
   const handleCopyLink = async (proposalId: string) => {
     const url = `${window.location.origin}/p/${proposalId}`;
@@ -119,13 +131,30 @@ export default function ProposalsPage() {
               Track and manage all client proposals.
             </p>
           </div>
-          <Link
-            href="/dashboard/create-proposal"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
-          >
-            <FilePlus className="h-3.5 w-3.5" />
-            New proposal
-          </Link>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setExportOpen(!exportOpen)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
+              {exportOpen && (
+                <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                  <button onClick={() => { exportProposalsCsv(proposals); setExportOpen(false); }} className="w-full px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">Export CSV</button>
+                  <button onClick={() => { exportProposalsJson(proposals); setExportOpen(false); }} className="w-full px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">Export JSON</button>
+                </div>
+              )}
+            </div>
+            <Link
+              href="/dashboard/create-proposal"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
+            >
+              <FilePlus className="h-3.5 w-3.5" />
+              New proposal
+            </Link>
+          </div>
         </div>
 
         {/* Stats */}
@@ -257,17 +286,28 @@ export default function ProposalsPage() {
                           }
                         </td>
                         <td className="px-3 py-3">
-                          <button
-                            onClick={() => handleCopyLink(proposal.id)}
-                            title="Copy shareable link"
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 opacity-0 transition-all group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-600"
-                          >
-                            {copiedId === proposal.id ? (
-                              <Check className="h-4 w-4 text-emerald-500" />
-                            ) : (
-                              <Copy className="h-4 w-4" />
+                          <div className="flex items-center gap-0.5 opacity-0 transition-all group-hover:opacity-100">
+                            <button
+                              onClick={() => handleCopyLink(proposal.id)}
+                              title="Copy shareable link"
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                            >
+                              {copiedId === proposal.id ? (
+                                <Check className="h-4 w-4 text-emerald-500" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </button>
+                            {proposal.status !== "archived" && (
+                              <button
+                                onClick={() => handleArchive(proposal.id)}
+                                title="Archive proposal"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-amber-50 hover:text-amber-600"
+                              >
+                                <Archive className="h-4 w-4" />
+                              </button>
                             )}
-                          </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
