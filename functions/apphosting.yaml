@@ -1,0 +1,19 @@
+# apphosting.yaml
+kind: "AppStack"
+schemaVersion: "v1"
+
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyCrabh-jm2c9IIXGJ6SIwhH8XAVq2StYqI
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: proposal-management-1d4ec.firebaseapp.com
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: proposal-management-1d4ec
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: proposal-management-1d4ec.firebasestorage.app
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "424258487010"
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:424258487010:web:8a7cb4f252b856a77354bb
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: G-1QSK0WSHHE
