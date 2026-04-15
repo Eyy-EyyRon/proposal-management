@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// 1. Tell Next.js this route must be handled at runtime, not build time
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    // 2. Initialize Resend ONLY when a request actually hits this function
+    const apiKey = process.env.RESEND_API_KEY;
+    
+    if (!apiKey) {
+      console.error("Build/Runtime Error: RESEND_API_KEY is missing.");
+      return NextResponse.json({ error: "Email service not configured" }, { status: 500 });
+    }
+
+    const resend = new Resend(apiKey);
+
     const body = await req.json();
     const {
       to,
@@ -46,7 +57,6 @@ export async function POST(req: NextRequest) {
     <tr>
       <td align="center">
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;">
-          <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);padding:32px 40px;text-align:center;">
               ${companyLogoUrl
@@ -56,7 +66,6 @@ export async function POST(req: NextRequest) {
             </td>
           </tr>
 
-          <!-- Body -->
           <tr>
             <td style="padding:40px;">
               <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0f172a;line-height:1.3;">
@@ -70,7 +79,6 @@ export async function POST(req: NextRequest) {
                 Please review the proposal and sign it if you agree with the terms.
               </p>
 
-              <!-- CTA Button -->
               <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
                 <tr>
                   <td style="border-radius:12px;background:linear-gradient(135deg,#0f172a 0%,#334155 100%);">
@@ -88,7 +96,6 @@ export async function POST(req: NextRequest) {
             </td>
           </tr>
 
-          <!-- Signature -->
           ${emailSignature ? `
           <tr>
             <td style="padding:0 40px 32px;">
@@ -97,7 +104,6 @@ export async function POST(req: NextRequest) {
           </tr>
           ` : ""}
 
-          <!-- Footer -->
           <tr>
             <td style="background-color:#f8fafc;padding:20px 40px;text-align:center;border-top:1px solid #f1f5f9;">
               <p style="margin:0;font-size:12px;color:#94a3b8;">
@@ -112,7 +118,7 @@ export async function POST(req: NextRequest) {
 </body>
 </html>`.trim();
 
-    const fromAddress = process.env.RESEND_FROM_EMAIL || "proposals@resend.dev";
+    const fromAddress = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 
     const { error } = await resend.emails.send({
       from: `${displayCompany} <${fromAddress}>`,
