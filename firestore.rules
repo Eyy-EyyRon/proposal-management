@@ -53,6 +53,8 @@ service cloud.firestore {
           // Immutable fields cannot be tampered with
           && request.resource.data.userId == resource.data.userId
           && request.resource.data.templateId == resource.data.templateId
+          && request.resource.data.templateFileUrl == resource.data.templateFileUrl
+          && request.resource.data.templateGdocUrl == resource.data.templateGdocUrl
           && request.resource.data.clientName == resource.data.clientName
           && request.resource.data.clientEmail == resource.data.clientEmail
           && request.resource.data.createdAt == resource.data.createdAt

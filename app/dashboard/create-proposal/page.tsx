@@ -63,6 +63,8 @@ export default function CreateProposalPage() {
         userId: user.uid,
         templateId: data.templateId,
         templateName: template?.name ?? "Unknown",
+        templateFileUrl: template?.fileUrl ?? null,
+        templateGdocUrl: template?.gdocUrl ?? null,
         clientName,
         clientEmail,
         fieldValues: data.fieldValues,

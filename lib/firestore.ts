@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   deleteDoc,
+  updateDoc,
   query,
   where,
   orderBy,
@@ -97,6 +98,8 @@ export interface Proposal {
   userId: string;
   templateId: string;
   templateName: string;
+  templateFileUrl: string | null;
+  templateGdocUrl: string | null;
   clientName: string;
   clientEmail: string;
   fieldValues: Record<string, string>;
@@ -117,6 +120,8 @@ export async function createProposal(
     userId: string;
     templateId: string;
     templateName: string;
+    templateFileUrl?: string | null;
+    templateGdocUrl?: string | null;
     clientName: string;
     clientEmail: string;
     fieldValues: Record<string, string>;
@@ -126,6 +131,8 @@ export async function createProposal(
     userId: data.userId,
     templateId: data.templateId,
     templateName: data.templateName,
+    templateFileUrl: data.templateFileUrl ?? null,
+    templateGdocUrl: data.templateGdocUrl ?? null,
     clientName: data.clientName,
     clientEmail: data.clientEmail,
     fieldValues: data.fieldValues,
@@ -156,4 +163,41 @@ export async function getProposal(proposalId: string): Promise<Proposal | null> 
   const snap = await getDoc(doc(db, "proposals", proposalId));
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() } as Proposal;
+}
+
+/** Mark proposal as "viewed" + set viewedAt (only if still "sent") */
+export async function markProposalViewed(proposalId: string): Promise<void> {
+  const ref = doc(db, "proposals", proposalId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  if (data.status !== "sent") return; // only upgrade from sent → viewed
+  await updateDoc(ref, {
+    status: "viewed",
+    viewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Accept proposal: set status, signature data, signedAt */
+export async function acceptProposal(
+  proposalId: string,
+  signatureType: "draw" | "upload",
+  signatureUrl: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "accepted",
+    signatureType,
+    signatureUrl,
+    signedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Reject proposal */
+export async function rejectProposal(proposalId: string): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "rejected",
+    updatedAt: serverTimestamp(),
+  });
 }
