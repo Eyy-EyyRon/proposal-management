@@ -107,7 +107,7 @@ export default function DashboardPage() {
             </Link>
             <Link
               href="/dashboard/create-proposal"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#780116] px-3 py-2 text-[13px] font-medium text-white transition hover:bg-[#C32F27]"
             >
               <FilePlus className="h-3.5 w-3.5" />
               New proposal

@@ -47,7 +47,7 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-slate-200/60 bg-white">
       {/* Brand */}
       <div className="flex h-14 shrink-0 items-center gap-2.5 px-5">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900">
+        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#780116]">
           <FileText className="h-3.5 w-3.5 text-white" />
         </div>
         <span className="text-[14px] font-semibold tracking-tight text-slate-900">ProposalMS</span>
@@ -66,18 +66,18 @@ export function Sidebar() {
               href={item.href}
               className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150 ${
                 active
-                  ? "bg-slate-100 text-slate-900"
+                  ? "bg-[#780116]/10 text-[#780116]"
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
               }`}
             >
               <item.icon
                 className={`h-4 w-4 shrink-0 ${
-                  active ? "text-slate-700" : "text-slate-400"
+                  active ? "text-[#780116]" : "text-slate-400"
                 }`}
               />
               {item.label}
               {active && (
-                <ChevronRight className="ml-auto h-3 w-3 text-slate-400" />
+                <ChevronRight className="ml-auto h-3 w-3 text-[#780116]/40" />
               )}
             </Link>
           );
@@ -86,7 +86,7 @@ export function Sidebar() {
         <div className="mt-5 border-t border-slate-100 pt-4">
           <Link
             href="/dashboard/create-proposal"
-            className="flex items-center gap-2.5 rounded-lg bg-slate-900 px-2.5 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
+            className="flex items-center gap-2.5 rounded-lg bg-[#780116] px-2.5 py-2 text-[13px] font-medium text-white transition hover:bg-[#C32F27]"
           >
             <FilePlus className="h-4 w-4 shrink-0" />
             Create Proposal
