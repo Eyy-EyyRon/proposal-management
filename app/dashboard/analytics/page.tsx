@@ -12,6 +12,7 @@ import {
   ArrowDownRight,
   BarChart3,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -47,6 +48,8 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState("30d");
   const [exportOpen, setExportOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -55,12 +58,17 @@ export default function AnalyticsPage() {
       try {
         const data = await getUserProposals(user.uid);
         if (!cancelled) setProposals(data);
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : "Failed to load data";
+          setError(msg);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, retryCount]);
 
   const rangeMs = dateOptions.find((d) => d.value === dateRange)?.ms ?? 30 * 86_400_000;
   const cutoff = Date.now() - rangeMs;
@@ -186,8 +194,29 @@ export default function AnalyticsPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="flex flex-col items-center justify-center gap-3 py-20">
             <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            <p className="text-[13px] text-slate-400">Loading analytics…</p>
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center gap-4 py-20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+            </div>
+            <div className="text-center">
+              <p className="text-[14px] font-semibold text-slate-800">Unable to load analytics</p>
+              <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-slate-500">
+                {error.includes("index") || error.includes("requires")
+                  ? "Firestore is still building the required indexes. This usually takes a few minutes — please try again shortly."
+                  : error}
+              </p>
+            </div>
+            <button
+              onClick={() => { setError(null); setLoading(true); setRetryCount((c) => c + 1); }}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <>
