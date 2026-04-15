@@ -4,29 +4,39 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ProposalForm } from "@/components/proposal-form";
 import { Topbar } from "@/components/topbar";
-import { ArrowLeft, Check, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, ExternalLink, Loader2, Mail } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { getUserTemplates, createProposal, type Template } from "@/lib/firestore";
+import { getUserTemplates, createProposal, getOrgSettings, type Template, type OrgSettings } from "@/lib/firestore";
 
 export default function CreateProposalPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [lastClientEmail, setLastClientEmail] = useState("");
+  const [lastClientName, setLastClientName] = useState("");
+  const [lastTemplateName, setLastTemplateName] = useState("");
 
-  // Fetch user's templates
+  // Fetch user's templates and org settings
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
       try {
-        const data = await getUserTemplates(user.uid);
-        if (!cancelled) setTemplates(data);
-      } catch (err) {
-        console.error("Failed to load templates:", err);
+        const [data, settings] = await Promise.all([
+          getUserTemplates(user.uid),
+          getOrgSettings(user.uid),
+        ]);
+        if (!cancelled) {
+          setTemplates(data);
+          setOrgSettings(settings);
+        }
       } finally {
         if (!cancelled) setLoadingTemplates(false);
       }
@@ -72,6 +82,9 @@ export default function CreateProposalPage() {
 
       const url = `${window.location.origin}/p/${proposalId}`;
       setShareUrl(url);
+      setLastClientEmail(clientEmail);
+      setLastClientName(clientName);
+      setLastTemplateName(template?.name ?? "");
 
       // Auto-copy to clipboard
       if (navigator.clipboard) {
@@ -132,11 +145,61 @@ export default function CreateProposalPage() {
               </div>
             </div>
 
+            {/* Send via Email */}
+            {lastClientEmail && (
+              <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                <button
+                  onClick={async () => {
+                    setEmailSending(true);
+                    try {
+                      const senderName = profile ? `${profile.firstName} ${profile.lastName}` : "";
+                      const res = await fetch("/api/send-proposal", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          to: lastClientEmail,
+                          clientName: lastClientName,
+                          proposalUrl: shareUrl,
+                          templateName: lastTemplateName,
+                          senderName,
+                          companyName: orgSettings?.companyName || profile?.companyName || "",
+                          emailSignature: orgSettings?.emailSignature || "",
+                          companyLogoUrl: orgSettings?.companyLogoUrl || null,
+                        }),
+                      });
+                      if (res.ok) {
+                        setEmailSent(true);
+                      } else {
+                        const data = await res.json();
+                        setError(data.error || "Failed to send email");
+                      }
+                    } catch {
+                      setError("Failed to send email");
+                    } finally {
+                      setEmailSending(false);
+                    }
+                  }}
+                  disabled={emailSending || emailSent}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {emailSending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : emailSent ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : (
+                    <Mail className="h-3.5 w-3.5" />
+                  )}
+                  {emailSending ? "Sending…" : emailSent ? `Sent to ${lastClientEmail}` : `Send via email to ${lastClientEmail}`}
+                </button>
+              </div>
+            )}
+
             <div className="mt-5 flex justify-center gap-2">
               <button
                 onClick={() => {
                   setShareUrl(null);
                   setCopied(false);
+                  setEmailSent(false);
                 }}
                 className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
               >

@@ -9,6 +9,7 @@ import {
   FilePlus,
   BarChart2,
   Bell,
+  Settings,
   ChevronRight,
   LogOut,
 } from "lucide-react";
@@ -21,6 +22,7 @@ const navItems = [
   { label: "Templates",       href: "/dashboard/templates",       icon: LayoutTemplate },
   { label: "Analytics",       href: "/dashboard/analytics",       icon: BarChart2 },
   { label: "Notifications",   href: "/dashboard/notifications",   icon: Bell },
+  { label: "Settings",        href: "/dashboard/settings",        icon: Settings },
 ];
 
 export function Sidebar() {

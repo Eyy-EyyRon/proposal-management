@@ -251,7 +251,7 @@ export default function AnalyticsPage() {
                     <p className="py-10 text-[13px] text-slate-400">No data</p>
                   ) : (
                     <div className="flex items-center gap-6">
-                      <div style={{ width: 180, height: 180 }}>
+                      <div className="h-[180px] w-[180px] min-h-[180px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -302,11 +302,11 @@ export default function AnalyticsPage() {
                   </span>
                 </div>
               </div>
-              <div className="px-2 pb-4" style={{ height: 240 }}>
+              <div className="px-2 pb-4">
                 {timeline.length === 0 ? (
-                  <p className="flex h-full items-center justify-center text-[13px] text-slate-400">No data for this period</p>
+                  <p className="flex h-[240px] items-center justify-center text-[13px] text-slate-400">No data for this period</p>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height={240}>
                     <AreaChart data={timeline} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="gradSent" x1="0" y1="0" x2="0" y2="1">

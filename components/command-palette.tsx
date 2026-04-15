@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import {
   LayoutDashboard, FileText, LayoutTemplate, BarChart2, Bell,
-  FilePlus, Plus, Search,
+  FilePlus, Plus, Search, Settings,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { getUserProposals, type Proposal } from "@/lib/firestore";
@@ -16,6 +16,7 @@ const navItems = [
   { label: "Templates",     href: "/dashboard/templates",     icon: LayoutTemplate,  group: "Navigation" },
   { label: "Analytics",     href: "/dashboard/analytics",     icon: BarChart2,       group: "Navigation" },
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell,            group: "Navigation" },
+  { label: "Settings",      href: "/dashboard/settings",      icon: Settings,        group: "Navigation" },
 ];
 
 const quickActions = [

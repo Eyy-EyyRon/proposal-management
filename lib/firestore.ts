@@ -100,6 +100,31 @@ export async function deleteTemplate(templateId: string): Promise<void> {
   await deleteDoc(doc(db, "templates", templateId));
 }
 
+// ─── ORGANIZATION SETTINGS ───────────────────────────────────
+
+export interface OrgSettings {
+  companyName: string;
+  companyLogoUrl: string | null;
+  emailSignature: string;
+  updatedAt: Timestamp;
+}
+
+export async function getOrgSettings(userId: string): Promise<OrgSettings | null> {
+  const snap = await getDoc(doc(db, "orgSettings", userId));
+  if (!snap.exists()) return null;
+  return snap.data() as OrgSettings;
+}
+
+export async function saveOrgSettings(
+  userId: string,
+  data: { companyName: string; companyLogoUrl: string | null; emailSignature: string }
+): Promise<void> {
+  await setDoc(doc(db, "orgSettings", userId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
 // ─── PROPOSAL TYPES ─────────────────────────────────────────
 
 export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "archived";
