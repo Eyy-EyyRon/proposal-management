@@ -71,6 +71,7 @@ export default function CreateProposalPage() {
 
       await createProposal(proposalId, {
         userId: user.uid,
+        department: profile?.department ?? "Sales",
         templateId: data.templateId,
         templateName: template?.name ?? "Unknown",
         templateFileUrl: template?.fileUrl ?? null,

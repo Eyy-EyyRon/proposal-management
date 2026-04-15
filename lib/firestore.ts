@@ -35,6 +35,8 @@ export interface Template {
   gdocUrl: string | null;
   dynamicFields: string[];
   fields: TemplateField[];
+  isDeleted: boolean;
+  deletedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -61,6 +63,8 @@ export async function createTemplate(data: {
     gdocUrl: data.gdocUrl ?? null,
     dynamicFields: data.dynamicFields,
     fields: data.fields,
+    isDeleted: false,
+    deletedAt: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -71,6 +75,7 @@ export async function getUserTemplates(userId: string): Promise<Template[]> {
   const q = query(
     collection(db, "templates"),
     where("userId", "==", userId),
+    where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
   const snapshot = await getDocs(q);
@@ -96,8 +101,13 @@ export async function updateTemplate(
   });
 }
 
-export async function deleteTemplate(templateId: string): Promise<void> {
-  await deleteDoc(doc(db, "templates", templateId));
+/** Soft-delete: move template to trash */
+export async function trashTemplate(templateId: string): Promise<void> {
+  await updateDoc(doc(db, "templates", templateId), {
+    isDeleted: true,
+    deletedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // ─── ORGANIZATION SETTINGS ───────────────────────────────────
@@ -132,6 +142,7 @@ export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "arch
 export interface Proposal {
   id: string;
   userId: string;
+  department: string;
   templateId: string;
   templateName: string;
   templateFileUrl: string | null;
@@ -144,6 +155,8 @@ export interface Proposal {
   signatureUrl: string | null;
   signedAt: Timestamp | null;
   viewedAt: Timestamp | null;
+  isDeleted: boolean;
+  deletedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -154,6 +167,7 @@ export async function createProposal(
   proposalId: string,
   data: {
     userId: string;
+    department: string;
     templateId: string;
     templateName: string;
     templateFileUrl?: string | null;
@@ -165,6 +179,7 @@ export async function createProposal(
 ): Promise<void> {
   await setDoc(doc(db, "proposals", proposalId), {
     userId: data.userId,
+    department: data.department,
     templateId: data.templateId,
     templateName: data.templateName,
     templateFileUrl: data.templateFileUrl ?? null,
@@ -177,6 +192,8 @@ export async function createProposal(
     signatureUrl: null,
     signedAt: null,
     viewedAt: null,
+    isDeleted: false,
+    deletedAt: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -186,6 +203,7 @@ export async function getUserProposals(userId: string): Promise<Proposal[]> {
   const q = query(
     collection(db, "proposals"),
     where("userId", "==", userId),
+    where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
   const snapshot = await getDocs(q);
@@ -202,6 +220,7 @@ export function subscribeToProposals(
   const q = query(
     collection(db, "proposals"),
     where("userId", "==", userId),
+    where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
   return onSnapshot(q, (snapshot) => {
@@ -259,5 +278,153 @@ export async function archiveProposal(proposalId: string): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
     status: "archived",
     updatedAt: serverTimestamp(),
+  });
+}
+
+// ─── SOFT-DELETE / TRASH ────────────────────────────────────
+
+/** Move any document (proposal or template) to trash */
+export async function moveToTrash(
+  collectionName: "proposals" | "templates",
+  docId: string
+): Promise<void> {
+  await updateDoc(doc(db, collectionName, docId), {
+    isDeleted: true,
+    deletedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Restore a trashed document */
+export async function restoreFromTrash(
+  collectionName: "proposals" | "templates",
+  docId: string
+): Promise<void> {
+  await updateDoc(doc(db, collectionName, docId), {
+    isDeleted: false,
+    deletedAt: null,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Permanently delete a document (CEO/Admin only) */
+export async function permanentDelete(
+  collectionName: "proposals" | "templates",
+  docId: string
+): Promise<void> {
+  await deleteDoc(doc(db, collectionName, docId));
+}
+
+/** Subscribe to all trashed items across proposals + templates (CEO global) */
+export function subscribeToTrashedProposals(
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("isDeleted", "==", true),
+    orderBy("deletedAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
+    );
+  });
+}
+
+export function subscribeToTrashedTemplates(
+  callback: (templates: Template[]) => void
+): () => void {
+  const q = query(
+    collection(db, "templates"),
+    where("isDeleted", "==", true),
+    orderBy("deletedAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Template[]
+    );
+  });
+}
+
+/** Subscribe to trashed proposals within a user's department */
+export function subscribeToDeptTrashedProposals(
+  department: string,
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("department", "==", department),
+    where("isDeleted", "==", true),
+    orderBy("deletedAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
+    );
+  });
+}
+
+/** Subscribe to trashed templates within a user's scope */
+export function subscribeToUserTrashedTemplates(
+  userId: string,
+  callback: (templates: Template[]) => void
+): () => void {
+  const q = query(
+    collection(db, "templates"),
+    where("userId", "==", userId),
+    where("isDeleted", "==", true),
+    orderBy("deletedAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Template[]
+    );
+  });
+}
+
+// ─── DEPARTMENT-SCOPED QUERIES ──────────────────────────────
+
+/** Get all proposals (CEO global view) — no userId filter */
+export async function getAllProposals(): Promise<Proposal[]> {
+  const q = query(
+    collection(db, "proposals"),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[];
+}
+
+/** Subscribe to all proposals (CEO global view) */
+export function subscribeToAllProposals(
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
+    );
+  });
+}
+
+/** Subscribe to proposals within a specific department */
+export function subscribeToDepartmentProposals(
+  department: string,
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("department", "==", department),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
+    );
   });
 }

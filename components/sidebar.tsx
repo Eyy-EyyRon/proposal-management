@@ -12,16 +12,29 @@ import {
   Settings,
   ChevronRight,
   LogOut,
+  Crown,
+  Users,
+  Trash2,
+  type LucideIcon,
 } from "lucide-react";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, useRole, type UserRole } from "@/contexts/auth-context";
 import { signOut } from "@/lib/auth";
 
-const navItems = [
+interface NavItem {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  minRole?: UserRole;
+}
+
+const navItems: NavItem[] = [
   { label: "Dashboard",       href: "/dashboard",                 icon: LayoutDashboard },
   { label: "Proposals",       href: "/dashboard/proposals",       icon: FileText },
   { label: "Templates",       href: "/dashboard/templates",       icon: LayoutTemplate },
-  { label: "Analytics",       href: "/dashboard/analytics",       icon: BarChart2 },
+  { label: "Analytics",       href: "/dashboard/analytics",       icon: BarChart2,      minRole: "admin" },
+  { label: "Team",            href: "/dashboard/notifications",   icon: Users,           minRole: "admin" },
   { label: "Notifications",   href: "/dashboard/notifications",   icon: Bell },
+  { label: "Trash",           href: "/dashboard/trash",           icon: Trash2 },
   { label: "Settings",        href: "/dashboard/settings",        icon: Settings },
 ];
 
@@ -29,6 +42,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { profile } = useAuth();
+  const { role, isAtLeast, isCeo } = useRole();
 
   const displayName = profile
     ? `${profile.firstName} ${profile.lastName}`
@@ -58,32 +72,34 @@ export function Sidebar() {
         <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
           Menu
         </p>
-        {navItems.map((item) => {
-          const active = pathname === item.href;
-          return (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150 ${
-                active
-                  ? "bg-[#780116]/10 text-[#780116]"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-              }`}
-            >
-              <item.icon
-                className={`h-4 w-4 shrink-0 ${
-                  active ? "text-[#780116]" : "text-slate-400"
+        {navItems
+          .filter((item) => !item.minRole || isAtLeast(item.minRole))
+          .map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150 ${
+                  active
+                    ? "bg-[#780116]/10 text-[#780116]"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                 }`}
-              />
-              {item.label}
-              {active && (
-                <ChevronRight className="ml-auto h-3 w-3 text-[#780116]/40" />
-              )}
-            </Link>
-          );
-        })}
+              >
+                <item.icon
+                  className={`h-4 w-4 shrink-0 ${
+                    active ? "text-[#780116]" : "text-slate-400"
+                  }`}
+                />
+                {item.label}
+                {active && (
+                  <ChevronRight className="ml-auto h-3 w-3 text-[#780116]/40" />
+                )}
+              </Link>
+            );
+          })}
 
-        <div className="mt-5 border-t border-slate-100 pt-4">
+        <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
           <Link
             href="/dashboard/create-proposal"
             className="flex items-center gap-2.5 rounded-lg bg-[#780116] px-2.5 py-2 text-[13px] font-medium text-white transition hover:bg-[#C32F27]"
@@ -91,6 +107,16 @@ export function Sidebar() {
             <FilePlus className="h-4 w-4 shrink-0" />
             Create Proposal
           </Link>
+
+          {isCeo && (
+            <Link
+              href="/ceo-dashboard"
+              className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
+            >
+              <Crown className="h-4 w-4 shrink-0 text-[#780116]" />
+              CEO Dashboard
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -102,7 +128,7 @@ export function Sidebar() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-medium text-slate-800">{displayName}</p>
-            <p className="truncate text-[11px] text-slate-400">{displayEmail}</p>
+            <p className="truncate text-[11px] text-slate-400">{role !== "staff" ? <span className="rounded bg-[#780116]/10 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#780116]">{role}</span> : displayEmail}</p>
           </div>
           <button
             onClick={handleSignOut}

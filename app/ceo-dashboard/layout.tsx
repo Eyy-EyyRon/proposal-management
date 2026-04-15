@@ -1,18 +1,14 @@
 "use client";
 
+import { CeoSidebar } from "@/components/ceo-sidebar";
 import { RoleGuard } from "@/components/role-guard";
-import { Sidebar } from "@/components/sidebar";
 import { CommandPalette } from "@/components/command-palette";
 
-export default function SuperAdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function CeoDashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <RoleGuard minRole="admin">
-      <div className="min-h-screen bg-slate-50 text-slate-900">
-        <Sidebar />
+    <RoleGuard minRole="ceo">
+      <div className="min-h-screen bg-[#fafaf8] text-slate-900">
+        <CeoSidebar />
         <div className="pl-60">
           {children}
         </div>

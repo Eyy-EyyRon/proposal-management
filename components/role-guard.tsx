@@ -2,65 +2,62 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "./auth-guard";
-
-type UserRole = "super-admin" | "admin";
+import { useAuth, useRole, type UserRole } from "@/contexts/auth-context";
+import { ShieldAlert } from "lucide-react";
 
 interface RoleGuardProps {
   children: ReactNode;
-  requiredRole: UserRole;
-  fallback?: ReactNode;
+  minRole: UserRole;
+  redirectTo?: string;
 }
 
-export function RoleGuard({
-  children,
-  requiredRole,
-  fallback,
-}: RoleGuardProps) {
+const ROLE_HOME: Record<UserRole, string> = {
+  staff: "/dashboard",
+  admin: "/dashboard",
+  ceo: "/ceo-dashboard",
+};
+
+export function RoleGuard({ children, minRole, redirectTo }: RoleGuardProps) {
+  const { user, loading } = useAuth();
+  const { role, isAtLeast } = useRole();
   const router = useRouter();
-  const { user } = useAuth();
+  const hasAccess = isAtLeast(minRole);
 
   useEffect(() => {
-    if (!user) return;
-
-    // Role hierarchy: super-admin > admin
-    const hasAccess =
-      requiredRole === "admin"
-        ? user.role === "admin" || user.role === "super-admin"
-        : user.role === "super-admin";
-
+    if (loading) return;
+    if (!user) {
+      router.replace("/");
+      return;
+    }
     if (!hasAccess) {
-      if (user.role === "admin") {
-        // Redirect regular admins to their dashboard
-        router.push("/staff-dashboard");
-      } else {
-        // Unknown role - redirect to forbidden or login
-        router.push("/?error=unauthorized");
-      }
+      router.replace(redirectTo ?? ROLE_HOME[role] ?? "/dashboard");
     }
-  }, [user, requiredRole, router]);
+  }, [user, loading, hasAccess, role, redirectTo, router]);
 
-  if (!user) {
-    return null;
-  }
-
-  // Check role permissions
-  const hasAccess =
-    requiredRole === "admin"
-      ? user.role === "admin" || user.role === "super-admin"
-      : user.role === "super-admin";
-
-  if (!hasAccess) {
-    if (fallback) {
-      return <>{fallback}</>;
-    }
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold text-slate-900">Access Denied</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            You don&apos;t have permission to access this page.
-          </p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
+          <p className="text-sm text-slate-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !hasAccess) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50">
+            <ShieldAlert className="h-6 w-6 text-rose-500" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold text-slate-900">Access Denied</h1>
+            <p className="mt-1 text-[13px] text-slate-500">
+              You don&apos;t have permission to access this page.
+            </p>
+          </div>
         </div>
       </div>
     );

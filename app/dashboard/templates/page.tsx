@@ -6,7 +6,7 @@ import { FileText, Plus, Upload, Link as LinkIcon, Search, Trash2, Loader2, Layo
 import { EmptyState } from "@/components/empty-state";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
-import { getUserTemplates, deleteTemplate, type Template } from "@/lib/firestore";
+import { getUserTemplates, moveToTrash, type Template } from "@/lib/firestore";
 
 export default function TemplatesPage() {
   const { user } = useAuth();
@@ -38,12 +38,12 @@ export default function TemplatesPage() {
   }, [user, retryCount]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this template? This cannot be undone.")) return;
+    if (!confirm("Move this template to trash?")) return;
     try {
-      await deleteTemplate(id);
+      await moveToTrash("templates", id);
       setTemplates((prev) => prev.filter((t) => t.id !== id));
     } catch (err) {
-      console.error("Failed to delete template:", err);
+      console.error("Failed to trash template:", err);
     }
   };
 
