@@ -1,10 +1,10 @@
 export type ProposalStatus = "Sent" | "Viewed" | "Accepted" | "Rejected";
 
 const config: Record<ProposalStatus, { bg: string; text: string; dot: string }> = {
-  Sent:     { bg: "bg-slate-50",    text: "text-slate-600",   dot: "bg-slate-400" },
-  Viewed:   { bg: "bg-sky-50",      text: "text-sky-700",     dot: "bg-sky-500" },
-  Accepted: { bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-500" },
-  Rejected: { bg: "bg-rose-50",     text: "text-rose-700",    dot: "bg-rose-500" },
+  Sent:     { bg: "bg-slate-50",       text: "text-slate-600",   dot: "bg-slate-400" },
+  Viewed:   { bg: "bg-[#DB7C26]/10",  text: "text-[#DB7C26]",   dot: "bg-[#DB7C26]" },
+  Accepted: { bg: "bg-emerald-50",     text: "text-emerald-700", dot: "bg-emerald-500" },
+  Rejected: { bg: "bg-[#C32F27]/10",  text: "text-[#C32F27]",   dot: "bg-[#C32F27]" },
 };
 
 export function StatusBadge({ status }: { status: ProposalStatus }) {

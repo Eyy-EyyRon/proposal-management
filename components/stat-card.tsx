@@ -12,10 +12,10 @@ interface StatCardProps {
 
 export function StatCard({ label, value, icon: Icon, trend, trendUp, accent = "indigo" }: StatCardProps) {
   const accentMap: Record<string, { icon: string; bar: string }> = {
-    indigo: { icon: "bg-indigo-50 text-indigo-600", bar: "bg-indigo-500" },
-    blue:   { icon: "bg-sky-50 text-sky-600",       bar: "bg-sky-500" },
-    green:  { icon: "bg-emerald-50 text-emerald-600", bar: "bg-emerald-500" },
-    red:    { icon: "bg-rose-50 text-rose-600",     bar: "bg-rose-500" },
+    indigo: { icon: "bg-[#780116]/10 text-[#780116]", bar: "bg-[#780116]" },
+    blue:   { icon: "bg-[#DB7C26]/10 text-[#DB7C26]",  bar: "bg-[#DB7C26]" },
+    green:  { icon: "bg-emerald-50 text-emerald-600",   bar: "bg-emerald-500" },
+    red:    { icon: "bg-[#C32F27]/10 text-[#C32F27]",   bar: "bg-[#C32F27]" },
   };
 
   const colors = accentMap[accent] ?? accentMap.indigo;

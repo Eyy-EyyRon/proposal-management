@@ -79,7 +79,7 @@ export function Topbar({ title }: TopbarProps) {
           >
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" />
+              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#C32F27] ring-2 ring-white" />
             )}
           </button>
 
@@ -89,7 +89,7 @@ export function Topbar({ title }: TopbarProps) {
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <p className="text-[13px] font-semibold text-slate-900">Notifications</p>
                 {unreadCount > 0 && (
-                  <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
+                  <span className="rounded-md bg-[#780116]/10 px-1.5 py-0.5 text-[11px] font-medium text-[#780116]">
                     {unreadCount} new
                   </span>
                 )}
@@ -114,7 +114,7 @@ export function Topbar({ title }: TopbarProps) {
                       <p className="mt-0.5 text-[11px] text-slate-400">{n.time}</p>
                     </div>
                     {!n.read && (
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#DB7C26]" />
                     )}
                   </div>
                 ))}
@@ -132,7 +132,7 @@ export function Topbar({ title }: TopbarProps) {
 
         <div className="ml-1 h-5 w-px bg-slate-200" />
 
-        <button className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white transition hover:bg-slate-800">
+        <button className="flex h-8 w-8 items-center justify-center rounded-full bg-[#780116] text-[11px] font-semibold text-white transition hover:bg-[#C32F27]">
           A
         </button>
       </div>
