@@ -1,57 +1,87 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ProposalForm } from "@/components/proposal-form";
 import { Topbar } from "@/components/topbar";
-import { ArrowLeft, Check, Copy, ExternalLink } from "lucide-react";
-
-const mockTemplates = [
-  {
-    id: "1",
-    name: "Standard Service Agreement",
-    sourceType: "docx" as const,
-    fields: [
-      { id: "1", name: "Client Name", type: "text" as const, required: true },
-      { id: "2", name: "Email", type: "email" as const, required: true },
-      { id: "3", name: "Phone", type: "phone" as const, required: false },
-      { id: "4", name: "Company", type: "text" as const, required: true },
-    ],
-  },
-  {
-    id: "2",
-    name: "Project Proposal",
-    sourceType: "gdocs" as const,
-    fields: [
-      { id: "1", name: "Client Name", type: "text" as const, required: true },
-      { id: "2", name: "Email", type: "email" as const, required: true },
-      { id: "3", name: "Project Scope", type: "text" as const, required: true },
-      { id: "4", name: "Budget", type: "text" as const, required: false },
-    ],
-  },
-];
+import { ArrowLeft, Check, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { getUserTemplates, createProposal, type Template } from "@/lib/firestore";
 
 export default function CreateProposalPage() {
+  const { user } = useAuth();
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Fetch user's templates
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getUserTemplates(user.uid);
+        if (!cancelled) setTemplates(data);
+      } catch (err) {
+        console.error("Failed to load templates:", err);
+      } finally {
+        if (!cancelled) setLoadingTemplates(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
   const handleSubmit = async (data: { templateId: string; fieldValues: Record<string, string> }) => {
-    console.log("Creating proposal:", data);
+    if (!user) return;
+    setSubmitting(true);
+    setError(null);
 
-    // Generate a share token (in production, use nanoid or similar)
-    const token = Math.random().toString(36).substring(2, 15);
-    const url = `${window.location.origin}/p/${token}`;
+    try {
+      // Generate UUID v4 as the proposal ID / share token
+      const proposalId = crypto.randomUUID();
 
-    setShareUrl(url);
+      // Find the selected template for metadata
+      const template = templates.find((t) => t.id === data.templateId);
 
-    // TODO: Save to Firestore with status "Sent"
-    // TODO: Generate PDF from template + field values
-    // TODO: Store PDF in Firebase Storage
+      // Derive client name and email from fieldValues
+      const clientName =
+        data.fieldValues[Object.keys(data.fieldValues).find((k) => {
+          const field = template?.fields.find((f) => f.id === k);
+          return field?.name.toLowerCase().includes("name");
+        }) ?? ""] || "Client";
 
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const clientEmail =
+        data.fieldValues[Object.keys(data.fieldValues).find((k) => {
+          const field = template?.fields.find((f) => f.id === k);
+          return field?.type === "email" || field?.name.toLowerCase().includes("email");
+        }) ?? ""] || "";
+
+      await createProposal(proposalId, {
+        userId: user.uid,
+        templateId: data.templateId,
+        templateName: template?.name ?? "Unknown",
+        clientName,
+        clientEmail,
+        fieldValues: data.fieldValues,
+      });
+
+      const url = `${window.location.origin}/p/${proposalId}`;
+      setShareUrl(url);
+
+      // Auto-copy to clipboard
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create proposal";
+      setError(message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -62,6 +92,7 @@ export default function CreateProposalPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ─── Success State ─────────────────────────────────────────
   if (shareUrl) {
     return (
       <main className="flex min-h-screen flex-col">
@@ -123,6 +154,16 @@ export default function CreateProposalPage() {
     );
   }
 
+  // ─── Form State ────────────────────────────────────────────
+
+  // Map Template → ProposalForm template shape
+  const formTemplates = templates.map((t) => ({
+    id: t.id,
+    name: t.name,
+    sourceType: t.type === "docx" ? ("docx" as const) : ("gdocs" as const),
+    fields: t.fields,
+  }));
+
   return (
     <main className="flex min-h-screen flex-col">
       <Topbar title="Create Proposal" />
@@ -145,9 +186,31 @@ export default function CreateProposalPage() {
           </p>
         </div>
 
+        {error && (
+          <div className="max-w-2xl rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+            {error}
+          </div>
+        )}
+
         {/* Form */}
         <div className="max-w-2xl rounded-xl border border-slate-200/80 bg-white p-6">
-          <ProposalForm templates={mockTemplates} onSubmit={handleSubmit} />
+          {loadingTemplates ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            </div>
+          ) : formTemplates.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="text-[13px] font-medium text-slate-700">No templates yet</p>
+              <p className="mt-1 text-[13px] text-slate-500">
+                <Link href="/dashboard/templates/new" className="text-slate-900 underline underline-offset-2">
+                  Create a template
+                </Link>{" "}
+                first, then come back to create a proposal.
+              </p>
+            </div>
+          ) : (
+            <ProposalForm templates={formTemplates} onSubmit={handleSubmit} submitting={submitting} />
+          )}
         </div>
       </div>
     </main>

@@ -1,19 +1,73 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TemplateFormEnhanced } from "@/components/template-form-enhanced";
 import { Topbar } from "@/components/topbar";
 import { ArrowLeft } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { createTemplate } from "@/lib/firestore";
+import { uploadTemplateFile } from "@/lib/storage";
 
 export default function NewTemplatePage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (data: any) => {
-    console.log("Creating template:", data);
-    // TODO: Save to Firestore
-    // TODO: Upload DOCX to Firebase Storage if applicable
-    router.push("/dashboard/templates");
+  const handleSubmit = async (data: {
+    name: string;
+    sourceType: "docx" | "gdocs";
+    sourceValue: string;
+    fields: { id: string; name: string; type: string; required: boolean }[];
+    file: File | null;
+    extractedPlaceholders: string[];
+  }) => {
+    if (!user) return;
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      let fileUrl: string | null = null;
+      let filePath: string | null = null;
+
+      // 1. Create the Firestore doc first to get the template ID
+      const templateId = await createTemplate({
+        userId: user.uid,
+        name: data.name,
+        type: data.sourceType === "docx" ? "docx" : "gdoc",
+        fileUrl: null,
+        filePath: null,
+        gdocUrl: data.sourceType === "gdocs" ? data.sourceValue : null,
+        dynamicFields: data.extractedPlaceholders,
+        fields: data.fields.map((f) => ({
+          id: f.id,
+          name: f.name,
+          type: f.type as "text" | "email" | "phone" | "date",
+          required: f.required,
+        })),
+      });
+
+      // 2. Upload the .docx file to Storage (if applicable)
+      if (data.sourceType === "docx" && data.file) {
+        const result = await uploadTemplateFile(user.uid, templateId, data.file);
+        fileUrl = result.url;
+        filePath = result.path;
+
+        // 3. Update the template doc with the file URL/path
+        const { doc, updateDoc } = await import("firebase/firestore");
+        const { db } = await import("@/lib/firebase");
+        await updateDoc(doc(db, "templates", templateId), { fileUrl, filePath });
+      }
+
+      router.push("/dashboard/templates");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create template";
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -38,9 +92,15 @@ export default function NewTemplatePage() {
           </p>
         </div>
 
+        {error && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+            {error}
+          </div>
+        )}
+
         {/* Form */}
         <div className="flex-1 rounded-xl border border-slate-200/80 bg-white p-6">
-          <TemplateFormEnhanced onSubmit={handleSubmit} />
+          <TemplateFormEnhanced onSubmit={handleSubmit} submitting={submitting} />
         </div>
       </div>
     </main>
