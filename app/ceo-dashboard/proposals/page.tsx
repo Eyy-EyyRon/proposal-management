@@ -6,8 +6,12 @@ import { Topbar } from "@/components/topbar";
 import { StatusBadge } from "@/components/status-badge";
 import { DepartmentBadge } from "@/components/department-badge";
 import { EmptyState } from "@/components/empty-state";
-import { subscribeToAllProposals, type Proposal } from "@/lib/firestore";
-import { DEPARTMENTS } from "@/contexts/auth-context";
+import {
+  subscribeToAllProposals,
+  subscribeToDepartmentsList,
+  type Proposal,
+  type FirestoreDepartment,
+} from "@/lib/firestore";
 import { FileText, Search, Loader2, ExternalLink } from "lucide-react";
 
 function formatTs(ts: unknown): string {
@@ -28,6 +32,7 @@ function toBadge(s: string) {
 
 export default function CeoProposalsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -38,6 +43,11 @@ export default function CeoProposalsPage() {
       setProposals(data);
       setLoading(false);
     });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToDepartmentsList(setDepartments);
     return unsub;
   }, []);
 
@@ -87,8 +97,8 @@ export default function CeoProposalsPage() {
                   className="rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-[12px] text-slate-600 focus:outline-none"
                 >
                   <option value="all">All departments</option>
-                  {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
                 </select>
                 <select

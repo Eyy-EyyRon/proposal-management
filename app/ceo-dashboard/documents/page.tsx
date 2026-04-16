@@ -5,8 +5,12 @@ import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { DepartmentBadge } from "@/components/department-badge";
 import { EmptyState } from "@/components/empty-state";
-import { DEPARTMENTS } from "@/contexts/auth-context";
-import { subscribeToAllProposals, type Proposal } from "@/lib/firestore";
+import {
+  subscribeToAllProposals,
+  subscribeToDepartmentsList,
+  type Proposal,
+  type FirestoreDepartment,
+} from "@/lib/firestore";
 import { FileCheck2, Search, Loader2, ExternalLink, Shield } from "lucide-react";
 
 function formatTs(ts: unknown): string {
@@ -20,6 +24,7 @@ function formatTs(ts: unknown): string {
 
 export default function CeoDocumentsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
@@ -29,6 +34,11 @@ export default function CeoDocumentsPage() {
       setProposals(data);
       setLoading(false);
     });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToDepartmentsList(setDepartments);
     return unsub;
   }, []);
 
@@ -85,8 +95,8 @@ export default function CeoDocumentsPage() {
                   className="rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-[12px] text-slate-600 focus:outline-none"
                 >
                   <option value="all">All departments</option>
-                  {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
                 </select>
               </div>

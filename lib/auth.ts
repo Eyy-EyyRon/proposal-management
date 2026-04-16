@@ -14,6 +14,7 @@ const googleProvider = new GoogleAuthProvider();
 
 // ─── SIGN UP ─────────────────────────────────────────────────
 // Creates Firebase Auth user + Firestore user profile document.
+// If the Firestore write fails, the Auth user is deleted to prevent orphans.
 export async function signUp(
   email: string,
   password: string,
@@ -22,25 +23,32 @@ export async function signUp(
 ): Promise<UserCredential> {
   const credential = await createUserWithEmailAndPassword(auth, email, password);
 
-  // Create user profile in Firestore (matches /users/{userId} schema)
-  await setDoc(doc(db, "users", credential.user.uid), {
-    email,
-    firstName,
-    lastName,
-    companyName: null,
-    role: "staff",
-    department: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    // Create user profile in Firestore (matches /users/{userId} schema)
+    await setDoc(doc(db, "users", credential.user.uid), {
+      email,
+      firstName,
+      lastName,
+      companyName: null,
+      role: "staff",
+      department: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
-  // Initialize empty analytics doc for this user
-  await setDoc(doc(db, "analytics", credential.user.uid), {
-    totalProposals: 0,
-    statusCounts: { sent: 0, viewed: 0, accepted: 0, rejected: 0 },
-    conversionRate: 0,
-    lastUpdated: serverTimestamp(),
-  });
+    // Initialize empty analytics doc for this user
+    await setDoc(doc(db, "analytics", credential.user.uid), {
+      totalProposals: 0,
+      statusCounts: { sent: 0, viewed: 0, accepted: 0, rejected: 0 },
+      conversionRate: 0,
+      lastUpdated: serverTimestamp(),
+    });
+  } catch (firestoreError) {
+    // Rollback: delete the orphaned Auth user so the email isn't stuck
+    console.error("[signUp] Firestore write failed, deleting orphaned Auth user:", firestoreError);
+    await credential.user.delete();
+    throw firestoreError;
+  }
 
   return credential;
 }
@@ -69,24 +77,30 @@ export async function signInWithGoogle(): Promise<UserCredential> {
     const firstName = parts[0] || "User";
     const lastName = parts.slice(1).join(" ") || "";
 
-    await setDoc(userRef, {
-      email: email ?? "",
-      firstName,
-      lastName,
-      companyName: null,
-      role: "staff",
-      department: null,
-      photoURL: photoURL ?? null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    try {
+      await setDoc(userRef, {
+        email: email ?? "",
+        firstName,
+        lastName,
+        companyName: null,
+        role: "staff",
+        department: null,
+        photoURL: photoURL ?? null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
-    await setDoc(doc(db, "analytics", uid), {
-      totalProposals: 0,
-      statusCounts: { sent: 0, viewed: 0, accepted: 0, rejected: 0 },
-      conversionRate: 0,
-      lastUpdated: serverTimestamp(),
-    });
+      await setDoc(doc(db, "analytics", uid), {
+        totalProposals: 0,
+        statusCounts: { sent: 0, viewed: 0, accepted: 0, rejected: 0 },
+        conversionRate: 0,
+        lastUpdated: serverTimestamp(),
+      });
+    } catch (firestoreError) {
+      console.error("[signInWithGoogle] Firestore write failed, deleting orphaned Auth user:", firestoreError);
+      await credential.user.delete();
+      throw firestoreError;
+    }
   }
 
   return credential;

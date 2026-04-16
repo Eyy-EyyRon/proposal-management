@@ -3,30 +3,38 @@
 import { useEffect, useState, useMemo } from "react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
+import { ChartCard } from "@/components/chart-card";
 import {
-  FileText, Eye, CheckCircle, Clock, Loader2, AlertTriangle, DollarSign,
+  FileText, Eye, CheckCircle, Clock, Loader2, AlertTriangle,
+  DollarSign, Filter,
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend,
 } from "recharts";
-import { DEPARTMENTS } from "@/contexts/auth-context";
-import { subscribeToAllProposals, type Proposal } from "@/lib/firestore";
+import {
+  subscribeToDepartmentsList,
+  subscribeToAllProposals,
+  type Proposal,
+  type FirestoreDepartment,
+} from "@/lib/firestore";
 
 function tsMs(ts: unknown): number {
   if (!ts || typeof ts !== "object") return 0;
   return ((ts as { seconds: number }).seconds ?? 0) * 1000;
 }
 
-const DEPT_COLORS: Record<string, string> = {
-  Sales: "#6366f1", Marketing: "#d946ef", Legal: "#f59e0b",
-  Engineering: "#0ea5e9", Operations: "#10b981", Finance: "#f43f5e",
-};
+const DEPT_PALETTE = [
+  "#6366f1", "#d946ef", "#f59e0b", "#0ea5e9", "#10b981",
+  "#f43f5e", "#8b5cf6", "#14b8a6", "#f97316", "#ec4899",
+];
 
 export default function CeoAnalyticsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDept, setSelectedDept] = useState("all");
 
   useEffect(() => {
     try {
@@ -41,14 +49,25 @@ export default function CeoAnalyticsPage() {
     }
   }, []);
 
-  const active = useMemo(() => proposals.filter((p) => p.status !== "archived"), [proposals]);
+  useEffect(() => {
+    const unsub = subscribeToDepartmentsList(setDepartments);
+    return unsub;
+  }, []);
+
+  // Filter by selected department
+  const active = useMemo(() => {
+    const base = proposals.filter((p) => p.status !== "archived");
+    if (selectedDept === "all") return base;
+    return base.filter((p) => p.department === selectedDept);
+  }, [proposals, selectedDept]);
+
   const totalSent = active.length;
   const viewedCount = active.filter((p) => ["viewed", "accepted", "rejected"].includes(p.status)).length;
   const acceptedCount = active.filter((p) => p.status === "accepted").length;
   const pipelineCount = active.filter((p) => p.status === "sent" || p.status === "viewed").length;
 
   const viewRate = totalSent > 0 ? ((viewedCount / totalSent) * 100) : 0;
-  const acceptRate = totalSent > 0 ? ((acceptedCount / totalSent) * 100) : 0;
+  const closeRate = totalSent > 0 ? ((acceptedCount / totalSent) * 100) : 0;
 
   const avgSign = useMemo(() => {
     const signed = active.filter((p) => p.status === "accepted" && p.signedAt && p.createdAt);
@@ -58,29 +77,43 @@ export default function CeoAnalyticsPage() {
     return avgDays < 1 ? `${Math.round(avgDays * 24)}h` : `${avgDays.toFixed(1)}d`;
   }, [active]);
 
-  // Department comparison data
+  // Department comparison — always show all depts (unfiltered)
   const deptData = useMemo(() => {
-    return DEPARTMENTS.map((dept) => {
-      const deptProposals = active.filter((p) => p.department === dept);
+    const allActive = proposals.filter((p) => p.status !== "archived");
+    return departments.map((dept) => {
+      const dp = allActive.filter((p) => p.department === dept.name);
       return {
-        name: dept,
-        total: deptProposals.length,
-        accepted: deptProposals.filter((p) => p.status === "accepted").length,
-        rejected: deptProposals.filter((p) => p.status === "rejected").length,
-        pending: deptProposals.filter((p) => p.status === "sent" || p.status === "viewed").length,
+        name: dept.name,
+        total: dp.length,
+        accepted: dp.filter((p) => p.status === "accepted").length,
+        rejected: dp.filter((p) => p.status === "rejected").length,
+        pending: dp.filter((p) => p.status === "sent" || p.status === "viewed").length,
       };
     }).filter((d) => d.total > 0);
-  }, [active]);
+  }, [proposals, departments]);
 
-  // Department acceptance rates
-  const deptAcceptRate = useMemo(() => {
-    return DEPARTMENTS.map((dept) => {
-      const deptProposals = active.filter((p) => p.department === dept);
-      const acc = deptProposals.filter((p) => p.status === "accepted").length;
-      const rate = deptProposals.length > 0 ? Math.round((acc / deptProposals.length) * 100) : 0;
-      return { name: dept, rate, fill: DEPT_COLORS[dept] ?? "#94a3b8" };
-    }).filter((d) => d.rate > 0 || deptData.some((dd) => dd.name === d.name));
-  }, [active, deptData]);
+  // Heatmap data: status × department
+  const heatmapData = useMemo(() => {
+    const allActive = proposals.filter((p) => p.status !== "archived");
+    const statuses = ["sent", "viewed", "accepted", "rejected"] as const;
+    return departments.map((dept) => {
+      const dp = allActive.filter((p) => p.department === dept.name);
+      const row: Record<string, string | number> = { name: dept.name };
+      for (const s of statuses) row[s] = dp.filter((p) => p.status === s).length;
+      return row;
+    }).filter((r) => departments.some((d) => d.name === r.name));
+  }, [proposals, departments]);
+
+  // Department close rates
+  const deptCloseRate = useMemo(() => {
+    const allActive = proposals.filter((p) => p.status !== "archived");
+    return departments.map((dept, i) => {
+      const dp = allActive.filter((p) => p.department === dept.name);
+      const acc = dp.filter((p) => p.status === "accepted").length;
+      const rate = dp.length > 0 ? Math.round((acc / dp.length) * 100) : 0;
+      return { name: dept.name, rate, fill: DEPT_PALETTE[i % DEPT_PALETTE.length] };
+    }).filter((d) => deptData.some((dd) => dd.name === d.name));
+  }, [proposals, departments, deptData]);
 
   const statusDist = useMemo(() => [
     { name: "Sent",     value: active.filter((p) => p.status === "sent").length,     color: "#94a3b8" },
@@ -103,14 +136,33 @@ export default function CeoAnalyticsPage() {
     return buckets;
   }, [active]);
 
+  const deptFilter = (
+    <div className="flex items-center gap-2">
+      <Filter className="h-3.5 w-3.5 text-slate-400" />
+      <select
+        value={selectedDept}
+        onChange={(e) => setSelectedDept(e.target.value)}
+        className="rounded-md border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-[12px] text-slate-600 focus:outline-none focus:border-amber-300"
+      >
+        <option value="all">All Departments</option>
+        {departments.map((d) => (
+          <option key={d.id} value={d.name}>{d.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
     <main className="flex min-h-screen flex-col">
       <Topbar title="Global Analytics" />
 
       <div className="flex flex-1 flex-col gap-5 p-6">
-        <div>
-          <h2 className="font-sans text-lg font-semibold text-slate-900">Global Analytics</h2>
-          <p className="mt-0.5 text-[13px] text-slate-500">Cross-department proposal performance and business intelligence.</p>
+        <div className="flex items-end justify-between">
+          <div>
+            <h2 className="font-sans text-lg font-semibold text-slate-900">Global Analytics</h2>
+            <p className="mt-0.5 text-[13px] text-slate-500">Cross-department proposal performance and business intelligence.</p>
+          </div>
+          {deptFilter}
         </div>
 
         {loading ? (
@@ -134,46 +186,58 @@ export default function CeoAnalyticsPage() {
           <>
             {/* Executive KPIs */}
             <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <StatCard label="Total Proposals"    value={totalSent}                   icon={FileText}    accent="indigo" />
-              <StatCard label="Global Pipeline"    value={pipelineCount}               icon={DollarSign}  accent="blue" />
-              <StatCard label="View Rate"          value={`${viewRate.toFixed(1)}%`}   icon={Eye}         accent="blue" />
-              <StatCard label="Acceptance Rate"    value={`${acceptRate.toFixed(1)}%`} icon={CheckCircle} accent="green" />
-              <StatCard label="Avg. Time to Sign"  value={avgSign}                     icon={Clock}       accent="indigo" />
+              <StatCard label="Total Proposals"     value={totalSent}                    icon={FileText}    accent="indigo" />
+              <StatCard label="Total Pipeline"      value={pipelineCount}                icon={DollarSign}  accent="blue" />
+              <StatCard label="View Rate"           value={`${viewRate.toFixed(1)}%`}    icon={Eye}         accent="blue" />
+              <StatCard label="Global Close Rate"   value={`${closeRate.toFixed(1)}%`}   icon={CheckCircle} accent="green" />
+              <StatCard label="Avg. Time to Sign"   value={avgSign}                      icon={Clock}       accent="indigo" />
             </section>
 
-            {/* Department Comparison Bar Chart */}
-            <div className="rounded-xl border border-slate-200/80 bg-white">
-              <div className="flex items-center justify-between px-5 py-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Department Performance</h3>
-                  <p className="text-[12px] text-slate-400">Proposals by department and outcome</p>
-                </div>
-              </div>
-              <div className="px-2 pb-4">
-                {deptData.length === 0 ? (
-                  <p className="py-10 text-center text-[13px] text-slate-400">No department data yet</p>
-                ) : (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={deptData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                      <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
-                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: "#64748b" }} />
-                      <Bar dataKey="accepted" name="Accepted" fill="#34d399" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="pending" name="Pipeline" fill="#818cf8" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="rejected" name="Rejected" fill="#fb7185" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </div>
+            {/* Department Performance Bar Chart */}
+            <ChartCard title="Department Performance" subtitle="Proposals by department and outcome">
+              {deptData.length === 0 ? (
+                <p className="py-10 text-center text-[13px] text-slate-400">No department data yet</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={deptData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: "#64748b" }} />
+                    <Bar dataKey="accepted" name="Accepted" fill="#34d399" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="pending" name="Pipeline" fill="#818cf8" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="rejected" name="Rejected" fill="#fb7185" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
+
+            {/* Proposal Status Heatmap */}
+            <ChartCard title="Proposal Status Heatmap" subtitle="Status distribution across departments">
+              {heatmapData.length === 0 ? (
+                <p className="py-10 text-center text-[13px] text-slate-400">No data</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={heatmapData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} width={90} />
+                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: "#64748b" }} />
+                    <Bar dataKey="sent" name="Sent" fill="#94a3b8" radius={[0, 4, 4, 0]} stackId="stack" />
+                    <Bar dataKey="viewed" name="Viewed" fill="#38bdf8" radius={[0, 0, 0, 0]} stackId="stack" />
+                    <Bar dataKey="accepted" name="Accepted" fill="#34d399" radius={[0, 0, 0, 0]} stackId="stack" />
+                    <Bar dataKey="rejected" name="Rejected" fill="#fb7185" radius={[0, 4, 4, 0]} stackId="stack" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
 
             <div className="grid gap-5 lg:grid-cols-2">
               {/* Donut — Status Distribution */}
-              <div className="rounded-xl border border-slate-200/80 bg-white">
-                <div className="px-5 py-4"><h3 className="text-sm font-semibold text-slate-900">Status Distribution</h3></div>
-                <div className="flex items-center justify-center px-5 pb-5">
+              <ChartCard title="Status Distribution" className="flex flex-col">
+                <div className="flex flex-1 items-center justify-center px-3 pb-3">
                   {statusDist.length === 0 ? (
                     <p className="py-10 text-[13px] text-slate-400">No data</p>
                   ) : (
@@ -200,20 +264,16 @@ export default function CeoAnalyticsPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </ChartCard>
 
-              {/* Department Acceptance Rate */}
-              <div className="rounded-xl border border-slate-200/80 bg-white">
-                <div className="px-5 py-4">
-                  <h3 className="text-sm font-semibold text-slate-900">Acceptance Rate by Department</h3>
-                  <p className="text-[12px] text-slate-400">Percentage of proposals accepted</p>
-                </div>
-                <div className="px-5 pb-5">
-                  {deptAcceptRate.length === 0 ? (
+              {/* Department Close Rate */}
+              <ChartCard title="Close Rate by Department" subtitle="Percentage of proposals accepted">
+                <div className="px-3 pb-1">
+                  {deptCloseRate.length === 0 ? (
                     <p className="py-10 text-center text-[13px] text-slate-400">No data</p>
                   ) : (
                     <div className="space-y-3">
-                      {deptAcceptRate.map((d) => (
+                      {deptCloseRate.map((d) => (
                         <div key={d.name}>
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[12px] font-medium text-slate-600">{d.name}</span>
@@ -227,41 +287,40 @@ export default function CeoAnalyticsPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </ChartCard>
             </div>
 
             {/* Pipeline Timeline */}
-            <div className="rounded-xl border border-slate-200/80 bg-white">
-              <div className="flex items-center justify-between px-5 py-4">
-                <h3 className="text-sm font-semibold text-slate-900">Pipeline Activity (14 days)</h3>
+            <ChartCard
+              title="Pipeline Activity (14 days)"
+              action={
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1 text-[11px] text-slate-400"><span className="h-2 w-2 rounded-full bg-indigo-300" /> Sent</span>
                   <span className="flex items-center gap-1 text-[11px] text-slate-400"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Accepted</span>
                 </div>
-              </div>
-              <div className="px-2 pb-4">
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={timeline} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="ceoGradSent" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="ceoGradAcc" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tickFormatter={(d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} labelFormatter={(d) => new Date(String(d) + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} />
-                    <Area type="monotone" dataKey="sent" stroke="#818cf8" fill="url(#ceoGradSent)" strokeWidth={2} dot={false} />
-                    <Area type="monotone" dataKey="accepted" stroke="#34d399" fill="url(#ceoGradAcc)" strokeWidth={2} dot={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+              }
+            >
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={timeline} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="ceoGradSent" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="ceoGradAcc" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="date" tickFormatter={(d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} labelFormatter={(d) => new Date(String(d) + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} />
+                  <Area type="monotone" dataKey="sent" stroke="#818cf8" fill="url(#ceoGradSent)" strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey="accepted" stroke="#34d399" fill="url(#ceoGradAcc)" strokeWidth={2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartCard>
           </>
         )}
       </div>

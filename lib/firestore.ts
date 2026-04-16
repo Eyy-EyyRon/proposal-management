@@ -11,6 +11,7 @@ import {
   query,
   where,
   orderBy,
+  limit as firestoreLimit,
   serverTimestamp,
   type Timestamp,
 } from "firebase/firestore";
@@ -478,4 +479,48 @@ export async function updateUserDepartment(
     department,
     updatedAt: serverTimestamp(),
   });
+}
+
+// ─── RECENT ACTIVITY (CEO) ─────────────────────────────────
+
+/** Subscribe to the N most recently updated proposals (global pulse) */
+export function subscribeToRecentActivity(
+  count: number,
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("isDeleted", "==", false),
+    orderBy("updatedAt", "desc"),
+    firestoreLimit(count)
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
+    );
+  });
+}
+
+/** Batch-fetch user display names for a set of userIds */
+export async function batchGetUserNames(
+  userIds: string[]
+): Promise<Record<string, string>> {
+  const unique = [...new Set(userIds)];
+  const names: Record<string, string> = {};
+  await Promise.all(
+    unique.map(async (uid) => {
+      try {
+        const snap = await getDoc(doc(db, "users", uid));
+        if (snap.exists()) {
+          const d = snap.data();
+          names[uid] = `${d.firstName ?? ""} ${d.lastName ?? ""}`.trim() || d.email || uid;
+        } else {
+          names[uid] = uid;
+        }
+      } catch {
+        names[uid] = uid;
+      }
+    })
+  );
+  return names;
 }

@@ -80,18 +80,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (firebaseUser) {
-        // Real-time profile listener — detects department changes instantly
-        unsubProfile = onSnapshot(doc(db, "users", firebaseUser.uid), (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            setProfile({
-              ...data,
-              role: data.role || "staff",
-              department: data.department || null,
-            } as UserProfile);
+        // Real-time profile listener — detects role/department changes instantly
+        unsubProfile = onSnapshot(
+          doc(db, "users", firebaseUser.uid),
+          (snap) => {
+            if (snap.exists()) {
+              const data = snap.data();
+              setProfile({
+                ...data,
+                role: data.role || "staff",
+                department: data.department || null,
+              } as UserProfile);
+            }
+            setLoading(false);
+          },
+          (error) => {
+            console.error(
+              `[AuthProvider] onSnapshot error for user ${firebaseUser.uid}:`,
+              error.code ?? "",
+              error.message
+            );
+            if (error.code === "permission-denied") {
+              console.warn(
+                "[AuthProvider] permission-denied — check Firestore rules for /users/{userId}"
+              );
+            }
+            setLoading(false);
           }
-          setLoading(false);
-        });
+        );
       } else {
         setProfile(null);
         setLoading(false);
