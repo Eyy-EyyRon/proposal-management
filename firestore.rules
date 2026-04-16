@@ -190,4 +190,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
   }
+
+  match /proposals/{proposalId} {
+      // (Your existing proposal rules stay here)
+      allow read: if true;
+      allow update: if /* ... existing logic ... */
+      
+      // 🔥 NEW: Allow public chat inside the specific proposal
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if true; // Allows the client portal to post messages
+        // Prevent editing/deleting messages for audit trails
+        allow update, delete: if isSignedIn() && isAdminOrCeo(); 
+      }
+    }
 }
