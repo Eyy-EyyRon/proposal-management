@@ -29,7 +29,7 @@ export async function signUp(
     lastName,
     companyName: null,
     role: "staff",
-    department: "Sales",
+    department: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -75,7 +75,7 @@ export async function signInWithGoogle(): Promise<UserCredential> {
       lastName,
       companyName: null,
       role: "staff",
-      department: "Sales",
+      department: null,
       photoURL: photoURL ?? null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),

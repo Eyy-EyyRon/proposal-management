@@ -1,16 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Settings,
   Bell,
   Shield,
   Palette,
   Save,
+  Building2,
+  Plus,
+  Trash2,
+  Loader2,
 } from "lucide-react";
+import {
+  subscribeToDepartmentsList,
+  createDepartment,
+  deleteDepartment,
+  type FirestoreDepartment,
+} from "@/lib/firestore";
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"general" | "notifications" | "security" | "appearance">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "departments" | "notifications" | "security" | "appearance">("general");
 
   return (
     <div className="flex flex-col gap-6">
@@ -35,6 +45,17 @@ export default function SettingsPage() {
           >
             <Settings className="h-4 w-4" />
             General
+          </button>
+          <button
+            onClick={() => setActiveTab("departments")}
+            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition ${
+              activeTab === "departments"
+                ? "bg-[#800000]/10 text-[#800000]"
+                : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <Building2 className="h-4 w-4" />
+            Departments
           </button>
           <button
             onClick={() => setActiveTab("notifications")}
@@ -119,6 +140,10 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          )}
+
+          {activeTab === "departments" && (
+            <DepartmentManager />
           )}
 
           {activeTab === "notifications" && (
@@ -255,6 +280,124 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── DEPARTMENT MANAGER ─────────────────────────────────────
+function DepartmentManager() {
+  const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = subscribeToDepartmentsList((data) => {
+      setDepartments(data);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const handleAdd = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setAdding(true);
+    try {
+      await createDepartment({ name, description: newDesc.trim() });
+      setNewName("");
+      setNewDesc("");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this department? Users currently in it will need to re-select.")) return;
+    setDeleting(id);
+    try {
+      await deleteDepartment(id);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-[16px] font-semibold text-slate-900">Department Manager</h3>
+        <p className="text-[13px] text-slate-500">Add or remove departments that users can join.</p>
+      </div>
+
+      {/* Add form */}
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+        <div className="flex gap-3">
+          <input
+            type="text"
+            placeholder="Department name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#800000] focus:ring-2 focus:ring-[#800000]/20"
+          />
+          <input
+            type="text"
+            placeholder="Description (optional)"
+            value={newDesc}
+            onChange={(e) => setNewDesc(e.target.value)}
+            className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#800000] focus:ring-2 focus:ring-[#800000]/20"
+          />
+        </div>
+        <button
+          onClick={handleAdd}
+          disabled={!newName.trim() || adding}
+          className="flex w-fit items-center gap-2 rounded-lg bg-[#800000] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660000] disabled:opacity-50"
+        >
+          {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+          Add Department
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        </div>
+      ) : departments.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-300 py-10 text-center">
+          <Building2 className="mx-auto h-6 w-6 text-slate-300" />
+          <p className="mt-2 text-[13px] text-slate-400">No departments yet. Add one above.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {departments.map((dept) => (
+            <div
+              key={dept.id}
+              className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:border-slate-300"
+            >
+              <div>
+                <p className="text-[13px] font-medium text-slate-800">{dept.name}</p>
+                {dept.description && (
+                  <p className="text-[12px] text-slate-400">{dept.description}</p>
+                )}
+              </div>
+              <button
+                onClick={() => handleDelete(dept.id)}
+                disabled={deleting === dept.id}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 disabled:opacity-50"
+                title="Delete department"
+              >
+                {deleting === dept.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 // ─── TYPES ───────────────────────────────────────────────────
@@ -23,7 +23,7 @@ export interface UserProfile {
   lastName: string;
   companyName: string | null;
   role: UserRole;
-  department: Department;
+  department: string | null;
   createdAt: unknown;
   updatedAt: unknown;
 }
@@ -68,28 +68,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubProfile: (() => void) | null = null;
+
+    const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
 
-      if (firebaseUser) {
-        // Fetch Firestore user profile
-        const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (snap.exists()) {
-          const data = snap.data();
-          setProfile({
-            ...data,
-            role: data.role || "staff",
-            department: data.department || "Sales",
-          } as UserProfile);
-        }
-      } else {
-        setProfile(null);
+      // Clean up previous profile listener
+      if (unsubProfile) {
+        unsubProfile();
+        unsubProfile = null;
       }
 
-      setLoading(false);
+      if (firebaseUser) {
+        // Real-time profile listener — detects department changes instantly
+        unsubProfile = onSnapshot(doc(db, "users", firebaseUser.uid), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setProfile({
+              ...data,
+              role: data.role || "staff",
+              department: data.department || null,
+            } as UserProfile);
+          }
+          setLoading(false);
+        });
+      } else {
+        setProfile(null);
+        setLoading(false);
+      }
     });
 
-    return unsubscribe;
+    return () => {
+      unsubAuth();
+      if (unsubProfile) unsubProfile();
+    };
   }, []);
 
   return (

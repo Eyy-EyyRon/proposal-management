@@ -428,3 +428,54 @@ export function subscribeToDepartmentProposals(
     );
   });
 }
+
+// ─── DEPARTMENTS ────────────────────────────────────────────
+
+export interface FirestoreDepartment {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: Timestamp;
+}
+
+export async function createDepartment(data: {
+  name: string;
+  description: string;
+}): Promise<string> {
+  const ref = await addDoc(collection(db, "departments"), {
+    name: data.name,
+    description: data.description,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function deleteDepartment(id: string): Promise<void> {
+  await deleteDoc(doc(db, "departments", id));
+}
+
+export function subscribeToDepartmentsList(
+  callback: (departments: FirestoreDepartment[]) => void
+) {
+  const q = query(
+    collection(db, "departments"),
+    orderBy("createdAt", "asc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    callback(
+      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as FirestoreDepartment[]
+    );
+  });
+}
+
+// ─── USER DEPARTMENT UPDATE ─────────────────────────────────
+
+export async function updateUserDepartment(
+  userId: string,
+  department: string
+): Promise<void> {
+  await updateDoc(doc(db, "users", userId), {
+    department,
+    updatedAt: serverTimestamp(),
+  });
+}
