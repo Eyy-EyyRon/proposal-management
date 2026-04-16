@@ -161,6 +161,7 @@ export interface Proposal {
   deletedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  version?: number; // 🔥 NEW: Track revision number
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────
@@ -200,6 +201,7 @@ export async function createProposal(
     deletedAt: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    version: 1, // 🔥 NEW: Start at version 1
   });
 }
 
@@ -282,6 +284,39 @@ export async function archiveProposal(proposalId: string): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
     status: "archived",
     updatedAt: serverTimestamp(),
+  });
+}
+
+// 🔥 NEW: Upgrade proposal to a new version (Re-sent for signing)
+export async function createNewVersion(
+  proposalId: string,
+  currentVersion: number,
+  updates: {
+    templateFileUrl?: string | null;
+    templateGdocUrl?: string | null;
+    fieldValues?: Record<string, string>;
+  }
+): Promise<void> {
+  const newVersionNum = currentVersion + 1;
+
+  // 1. Update the proposal document
+  await updateDoc(doc(db, "proposals", proposalId), {
+    ...updates,
+    version: newVersionNum,
+    status: "sent",       // Reset status so the client can review/sign again
+    signatureUrl: null,   // Wipe the old invalid signature
+    signatureType: null,
+    signedAt: null,
+    viewedAt: null,
+    updatedAt: serverTimestamp(),
+  });
+
+  // 2. Drop an automatic "System Message" into the discussion thread
+  await addDoc(collection(db, "proposals", proposalId, "comments"), {
+    text: `Document updated to Version ${newVersionNum}`,
+    authorRole: "system",
+    authorName: "System",
+    createdAt: serverTimestamp(),
   });
 }
 
