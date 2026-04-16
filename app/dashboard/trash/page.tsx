@@ -7,8 +7,10 @@ import { DeletedBadge } from "@/components/deleted-badge";
 import { EmptyState } from "@/components/empty-state";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import {
+  subscribeToUserTrashedProposals,
   subscribeToDeptTrashedProposals,
   subscribeToUserTrashedTemplates,
+  subscribeToTrashedTemplates,
   restoreFromTrash,
   permanentDelete,
   type Proposal,
@@ -22,7 +24,7 @@ type TrashItem =
 
 export default function DashboardTrashPage() {
   const { user, profile } = useAuth();
-  const { isAtLeast } = useRole();
+  const { isAtLeast, isAdmin } = useRole();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,23 +32,47 @@ export default function DashboardTrashPage() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user || !profile?.department) return;
+    if (!user || !profile) return;
+    
     let proposalsDone = false;
     let templatesDone = false;
     const checkDone = () => { if (proposalsDone && templatesDone) setLoading(false); };
 
-    const unsub1 = subscribeToDeptTrashedProposals(profile.department, (data) => {
-      setProposals(data);
-      proposalsDone = true;
-      checkDone();
-    });
-    const unsub2 = subscribeToUserTrashedTemplates(user.uid, (data) => {
-      setTemplates(data);
-      templatesDone = true;
-      checkDone();
-    });
-    return () => { unsub1(); unsub2(); };
-  }, [user, profile?.department]);
+    let unsubProposals: () => void;
+    let unsubTemplates: () => void;
+
+    // 🔥 THE FIX: Route the correct query based on their role
+    if (isAdmin && profile.department) {
+      // Admins get their Department's trashed proposals, and Global templates
+      unsubProposals = subscribeToDeptTrashedProposals(profile.department, (data) => {
+        setProposals(data);
+        proposalsDone = true;
+        checkDone();
+      });
+      unsubTemplates = subscribeToTrashedTemplates((data) => {
+        setTemplates(data);
+        templatesDone = true;
+        checkDone();
+      });
+    } else {
+      // Staff get strictly their OWN trashed proposals and templates
+      unsubProposals = subscribeToUserTrashedProposals(user.uid, (data) => {
+        setProposals(data);
+        proposalsDone = true;
+        checkDone();
+      });
+      unsubTemplates = subscribeToUserTrashedTemplates(user.uid, (data) => {
+        setTemplates(data);
+        templatesDone = true;
+        checkDone();
+      });
+    }
+
+    return () => { 
+      if (unsubProposals) unsubProposals(); 
+      if (unsubTemplates) unsubTemplates(); 
+    };
+  }, [user, profile, isAdmin]);
 
   const items: TrashItem[] = [
     ...(tab !== "templates" ? proposals.map((p) => ({ kind: "proposal" as const, data: p })) : []),
@@ -81,7 +107,7 @@ export default function DashboardTrashPage() {
         <div>
           <h2 className="font-sans text-lg font-semibold text-slate-900">Trash</h2>
           <p className="mt-0.5 text-[13px] text-slate-500">
-            Deleted items from your department. Restore or remove them.
+            Deleted items. Restore or remove them.
           </p>
         </div>
 

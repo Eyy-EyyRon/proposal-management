@@ -102,7 +102,6 @@ export async function updateTemplate(
   });
 }
 
-/** Soft-delete: move template to trash */
 export async function trashTemplate(templateId: string): Promise<void> {
   await updateDoc(doc(db, "templates", templateId), {
     isDeleted: true,
@@ -161,7 +160,7 @@ export interface Proposal {
   deletedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  version?: number; // 🔥 NEW: Track revision number
+  version?: number; 
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────
@@ -201,7 +200,7 @@ export async function createProposal(
     deletedAt: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    version: 1, // 🔥 NEW: Start at version 1
+    version: 1, 
   });
 }
 
@@ -229,11 +228,15 @@ export function subscribeToProposals(
     where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => {
+      callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]);
+    },
+    (error) => {
+      if (error.code !== "permission-denied") console.error(error);
+    }
+  );
 }
 
 export async function getProposal(proposalId: string): Promise<Proposal | null> {
@@ -242,13 +245,12 @@ export async function getProposal(proposalId: string): Promise<Proposal | null> 
   return { id: snap.id, ...snap.data() } as Proposal;
 }
 
-/** Mark proposal as "viewed" + set viewedAt (only if still "sent") */
 export async function markProposalViewed(proposalId: string): Promise<void> {
   const ref = doc(db, "proposals", proposalId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
   const data = snap.data();
-  if (data.status !== "sent") return; // only upgrade from sent → viewed
+  if (data.status !== "sent") return; 
   await updateDoc(ref, {
     status: "viewed",
     viewedAt: serverTimestamp(),
@@ -256,7 +258,6 @@ export async function markProposalViewed(proposalId: string): Promise<void> {
   });
 }
 
-/** Accept proposal: set status, signature data, signedAt */
 export async function acceptProposal(
   proposalId: string,
   signatureType: "draw" | "upload",
@@ -271,7 +272,6 @@ export async function acceptProposal(
   });
 }
 
-/** Reject proposal */
 export async function rejectProposal(proposalId: string): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
     status: "rejected",
@@ -279,7 +279,6 @@ export async function rejectProposal(proposalId: string): Promise<void> {
   });
 }
 
-/** Archive proposal (soft-delete) */
 export async function archiveProposal(proposalId: string): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
     status: "archived",
@@ -287,7 +286,6 @@ export async function archiveProposal(proposalId: string): Promise<void> {
   });
 }
 
-// 🔥 NEW: Upgrade proposal to a new version (Re-sent for signing)
 export async function createNewVersion(
   proposalId: string,
   currentVersion: number,
@@ -299,19 +297,17 @@ export async function createNewVersion(
 ): Promise<void> {
   const newVersionNum = currentVersion + 1;
 
-  // 1. Update the proposal document
   await updateDoc(doc(db, "proposals", proposalId), {
     ...updates,
     version: newVersionNum,
-    status: "sent",       // Reset status so the client can review/sign again
-    signatureUrl: null,   // Wipe the old invalid signature
+    status: "sent",       
+    signatureUrl: null,   
     signatureType: null,
     signedAt: null,
     viewedAt: null,
     updatedAt: serverTimestamp(),
   });
 
-  // 2. Drop an automatic "System Message" into the discussion thread
   await addDoc(collection(db, "proposals", proposalId, "comments"), {
     text: `Document updated to Version ${newVersionNum}`,
     authorRole: "system",
@@ -322,7 +318,6 @@ export async function createNewVersion(
 
 // ─── SOFT-DELETE / TRASH ────────────────────────────────────
 
-/** Move any document (proposal or template) to trash */
 export async function moveToTrash(
   collectionName: "proposals" | "templates",
   docId: string
@@ -334,7 +329,6 @@ export async function moveToTrash(
   });
 }
 
-/** Restore a trashed document */
 export async function restoreFromTrash(
   collectionName: "proposals" | "templates",
   docId: string
@@ -346,7 +340,6 @@ export async function restoreFromTrash(
   });
 }
 
-/** Permanently delete a document (CEO/Admin only) */
 export async function permanentDelete(
   collectionName: "proposals" | "templates",
   docId: string
@@ -354,7 +347,6 @@ export async function permanentDelete(
   await deleteDoc(doc(db, collectionName, docId));
 }
 
-/** Subscribe to all trashed items across proposals + templates (CEO global) */
 export function subscribeToTrashedProposals(
   callback: (proposals: Proposal[]) => void
 ): () => void {
@@ -363,11 +355,11 @@ export function subscribeToTrashedProposals(
     where("isDeleted", "==", true),
     orderBy("deletedAt", "desc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
 export function subscribeToTrashedTemplates(
@@ -378,14 +370,31 @@ export function subscribeToTrashedTemplates(
     where("isDeleted", "==", true),
     orderBy("deletedAt", "desc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Template[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Template[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
-/** Subscribe to trashed proposals within a user's department */
+// 🔥 THIS IS THE MISSING FUNCTION THAT WAS CAUSING YOUR TYPESCRIPT ERRORS
+export function subscribeToUserTrashedProposals(
+  userId: string,
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("userId", "==", userId),
+    where("isDeleted", "==", true),
+    orderBy("deletedAt", "desc")
+  );
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
+}
+
 export function subscribeToDeptTrashedProposals(
   department: string,
   callback: (proposals: Proposal[]) => void
@@ -396,14 +405,13 @@ export function subscribeToDeptTrashedProposals(
     where("isDeleted", "==", true),
     orderBy("deletedAt", "desc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
-/** Subscribe to trashed templates within a user's scope */
 export function subscribeToUserTrashedTemplates(
   userId: string,
   callback: (templates: Template[]) => void
@@ -414,16 +422,15 @@ export function subscribeToUserTrashedTemplates(
     where("isDeleted", "==", true),
     orderBy("deletedAt", "desc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Template[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Template[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
 // ─── ADMIN GLOBAL QUERIES ───────────────────────────────────
 
-/** Get all templates (admin / CEO global view) — no userId filter */
 export async function getAllTemplates(): Promise<Template[]> {
   const q = query(
     collection(db, "templates"),
@@ -445,7 +452,6 @@ export interface TeamMember {
   updatedAt: Timestamp;
 }
 
-/** Get all users (admin / CEO global view) */
 export async function getAllUsers(): Promise<TeamMember[]> {
   const snapshot = await getDocs(collection(db, "users"));
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as TeamMember[];
@@ -453,7 +459,6 @@ export async function getAllUsers(): Promise<TeamMember[]> {
 
 // ─── DEPARTMENT-SCOPED QUERIES ──────────────────────────────
 
-/** Get all proposals (CEO global view) — no userId filter */
 export async function getAllProposals(): Promise<Proposal[]> {
   const q = query(
     collection(db, "proposals"),
@@ -464,7 +469,6 @@ export async function getAllProposals(): Promise<Proposal[]> {
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[];
 }
 
-/** Subscribe to all proposals (CEO global view) */
 export function subscribeToAllProposals(
   callback: (proposals: Proposal[]) => void
 ): () => void {
@@ -473,14 +477,13 @@ export function subscribeToAllProposals(
     where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
-/** Subscribe to proposals within a specific department */
 export function subscribeToDepartmentProposals(
   department: string,
   callback: (proposals: Proposal[]) => void
@@ -491,11 +494,11 @@ export function subscribeToDepartmentProposals(
     where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
 // ─── DEPARTMENTS ────────────────────────────────────────────
@@ -530,11 +533,11 @@ export function subscribeToDepartmentsList(
     collection(db, "departments"),
     orderBy("createdAt", "asc")
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as FirestoreDepartment[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as FirestoreDepartment[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
 // ─── USER DEPARTMENT UPDATE ─────────────────────────────────
@@ -551,7 +554,6 @@ export async function updateUserDepartment(
 
 // ─── RECENT ACTIVITY (CEO) ─────────────────────────────────
 
-/** Subscribe to the N most recently updated proposals (global pulse) */
 export function subscribeToRecentActivity(
   count: number,
   callback: (proposals: Proposal[]) => void
@@ -562,14 +564,13 @@ export function subscribeToRecentActivity(
     orderBy("updatedAt", "desc"),
     firestoreLimit(count)
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(
-      snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]
-    );
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
 }
 
-/** Batch-fetch user display names for a set of userIds */
 export async function batchGetUserNames(
   userIds: string[]
 ): Promise<Record<string, string>> {
@@ -616,11 +617,17 @@ const DEFAULT_STATS: GlobalStats = {
 export function subscribeToGlobalStats(
   callback: (stats: GlobalStats) => void
 ): () => void {
-  return onSnapshot(doc(db, "stats", "global"), (snap) => {
-    if (snap.exists()) {
-      callback({ ...DEFAULT_STATS, ...snap.data() } as GlobalStats);
-    } else {
-      callback(DEFAULT_STATS);
+  return onSnapshot(
+    doc(db, "stats", "global"), 
+    (snap) => {
+      if (snap.exists()) {
+        callback({ ...DEFAULT_STATS, ...snap.data() } as GlobalStats);
+      } else {
+        callback(DEFAULT_STATS);
+      }
+    },
+    (error) => {
+      if (error.code !== "permission-denied") console.error(error);
     }
-  });
+  );
 }

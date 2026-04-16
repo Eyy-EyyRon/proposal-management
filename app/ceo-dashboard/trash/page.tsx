@@ -5,6 +5,7 @@ import { Topbar } from "@/components/topbar";
 import { DepartmentBadge } from "@/components/department-badge";
 import { DeletedBadge } from "@/components/deleted-badge";
 import { EmptyState } from "@/components/empty-state";
+import { useAuth } from "@/contexts/auth-context"; // 🔥 Added Auth Context
 import {
   subscribeToTrashedProposals,
   subscribeToTrashedTemplates,
@@ -20,6 +21,7 @@ type TrashItem =
   | { kind: "template"; data: Template };
 
 export default function CeoTrashPage() {
+  const { user } = useAuth(); // 🔥 Get the current user
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +29,9 @@ export default function CeoTrashPage() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
+    // 🔥 Wait until Firebase Auth confirms they are logged in before querying!
+    if (!user) return;
+
     let proposalsDone = false;
     let templatesDone = false;
     const checkDone = () => { if (proposalsDone && templatesDone) setLoading(false); };
@@ -36,13 +41,15 @@ export default function CeoTrashPage() {
       proposalsDone = true;
       checkDone();
     });
+    
     const unsub2 = subscribeToTrashedTemplates((data) => {
       setTemplates(data);
       templatesDone = true;
       checkDone();
     });
+    
     return () => { unsub1(); unsub2(); };
-  }, []);
+  }, [user]); // 🔥 Depend on user state
 
   const items: TrashItem[] = [
     ...(tab !== "templates" ? proposals.map((p) => ({ kind: "proposal" as const, data: p })) : []),

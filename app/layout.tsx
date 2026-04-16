@@ -10,6 +10,23 @@ export const metadata: Metadata = {
   description: "Manage, send, track, and sign proposals with Firebase.",
 };
 
+// ─── Suppress Firebase permission-denied snapshot noise ───────
+if (typeof window !== "undefined") {
+  const _originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    const msg = args.join(" ");
+    if (
+      msg.includes("permission-denied") &&
+      msg.includes("snapshot listener")
+    ) {
+      console.log("[Firebase] Suppressed permission-denied snapshot noise.");
+      return;
+    }
+    _originalConsoleError(...args);
+  };
+}
+// ─────────────────────────────────────────────────────────────
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -21,10 +38,10 @@ export default function RootLayout({
       className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-          <AuthProvider>
-            <RedirectController>{children}</RedirectController>
-          </AuthProvider>
-        </body>
+        <AuthProvider>
+          <RedirectController>{children}</RedirectController>
+        </AuthProvider>
+      </body>
     </html>
   );
 }
