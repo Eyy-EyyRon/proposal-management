@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Archive, Download } from "lucide-react";
+import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download } from "lucide-react";
 import { StatusBadge, type ProposalStatus as BadgeStatus } from "@/components/status-badge";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
-import { useAuth } from "@/contexts/auth-context";
-import { subscribeToProposals, archiveProposal, type Proposal } from "@/lib/firestore";
+import { useAuth, useRole } from "@/contexts/auth-context";
+import { subscribeToProposals, subscribeToDepartmentProposals, moveToTrash, type Proposal } from "@/lib/firestore";
+import { DepartmentBadge } from "@/components/department-badge";
 import { exportProposalsCsv, exportProposalsJson } from "@/lib/export-utils";
 
 type StatusFilter = "all" | "sent" | "viewed" | "accepted" | "rejected" | "archived";
@@ -50,7 +51,8 @@ function ClientAvatar({ name }: { name: string }) {
 }
 
 export default function ProposalsPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { isCeo } = useRole();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -60,12 +62,14 @@ export default function ProposalsPage() {
 
   useEffect(() => {
     if (!user) return;
-    const unsub = subscribeToProposals(user.uid, (data) => {
-      setProposals(data);
-      setLoading(false);
-    });
+    const dept = profile?.department;
+    const cb = (data: Proposal[]) => { setProposals(data); setLoading(false); };
+    // Staff/Admin: see only their department; CEO sees own proposals here
+    const unsub = (!isCeo && dept)
+      ? subscribeToDepartmentProposals(dept, cb)
+      : subscribeToProposals(user.uid, cb);
     return unsub;
-  }, [user]);
+  }, [user, profile?.department, isCeo]);
 
   const active = proposals.filter(p => p.status !== "archived");
   const counts = {
@@ -97,9 +101,10 @@ export default function ProposalsPage() {
     return matchesSearch && proposal.status === statusFilter;
   });
 
-  const handleArchive = async (proposalId: string) => {
-    await archiveProposal(proposalId);
-    setProposals((prev) => prev.map((p) => p.id === proposalId ? { ...p, status: "archived" as const } : p));
+  const handleTrash = async (proposalId: string) => {
+    if (!confirm("Move this proposal to trash?")) return;
+    await moveToTrash("proposals", proposalId);
+    setProposals((prev) => prev.filter((p) => p.id !== proposalId));
   };
 
   const handleCopyLink = async (proposalId: string) => {
@@ -231,6 +236,9 @@ export default function ProposalsPage() {
                         Template
                       </th>
                       <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                        Dept
+                      </th>
+                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                         Status
                       </th>
                       <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -267,6 +275,9 @@ export default function ProposalsPage() {
                           {proposal.templateName}
                         </td>
                         <td className="whitespace-nowrap px-5 py-3">
+                          <DepartmentBadge department={proposal.department} />
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3">
                           <StatusBadge status={toBadgeStatus(proposal.status)} />
                         </td>
                         <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-500">
@@ -293,11 +304,11 @@ export default function ProposalsPage() {
                             </button>
                             {proposal.status !== "archived" && (
                               <button
-                                onClick={() => handleArchive(proposal.id)}
-                                title="Archive proposal"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-amber-50 hover:text-amber-600"
+                                onClick={() => handleTrash(proposal.id)}
+                                title="Move to trash"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-red-50 hover:text-red-500"
                               >
-                                <Archive className="h-4 w-4" />
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             )}
                           </div>

@@ -44,7 +44,7 @@ export default function CreateProposalPage() {
     return () => { cancelled = true; };
   }, [user]);
 
-  const handleSubmit = async (data: { templateId: string; fieldValues: Record<string, string> }) => {
+  const handleSubmit = async (data: { templateId: string; fieldValues: Record<string, string>; accessCode?: string }) => {
     if (!user) return;
     setSubmitting(true);
     setError(null);
@@ -71,6 +71,7 @@ export default function CreateProposalPage() {
 
       await createProposal(proposalId, {
         userId: user.uid,
+        department: profile?.department ?? "Sales",
         templateId: data.templateId,
         templateName: template?.name ?? "Unknown",
         templateFileUrl: template?.fileUrl ?? null,
@@ -78,6 +79,7 @@ export default function CreateProposalPage() {
         clientName,
         clientEmail,
         fieldValues: data.fieldValues,
+        accessCode: data.accessCode ?? null,
       });
 
       const url = `${window.location.origin}/p/${proposalId}`;

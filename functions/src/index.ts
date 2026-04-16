@@ -8,7 +8,7 @@
  */
 
 import {setGlobalOptions} from "firebase-functions";
-import {onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {onDocumentCreated, onDocumentUpdated} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {initializeApp} from "firebase-admin/app";
@@ -19,9 +19,40 @@ const db = getFirestore();
 // For cost control, we set the maximum number of containers.
 setGlobalOptions({maxInstances: 10});
 
+// ─── STATS HELPERS ──────────────────────────────────────────
+const statsRef = () => db.doc("stats/global");
+
+async function ensureStatsDoc() {
+  const snap = await statsRef().get();
+  if (!snap.exists) {
+    await statsRef().set({
+      totalProposals: 0,
+      totalSent: 0,
+      totalViewed: 0,
+      totalAccepted: 0,
+      totalRejected: 0,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+}
+
+// ─── onProposalCreate ────────────────────────────────────────
+// Increments totalProposals and totalSent on stats/global.
+export const onProposalCreate = onDocumentCreated(
+  "proposals/{proposalId}",
+  async () => {
+    await ensureStatsDoc();
+    await statsRef().update({
+      totalProposals: FieldValue.increment(1),
+      totalSent: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+);
+
 // ─── onProposalUpdate ────────────────────────────────────────
 // Triggers when any proposal document is modified.
-// Creates in-app notifications and logs email hooks.
+// Creates in-app notifications, logs email hooks, and updates stats/global.
 export const onProposalUpdate = onDocumentUpdated(
   "proposals/{proposalId}",
   async (event) => {
@@ -38,6 +69,23 @@ export const onProposalUpdate = onDocumentUpdated(
 
     // No status change — nothing to do
     if (oldStatus === newStatus) return;
+
+    // ── Stats aggregation ────────────────────────────────────
+    await ensureStatsDoc();
+    const decKey = `total${oldStatus.charAt(0).toUpperCase()}${oldStatus.slice(1)}` as string;
+    const incKey = `total${newStatus.charAt(0).toUpperCase()}${newStatus.slice(1)}` as string;
+    const statsUpdate: Record<string, unknown> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    // Decrement old status counter (if it's a tracked status)
+    if (["totalSent", "totalViewed", "totalAccepted", "totalRejected"].includes(decKey)) {
+      statsUpdate[decKey] = FieldValue.increment(-1);
+    }
+    // Increment new status counter
+    if (["totalSent", "totalViewed", "totalAccepted", "totalRejected"].includes(incKey)) {
+      statsUpdate[incKey] = FieldValue.increment(1);
+    }
+    await statsRef().update(statsUpdate);
 
     // ── sent → viewed ──────────────────────────────────────
     if (oldStatus === "sent" && newStatus === "viewed") {

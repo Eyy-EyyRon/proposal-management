@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   FilePlus,
@@ -9,76 +10,37 @@ import {
   ArrowRight,
   LayoutTemplate,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { AdminStatCard } from "@/components/admin-stat-card";
-import { ActivityTable, type Activity } from "@/components/activity-table";
 import { cn } from "@/lib/utils";
-
-// Mock data - In production, these should come from dashboard_cache Firestore document
-const dashboardStats = {
-  activeProposals: 24,
-  acceptanceRate: 78,
-  teamSize: 5,
-  trendActive: "+12%",
-  trendAcceptance: "+5%",
-  trendTeam: "+1",
-};
-
-// Mock team activity data
-const recentTeamActivity: Activity[] = [
-  {
-    id: "1",
-    type: "proposal_created",
-    userName: "Sarah Johnson",
-    userRole: "admin",
-    description: "Created new proposal",
-    target: "Northstar Inc. - Website Redesign",
-    timestamp: "2026-04-15T14:30:00Z",
-    timeAgo: "5 mins ago",
-  },
-  {
-    id: "2",
-    type: "proposal_accepted",
-    userName: "Mike Chen",
-    userRole: "admin",
-    description: "Proposal accepted by client",
-    target: "Dana Liu - Consulting Agreement",
-    timestamp: "2026-04-15T13:15:00Z",
-    timeAgo: "2 hours ago",
-  },
-  {
-    id: "3",
-    type: "team_member_added",
-    userName: "Super Admin",
-    userRole: "super-admin",
-    description: "Added new team member",
-    target: "Jessica Williams",
-    timestamp: "2026-04-15T11:00:00Z",
-    timeAgo: "4 hours ago",
-  },
-  {
-    id: "4",
-    type: "proposal_viewed",
-    userName: "Emily Davis",
-    userRole: "admin",
-    description: "Client viewed proposal",
-    target: "Robert Hayes - Marketing Strategy",
-    timestamp: "2026-04-15T09:30:00Z",
-    timeAgo: "6 hours ago",
-  },
-  {
-    id: "5",
-    type: "template_updated",
-    userName: "Super Admin",
-    userRole: "super-admin",
-    description: "Updated template",
-    target: "Standard Consulting Agreement",
-    timestamp: "2026-04-14T16:45:00Z",
-    timeAgo: "1 day ago",
-  },
-];
+import {
+  subscribeToGlobalStats,
+  getAllUsers,
+  type GlobalStats,
+} from "@/lib/firestore";
 
 export default function SuperAdminDashboardPage() {
+  const [stats, setStats] = useState<GlobalStats | null>(null);
+  const [teamSize, setTeamSize] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = subscribeToGlobalStats((s) => {
+      setStats(s);
+      setLoading(false);
+    });
+    getAllUsers().then((u) => setTeamSize(u.length)).catch(() => {});
+    return unsub;
+  }, []);
+
+  const acceptanceRate =
+    stats && stats.totalAccepted + stats.totalRejected > 0
+      ? Math.round(
+          (stats.totalAccepted / (stats.totalAccepted + stats.totalRejected)) * 100
+        )
+      : 0;
+
   return (
     <div className="flex flex-col gap-6">
       {/* Welcome Section */}
@@ -165,47 +127,44 @@ export default function SuperAdminDashboardPage() {
             </h3>
           </div>
           <span className="text-[11px] text-slate-400">
-            Cached from dashboard_cache
+            Live from stats/global
           </span>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <AdminStatCard
-            label="Active Proposals"
-            value={dashboardStats.activeProposals}
-            icon={FileText}
-            trend={dashboardStats.trendActive}
-            trendUp={true}
-            description="Currently in progress"
-            variant="highlight"
-          />
-          <AdminStatCard
-            label="Acceptance Rate"
-            value={`${dashboardStats.acceptanceRate}%`}
-            icon={TrendingUp}
-            trend={dashboardStats.trendAcceptance}
-            trendUp={true}
-            description="Client acceptance rate"
-            variant="success"
-          />
-          <AdminStatCard
-            label="Team Size"
-            value={dashboardStats.teamSize}
-            icon={Users}
-            trend={dashboardStats.trendTeam}
-            trendUp={true}
-            description="Active team members"
-            variant="default"
-          />
-        </div>
-      </section>
-
-      {/* Activity Feed Section */}
-      <section>
-        <ActivityTable
-          activities={recentTeamActivity}
-          maxItems={5}
-          showViewAll={true}
-        />
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <AdminStatCard
+              label="Active Proposals"
+              value={(stats?.totalSent ?? 0) + (stats?.totalViewed ?? 0)}
+              icon={FileText}
+              trend={`${stats?.totalProposals ?? 0} total`}
+              trendUp={true}
+              description="Sent + Viewed"
+              variant="highlight"
+            />
+            <AdminStatCard
+              label="Acceptance Rate"
+              value={`${acceptanceRate}%`}
+              icon={TrendingUp}
+              trend={`${stats?.totalAccepted ?? 0} signed`}
+              trendUp={acceptanceRate >= 50}
+              description="Client acceptance rate"
+              variant="success"
+            />
+            <AdminStatCard
+              label="Team Size"
+              value={teamSize}
+              icon={Users}
+              trend=""
+              trendUp={true}
+              description="Active team members"
+              variant="default"
+            />
+          </div>
+        )}
       </section>
 
       {/* Quick Links Section */}

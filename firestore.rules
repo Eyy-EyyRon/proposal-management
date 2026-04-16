@@ -3,68 +3,144 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ─── HELPER FUNCTIONS ───────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userDocExists() {
+      return isSignedIn() && exists(userDocPath());
+    }
+
+    function getUserRole() {
+      return userDocExists() ? get(userDocPath()).data.role : "none";
+    }
+
+    function getUserDept() {
+      return userDocExists() ? get(userDocPath()).data.department : null;
+    }
+
+    function isCeo() {
+      return isSignedIn() && getUserRole() == "ceo";
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserRole() == "admin";
+    }
+
+    function isAdminOrCeo() {
+      return isSignedIn() && getUserRole() in ["admin", "ceo"];
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
     // ─── USERS ───────────────────────────────────────────────
-    // Only the authenticated owner can read/write their own profile.
+    // Create: only the authenticated owner can create their own doc (signup).
+    // Read:   owner, admin (same dept), or CEO.
+    // Update: owner (cannot change own role), or CEO (unrestricted).
+    // Delete: CEO only.
     match /users/{userId} {
-      allow read, write: if request.auth != null
-        && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      allow read: if isOwner(userId) || isAdminOrCeo();
+
+      allow update: if
+        // CEO can update anyone
+        isCeo()
+        ||
+        // Owner can update self but CANNOT change their own role
+        (
+          isOwner(userId)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role"])
+        );
+
+      allow delete: if isCeo();
+    }
+
+    // ─── DEPARTMENTS ────────────────────────────────────────
+    // Read:  any authenticated user (needed for onboarding).
+    // Create/delete: admin or CEO only.
+    match /departments/{deptId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAdminOrCeo();
+      allow update: if isAdminOrCeo();
     }
 
     // ─── ORGANIZATION SETTINGS ───────────────────────────────
     // Only the authenticated owner can read/write their org settings.
-    // Doc ID must equal the user's UID.
     match /orgSettings/{userId} {
-      allow read, write: if request.auth != null
-        && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
     }
 
     // ─── TEMPLATES ───────────────────────────────────────────
-    // Only the authenticated owner can CRUD their own templates.
+    // Read:  owner, admin (same dept via user lookup), or CEO.
+    // Create: owner sets themselves as userId.
+    // Update/delete: owner, or admin/CEO.
     match /templates/{templateId} {
-      allow create: if request.auth != null
+      allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
 
-      allow read, update, delete: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdminOrCeo()
+        );
+
+      allow update, delete: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdminOrCeo()
+        );
     }
 
     // ─── PROPOSALS ───────────────────────────────────────────
-    // Owner: full CRUD (list queries must filter by userId).
-    // Public: can GET a single doc by ID (client portal).
-    // Public: can UPDATE only status/signature fields.
+    // get:    public (client portal needs to fetch by ID).
+    // list:   owner, admin (same department), or CEO.
+    // create: owner only, status must be "sent".
+    // delete: owner, or admin/CEO.
+    // update: owner (full), admin/CEO (full), or public (restricted).
     match /proposals/{proposalId} {
 
-      // Anyone with the document ID can read a single proposal.
       allow get: if true;
 
-      // Only authenticated owner can list (dashboard queries).
-      allow list: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCeo()
+          || (isAdmin() && resource.data.department == getUserDept())
+        );
 
-      // Only authenticated owner can create.
-      allow create: if request.auth != null
+      allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == "sent";
 
-      // Only authenticated owner can delete.
-      allow delete: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdminOrCeo()
+        );
 
-      // Update: two paths — owner (full) or public (restricted fields).
       allow update: if
-        // Path 1: Authenticated owner — unrestricted update
-        (request.auth != null && resource.data.userId == request.auth.uid)
+        // Path 1: Authenticated owner — unrestricted
+        (isSignedIn() && resource.data.userId == request.auth.uid)
         ||
-        // Path 2: Public (unauthenticated) — restricted to these fields only
+        // Path 2: Admin/CEO — unrestricted (trash, restore, etc.)
+        isAdminOrCeo()
+        ||
+        // Path 3: Public (unauthenticated) — restricted fields only
         (
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
-          // Status transitions: only allow sent→viewed, sent/viewed→accepted/rejected
           && (
             (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
             || (resource.data.status == "viewed" && request.resource.data.status in ["accepted", "rejected"])
           )
-          // Immutable fields cannot be tampered with
           && request.resource.data.userId == resource.data.userId
           && request.resource.data.templateId == resource.data.templateId
           && request.resource.data.templateName == resource.data.templateName
@@ -78,23 +154,34 @@ service cloud.firestore {
     }
 
     // ─── NOTIFICATIONS ─────────────────────────────────────────
-    // Read + update: only the authenticated owner (mark as read).
-    // Create/delete: only Cloud Functions via Admin SDK.
+    // Read:  owner of the notification, or CEO (global feed).
+    // Update: owner only (mark as read).
+    // Create/delete: Cloud Functions via Admin SDK only.
     match /notifications/{notificationId} {
-      allow read: if request.auth != null
-        && resource.data.userId == request.auth.uid;
-      allow update: if request.auth != null
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCeo()
+        );
+      allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
       allow create, delete: if false;
     }
 
     // ─── ANALYTICS ───────────────────────────────────────────
-    // Read: only the authenticated owner.
-    // Write: only Cloud Functions via Admin SDK (bypasses rules).
+    // Read:  owner, or CEO (global view).
+    // Write: owner can create/update their own analytics doc.
     match /analytics/{userId} {
-      allow read: if request.auth != null
-        && request.auth.uid == userId;
+      allow read: if isOwner(userId) || isCeo();
+      allow write: if isOwner(userId);
+    }
+
+    // ─── STATS (Aggregated) ─────────────────────────────────
+    // Read: any authenticated user.
+    // Write: only Cloud Functions (admin SDK bypasses rules).
+    match /stats/{docId} {
+      allow read: if isSignedIn();
       allow write: if false;
     }
 
