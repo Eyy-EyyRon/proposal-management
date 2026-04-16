@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import {
   FileText, X, Check, AlertCircle, Download, Pen, Upload,
   Image as ImageIcon, Loader2, ShieldCheck, Sparkles, PenLine, Eraser, LockKeyhole,
+  MessageCircle, Send, Quote
 } from "lucide-react";
 import {
   getProposal, markProposalViewed, acceptProposal, rejectProposal,
@@ -14,14 +15,17 @@ import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase"; 
+
 type SignatureMode = "draw" | "type" | "upload";
-type ViewState = "loading" | "not-found" | "locked" | "document" | "accepted" | "rejected";
+type ViewState = "loading" | "not-found" | "locked" | "document" | "rejected";
+type TabMode = "action" | "discuss";
 
 export default function ProposalPortalPage() {
   const params = useParams();
   const shareToken = params.shareToken as string;
 
-  // ─── State ──────────────────────────────────────────────────
   const [viewState, setViewState] = useState<ViewState>("loading");
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [documentHtml, setDocumentHtml] = useState<string>("");
@@ -29,11 +33,9 @@ export default function ProposalPortalPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const documentRef = useRef<HTMLDivElement>(null);
 
-  // Access code gate
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [accessCodeError, setAccessCodeError] = useState(false);
 
-  // Signature
   const [signatureMode, setSignatureMode] = useState<SignatureMode>("draw");
   const [typedName, setTypedName] = useState("");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
@@ -41,7 +43,16 @@ export default function ProposalPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Draw canvas
+  const [activeTab, setActiveTab] = useState<TabMode>("action");
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [quoteTooltip, setQuoteTooltip] = useState<{ visible: boolean; x: number; y: number; text: string }>({
+    visible: false, x: 0, y: 0, text: ""
+  });
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
   const [hasDrawn, setHasDrawn] = useState(false);
@@ -103,9 +114,8 @@ export default function ProposalPortalPage() {
     setHasDrawn(false);
   };
 
-  // Initialize canvas background on mount / mode switch
   useEffect(() => {
-    if (signatureMode === "draw") {
+    if (signatureMode === "draw" && activeTab === "action" && proposal?.status !== "accepted") {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -113,18 +123,13 @@ export default function ProposalPortalPage() {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-  }, [signatureMode]);
+  }, [signatureMode, activeTab, proposal?.status]);
 
-  // Legal consent
   const [consentChecked, setConsentChecked] = useState(false);
-
-  // Reject
   const [showReject, setShowReject] = useState(false);
   const [rejecting, setRejecting] = useState(false);
-
   const viewTracked = useRef(false);
 
-  // ─── Fetch proposal + template + render ─────────────────────
   useEffect(() => {
     if (!shareToken) return;
     let cancelled = false;
@@ -133,20 +138,16 @@ export default function ProposalPortalPage() {
       try {
         const p = await getProposal(shareToken);
         if (!p || cancelled) { if (!cancelled) setViewState("not-found"); return; }
-
         setProposal(p);
 
         if (p.status === "archived") { if (!cancelled) setViewState("not-found"); return; }
-        if (p.status === "accepted") { setViewState("accepted"); return; }
         if (p.status === "rejected") { setViewState("rejected"); return; }
 
-        // Access code gate — show lock screen before rendering document
         if (p.accessCode) {
           if (!cancelled) setViewState("locked");
           return;
         }
 
-        // Render docx → HTML with mail-merge using URL stored on the proposal
         if (p.templateFileUrl) {
           try {
             const html = await renderProposalHtml(p.templateFileUrl, p.fieldValues);
@@ -165,14 +166,104 @@ export default function ProposalPortalPage() {
     return () => { cancelled = true; };
   }, [shareToken]);
 
-  // ─── Track view (once) ──────────────────────────────────────
   useEffect(() => {
     if (viewState !== "document" || viewTracked.current || !shareToken) return;
     viewTracked.current = true;
-    markProposalViewed(shareToken).catch(console.error);
-  }, [viewState, shareToken]);
+    if (proposal?.status !== "accepted") {
+        markProposalViewed(shareToken).catch(console.error);
+    }
+  }, [viewState, shareToken, proposal?.status]);
 
-  // ─── Handlers ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!proposal?.id) return;
+    const q = query(collection(db, "proposals", proposal.id, "comments"), orderBy("createdAt", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedComments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setComments(fetchedComments);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    });
+    return () => unsubscribe();
+  }, [proposal?.id]);
+
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim() || !proposal) return;
+    setSubmittingComment(true);
+    try {
+      await addDoc(collection(db, "proposals", proposal.id, "comments"), {
+        text: newComment.trim(),
+        authorRole: "client",
+        authorName: proposal.clientName || "Client",
+        createdAt: serverTimestamp(),
+      });
+      setNewComment("");
+      
+      fetch("/api/send-comment-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId: proposal.id,
+          clientName: proposal.clientName,
+          comment: newComment.trim(),
+          staffId: proposal.userId
+        })
+      }).catch(console.error);
+
+    } catch (error) {
+      console.error("Failed to post comment", error);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const handleTextSelection = () => {
+    if (proposal?.status === "accepted") return;
+
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+
+    if (text && text.length > 0) {
+      const range = selection?.getRangeAt(0);
+      const rect = range?.getBoundingClientRect();
+      if (rect) {
+        setQuoteTooltip({
+          visible: true,
+          x: rect.left + (rect.width / 2),
+          y: rect.top - 10,
+          text: text
+        });
+      }
+    } else {
+      setQuoteTooltip((prev) => ({ ...prev, visible: false }));
+    }
+  };
+
+  // 🔥 FIX: Changed from onClick to onMouseDown and added preventDefault
+  const handleQuoteClick = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevents the browser from clearing the text selection
+    e.stopPropagation(); // Stops the global click listener from firing
+
+    setActiveTab('discuss');
+    setNewComment((prev) => `${prev ? prev + '\n\n' : ''}> "${quoteTooltip.text}"\n\n`);
+    setQuoteTooltip({ visible: false, x: 0, y: 0, text: "" });
+    window.getSelection()?.removeAllRanges();
+
+    // Auto-focus the chat box so they can immediately type their question
+    setTimeout(() => {
+      document.getElementById("chat-textarea")?.focus();
+    }, 50);
+  };
+
+  useEffect(() => {
+    const hideTooltip = () => {
+      if (window.getSelection()?.toString().trim() === "") {
+        setQuoteTooltip((prev) => ({ ...prev, visible: false }));
+      }
+    };
+    document.addEventListener("mousedown", hideTooltip);
+    return () => document.removeEventListener("mousedown", hideTooltip);
+  }, []);
+
   const handleAccept = useCallback(async () => {
     if (!proposal) return;
     setSubmitting(true);
@@ -188,7 +279,6 @@ export default function ProposalPortalPage() {
         sigUrl = res.url;
         sigType = "draw";
       } else if (signatureMode === "type" && typedName.trim()) {
-        // Create a canvas with the typed name and upload as image
         const canvas = document.createElement("canvas");
         canvas.width = 600;
         canvas.height = 160;
@@ -216,13 +306,30 @@ export default function ProposalPortalPage() {
       }
 
       await acceptProposal(proposal.id, sigType, sigUrl);
-      setViewState("accepted");
+
+      try {
+        await fetch("/api/send-copies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposalId: shareToken,
+            clientEmail: proposal.fieldValues?.email || proposal.clientEmail || "client@example.com",
+            clientName: proposal.clientName,
+            staffId: proposal.userId
+          }),
+        });
+      } catch (emailError) {
+        console.error("Failed to trigger email copies:", emailError);
+      }
+
+      setProposal({ ...proposal, status: "accepted" });
+
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit. Please try again.");
     } finally {
       setSubmitting(false);
     }
-  }, [proposal, signatureMode, typedName, signatureFile, hasDrawn]);
+  }, [proposal, signatureMode, typedName, signatureFile, hasDrawn, shareToken]);
 
   const handleReject = useCallback(async () => {
     if (!proposal) return;
@@ -257,7 +364,6 @@ export default function ProposalPortalPage() {
     });
   };
 
-  // ─── Unlock handler ──────────────────────────────────────────
   const handleUnlock = useCallback(async () => {
     if (!proposal) return;
     if (accessCodeInput.trim() !== proposal.accessCode) {
@@ -266,7 +372,6 @@ export default function ProposalPortalPage() {
     }
     setAccessCodeError(false);
 
-    // Render document after unlock
     if (proposal.templateFileUrl) {
       try {
         const html = await renderProposalHtml(proposal.templateFileUrl, proposal.fieldValues);
@@ -278,7 +383,6 @@ export default function ProposalPortalPage() {
     setViewState("document");
   }, [proposal, accessCodeInput]);
 
-  // ─── Loading ────────────────────────────────────────────────
   if (viewState === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -290,7 +394,6 @@ export default function ProposalPortalPage() {
     );
   }
 
-  // ─── Locked (Access Code Gate) ─────────────────────────────
   if (viewState === "locked") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -302,12 +405,9 @@ export default function ProposalPortalPage() {
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
             This proposal is password-protected. Enter the access code to continue.
           </p>
-          <form
-            onSubmit={(e) => { e.preventDefault(); handleUnlock(); }}
-            className="mt-6 space-y-3"
-          >
+          <form onSubmit={(e) => { e.preventDefault(); handleUnlock(); }} className="mt-6 space-y-3">
             <input
-              type="text"
+              type="password"
               value={accessCodeInput}
               onChange={(e) => { setAccessCodeInput(e.target.value); setAccessCodeError(false); }}
               placeholder="Enter access code"
@@ -334,7 +434,6 @@ export default function ProposalPortalPage() {
     );
   }
 
-  // ─── Not Found ──────────────────────────────────────────────
   if (viewState === "not-found") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -351,29 +450,6 @@ export default function ProposalPortalPage() {
     );
   }
 
-  // ─── Accepted — Thank You ───────────────────────────────────
-  if (viewState === "accepted") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50">
-        <div className="mx-4 max-w-sm rounded-3xl border border-emerald-200/60 bg-white/70 p-10 text-center shadow-xl shadow-emerald-100/40 backdrop-blur-xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50">
-            <ShieldCheck className="h-7 w-7 text-emerald-600" />
-          </div>
-          <h2 className="mt-5 text-xl font-semibold text-slate-900">Thank You!</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            The proposal has been accepted and your signature has been securely recorded.
-            You'll receive a confirmation shortly.
-          </p>
-          <div className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-700">
-            <Check className="h-3.5 w-3.5" />
-            Signed & Accepted
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Rejected ───────────────────────────────────────────────
   if (viewState === "rejected") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -390,11 +466,27 @@ export default function ProposalPortalPage() {
     );
   }
 
-  // ─── Main Document View ─────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      {/* ── Header ─────────────────────────────────────────── */}
-      <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-lg">
+      
+      {/* Floating Quote Tooltip */}
+      {quoteTooltip.visible && (
+        <div 
+          className="fixed z-50 animate-in fade-in zoom-in duration-200"
+          style={{ top: quoteTooltip.y - 45, left: quoteTooltip.x, transform: 'translateX(-50%)' }}
+        >
+          <button
+            onMouseDown={handleQuoteClick} // 🔥 FIX IS HERE
+            className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg shadow-xl hover:bg-slate-800 transition"
+          >
+            <Quote className="w-3.5 h-3.5" />
+            <span className="text-[12px] font-medium whitespace-nowrap">Quote in Discussion</span>
+          </button>
+          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900 mx-auto -mt-px"></div>
+        </div>
+      )}
+
+      <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-lg sticky top-0 z-40">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-md shadow-indigo-200/60">
@@ -412,29 +504,6 @@ export default function ProposalPortalPage() {
           </div>
           <div className="hidden items-center gap-2 sm:flex">
             <button
-              onClick={async () => {
-                if (!documentRef.current || !proposal) return;
-                setPdfLoading(true);
-                try {
-                  await exportProposalPdf(
-                    documentRef.current,
-                    `proposal-${proposal.clientName.replace(/\s+/g, "-").toLowerCase()}.pdf`
-                  );
-                } finally {
-                  setPdfLoading(false);
-                }
-              }}
-              disabled={pdfLoading || !documentHtml}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-violet-700 disabled:opacity-50"
-            >
-              {pdfLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Download className="h-3.5 w-3.5" />
-              )}
-              Download PDF
-            </button>
-            <button
               onClick={() => window.print()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
             >
@@ -444,22 +513,28 @@ export default function ProposalPortalPage() {
         </div>
       </header>
 
-      {/* ── Content ────────────────────────────────────────── */}
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
         <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
 
-          {/* ── Document Panel ──────────────────────────────── */}
           <section>
             <div ref={documentRef} className="rounded-3xl border border-slate-200/60 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl">
-              <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-4">
-                <Sparkles className="h-4 w-4 text-violet-500" />
-                <h2 className="text-[13px] font-semibold text-slate-700">Proposal Document</h2>
+              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-violet-500" />
+                  <h2 className="text-[13px] font-semibold text-slate-700">Proposal Document</h2>
+                </div>
+                {proposal?.status === "accepted" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+                      <ShieldCheck className="h-3 w-3" /> Legally Signed
+                    </span>
+                )}
               </div>
 
               {documentHtml ? (
                 <div
                   className="proposal-content px-8 py-6 sm:px-10 sm:py-8"
                   dangerouslySetInnerHTML={{ __html: documentHtml }}
+                  onMouseUp={handleTextSelection}
                 />
               ) : renderError ? (
                 <div className="px-8 py-16 text-center">
@@ -490,227 +565,314 @@ export default function ProposalPortalPage() {
             </div>
           </section>
 
-          {/* ── Side Panel ──────────────────────────────────── */}
-          <aside className="space-y-5">
-            {/* Proposal Details */}
-            <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">
-              <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                Proposal Details
-              </h3>
-              <dl className="space-y-2.5">
-                {proposal && Object.entries(proposal.fieldValues).map(([key, value]) => (
-                  <div key={key}>
-                    <dt className="text-[11px] font-medium text-slate-400">{key}</dt>
-                    <dd className="text-[13px] font-medium text-slate-800">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+          <aside className="flex flex-col gap-5 h-full">
+            
+            {/* Tab Switcher */}
+            <div className="flex p-1 bg-slate-200/50 rounded-xl">
+              <button 
+                onClick={() => setActiveTab('action')} 
+                className={`flex-1 py-2 text-[12px] font-semibold rounded-lg transition-all ${activeTab === 'action' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Sign & Details
+              </button>
+              <button 
+                onClick={() => setActiveTab('discuss')} 
+                className={`flex flex-1 items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition-all ${activeTab === 'discuss' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                Discuss {comments.length > 0 && <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full text-[9px]">{comments.length}</span>}
+              </button>
             </div>
 
-            {/* Sign & Accept */}
-            {!showReject && (
-              <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">
-                <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                  Sign &amp; Accept
-                </h3>
+            {/* TAB CONTENT: Discuss */}
+            {activeTab === 'discuss' ? (
+              <div className="flex flex-col flex-1 border border-slate-200/60 bg-white/80 rounded-2xl shadow-lg backdrop-blur-xl overflow-hidden min-h-[500px] max-h-[700px] sticky top-24">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-[13px] font-bold text-slate-800">Discussion Thread</h3>
+                  <p className="text-[11px] text-slate-500">Highlight text in the document to quote it.</p>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {comments.length === 0 ? (
+                    <p className="text-center text-[12px] text-slate-400 mt-10">No messages yet. Send a message to start negotiating.</p>
+                  ) : (
+                    comments.map(c => (
+                      <div key={c.id} className={`flex flex-col ${c.authorRole === 'client' ? 'items-end' : 'items-start'}`}>
+                        <span className="text-[10px] text-slate-400 mb-1 px-1">{c.authorName || 'Client'}</span>
+                        <div className={`px-3 py-2.5 rounded-xl max-w-[85%] text-[13px] leading-relaxed shadow-sm ${c.authorRole === 'client' ? 'bg-violet-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'}`}>
+                          
+                          {c.text.split('\n').map((line: string, i: number) => {
+                            if (line.trim().startsWith('> "') || line.trim().startsWith('> ')) {
+                              return (
+                                <div key={i} className={`border-l-2 pl-2 my-1 text-[11px] italic opacity-90 ${c.authorRole === 'client' ? 'border-white/50' : 'border-slate-300 text-slate-500'}`}>
+                                  {line.replace(/^>\s*/, '')}
+                                </div>
+                              );
+                            }
+                            return <span key={i}>{line}<br/></span>;
+                          })}
 
-                {/* Mode Toggle */}
-                <div className="mb-4 grid grid-cols-3 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setSignatureMode("draw")}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
-                      signatureMode === "draw"
-                        ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
-                        : "text-slate-500 hover:bg-slate-50"
-                    }`}
-                  >
-                    <PenLine className="h-3.5 w-3.5" />
-                    Draw
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSignatureMode("type")}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
-                      signatureMode === "type"
-                        ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
-                        : "text-slate-500 hover:bg-slate-50"
-                    }`}
-                  >
-                    <Pen className="h-3.5 w-3.5" />
-                    Type
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSignatureMode("upload")}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
-                      signatureMode === "upload"
-                        ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
-                        : "text-slate-500 hover:bg-slate-50"
-                    }`}
-                  >
-                    <ImageIcon className="h-3.5 w-3.5" />
-                    Upload
-                  </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
 
-                {signatureMode === "draw" ? (
-                  <div>
-                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                      <canvas
-                        ref={canvasRef}
-                        width={560}
-                        height={160}
-                        className="w-full cursor-crosshair touch-none"
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
-                        onTouchStart={startDrawing}
-                        onTouchMove={draw}
-                        onTouchEnd={stopDrawing}
-                      />
+                <form onSubmit={handleAddComment} className="p-3 border-t border-slate-100 bg-white flex flex-col gap-2">
+                  <textarea 
+                    id="chat-textarea" // 🔥 ADDED ID FOR AUTO-FOCUS
+                    value={newComment} 
+                    onChange={e => setNewComment(e.target.value)} 
+                    placeholder="Type a message..." 
+                    rows={newComment.includes('>') ? 3 : 1}
+                    className="w-full text-[13px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-200 resize-none transition-all"
+                  />
+                  <div className="flex justify-end">
+                    <button 
+                      disabled={!newComment.trim() || submittingComment} 
+                      className="bg-violet-600 text-white rounded-lg px-4 py-1.5 disabled:opacity-50 hover:bg-violet-700 transition flex items-center gap-1.5"
+                    >
+                      <span className="text-[12px] font-medium">Send</span>
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              /* TAB CONTENT: Action (Sign & Details) */
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">
+                  <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                    Proposal Details
+                  </h3>
+                  <dl className="space-y-2.5">
+                    {proposal && Object.entries(proposal.fieldValues || {}).map(([key, value]) => (
+                      <div key={key}>
+                        <dt className="text-[11px] font-medium text-slate-400 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</dt>
+                        <dd className="text-[13px] font-medium text-slate-800">{String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+
+                {proposal?.status === "accepted" ? (
+                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/80 p-6 shadow-lg text-center backdrop-blur-xl">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 mb-4">
+                      <ShieldCheck className="h-7 w-7 text-emerald-600" />
                     </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <p className="text-[11px] text-slate-400">
-                        {hasDrawn ? "Signature captured" : "Draw your signature above"}
-                      </p>
+                    <h3 className="text-lg font-bold text-slate-900">Document Locked</h3>
+                    <p className="mt-2 text-[13px] text-slate-600 mb-6">
+                      This document has been legally signed and is now locked for editing.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        if (!documentRef.current || !proposal) return;
+                        setPdfLoading(true);
+                        try {
+                          await exportProposalPdf(documentRef.current, `Signed-${proposal.clientName.replace(/\s+/g, "-")}.pdf`);
+                        } finally {
+                          setPdfLoading(false);
+                        }
+                      }}
+                      disabled={pdfLoading || !documentHtml}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-md transition hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Download Signed PDF
+                    </button>
+                  </div>
+                ) : !showReject ? (
+                  <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">
+                    <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                      Sign &amp; Accept
+                    </h3>
+
+                    <div className="mb-4 grid grid-cols-3 gap-1">
                       <button
                         type="button"
-                        onClick={clearCanvas}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                        onClick={() => setSignatureMode("draw")}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
+                          signatureMode === "draw"
+                            ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
                       >
-                        <Eraser className="h-3 w-3" />
-                        Clear
+                        <PenLine className="h-3.5 w-3.5" /> Draw
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSignatureMode("type")}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
+                          signatureMode === "type"
+                            ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Pen className="h-3.5 w-3.5" /> Type
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSignatureMode("upload")}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
+                          signatureMode === "upload"
+                            ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        <ImageIcon className="h-3.5 w-3.5" /> Upload
+                      </button>
+                    </div>
+
+                    {signatureMode === "draw" ? (
+                      <div>
+                        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                          <canvas
+                            ref={canvasRef}
+                            width={560}
+                            height={160}
+                            className="w-full cursor-crosshair touch-none"
+                            onMouseDown={startDrawing}
+                            onMouseMove={draw}
+                            onMouseUp={stopDrawing}
+                            onMouseLeave={stopDrawing}
+                            onTouchStart={startDrawing}
+                            onTouchMove={draw}
+                            onTouchEnd={stopDrawing}
+                          />
+                        </div>
+                        <div className="mt-2 flex items-center justify-between">
+                          <p className="text-[11px] text-slate-400">
+                            {hasDrawn ? "Signature captured" : "Draw your signature above"}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={clearCanvas}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                          >
+                            <Eraser className="h-3 w-3" /> Clear
+                          </button>
+                        </div>
+                      </div>
+                    ) : signatureMode === "type" ? (
+                      <div>
+                        <input
+                          type="text"
+                          value={typedName}
+                          onChange={(e) => setTypedName(e.target.value)}
+                          placeholder="Type your full name"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-100"
+                        />
+                        {typedName.trim() && (
+                          <div className="mt-3 rounded-xl border border-slate-100 bg-white px-5 py-4">
+                            <p className="text-[11px] text-slate-400">Signature Preview</p>
+                            <p className="mt-1 font-serif text-2xl italic text-slate-800">
+                              {typedName}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        {signaturePreview ? (
+                          <div className="space-y-2">
+                            <div className="rounded-xl border border-slate-100 bg-white p-3">
+                              <img src={signaturePreview} alt="Signature" className="mx-auto max-h-24 object-contain" />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { setSignatureFile(null); setSignaturePreview(null); }}
+                              className="w-full rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-medium text-slate-500 hover:bg-slate-50"
+                            >
+                              Remove & re-upload
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 py-6 transition hover:border-violet-300 hover:bg-violet-50/30">
+                            <Upload className="h-6 w-6 text-slate-300" />
+                            <span className="text-[12px] font-medium text-slate-500">Upload signature image</span>
+                            <span className="text-[11px] text-slate-400">PNG, JPG — max 5 MB</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={handleSigFileChange} />
+                          </label>
+                        )}
+                      </div>
+                    )}
+
+                    {submitError && (
+                      <p className="mt-3 text-[12px] text-rose-600">{submitError}</p>
+                    )}
+
+                    <label className="mt-4 flex items-start gap-2.5 cursor-pointer group">
+                      <div className="relative mt-0.5 flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={consentChecked}
+                          onChange={(e) => setConsentChecked(e.target.checked)}
+                          className="peer h-4 w-4 appearance-none rounded border border-slate-300 bg-slate-50 checked:border-violet-600 checked:bg-violet-600 focus:ring-2 focus:ring-violet-200 focus:ring-offset-1 transition-all"
+                        />
+                        <svg className="absolute w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-700 transition-colors">
+                        I agree to the terms and conditions and understand this is a legally binding signature.
+                      </span>
+                    </label>
+
+                    <button
+                      onClick={handleAccept}
+                      disabled={
+                        submitting ||
+                        !consentChecked ||
+                        (signatureMode === "draw" ? !hasDrawn : signatureMode === "type" ? !typedName.trim() : !signatureFile)
+                      }
+                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-lg shadow-emerald-200/50 transition hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                    >
+                      {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                      {submitting ? "Submitting…" : "Accept & Sign"}
+                    </button>
+
+                    <div className="mt-3 text-center">
+                      <button
+                        onClick={() => setShowReject(true)}
+                        className="text-[12px] font-medium text-slate-400 underline underline-offset-2 transition hover:text-slate-600"
+                      >
+                        Decline this proposal
                       </button>
                     </div>
                   </div>
-                ) : signatureMode === "type" ? (
-                  <div>
-                    <input
-                      type="text"
-                      value={typedName}
-                      onChange={(e) => setTypedName(e.target.value)}
-                      placeholder="Type your full name"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-100"
-                    />
-                    {typedName.trim() && (
-                      <div className="mt-3 rounded-xl border border-slate-100 bg-white px-5 py-4">
-                        <p className="text-[11px] text-slate-400">Signature Preview</p>
-                        <p className="mt-1 font-serif text-2xl italic text-slate-800">
-                          {typedName}
-                        </p>
-                      </div>
-                    )}
-                  </div>
                 ) : (
-                  <div>
-                    {signaturePreview ? (
-                      <div className="space-y-2">
-                        <div className="rounded-xl border border-slate-100 bg-white p-3">
-                          <img
-                            src={signaturePreview}
-                            alt="Signature"
-                            className="mx-auto max-h-24 object-contain"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => { setSignatureFile(null); setSignaturePreview(null); }}
-                          className="w-full rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-medium text-slate-500 hover:bg-slate-50"
-                        >
-                          Remove & re-upload
-                        </button>
-                      </div>
-                    ) : (
-                      <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 py-6 transition hover:border-violet-300 hover:bg-violet-50/30">
-                        <Upload className="h-6 w-6 text-slate-300" />
-                        <span className="text-[12px] font-medium text-slate-500">Upload signature image</span>
-                        <span className="text-[11px] text-slate-400">PNG, JPG — max 5 MB</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={handleSigFileChange} />
-                      </label>
-                    )}
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-lg shadow-rose-100/20 backdrop-blur-xl">
+                    <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-rose-400">
+                      Decline Proposal
+                    </h3>
+                    <p className="mb-3 text-[12px] text-rose-600/80">
+                      Are you sure? The sender will be notified of your decision.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowReject(false)}
+                        className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleReject}
+                        disabled={rejecting}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-rose-500 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-rose-600 disabled:opacity-50"
+                      >
+                        {rejecting && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {rejecting ? "Declining…" : "Confirm Decline"}
+                      </button>
+                    </div>
                   </div>
                 )}
-
-                {submitError && (
-                  <p className="mt-3 text-[12px] text-rose-600">{submitError}</p>
-                )}
-
-                {/* Legal Consent */}
-                <label className="mt-4 flex items-start gap-2.5 cursor-pointer group">
-                  <div className="relative mt-0.5 flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={consentChecked}
-                      onChange={(e) => setConsentChecked(e.target.checked)}
-                      className="peer h-4 w-4 appearance-none rounded border border-slate-300 bg-slate-50 checked:border-violet-600 checked:bg-violet-600 focus:ring-2 focus:ring-violet-200 focus:ring-offset-1 transition-all"
-                    />
-                    <svg className="absolute w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <span className="text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-700 transition-colors">
-                    I agree to the terms and conditions and understand this is a legally binding signature.
-                  </span>
-                </label>
-
-                <button
-                  onClick={handleAccept}
-                  disabled={
-                    submitting ||
-                    !consentChecked ||
-                    (signatureMode === "draw" ? !hasDrawn : signatureMode === "type" ? !typedName.trim() : !signatureFile)
-                  }
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-lg shadow-emerald-200/50 transition hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
-                >
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  {submitting ? "Submitting…" : "Accept & Sign"}
-                </button>
-
-                <div className="mt-3 text-center">
-                  <button
-                    onClick={() => setShowReject(true)}
-                    className="text-[12px] font-medium text-slate-400 underline underline-offset-2 transition hover:text-slate-600"
-                  >
-                    Decline this proposal
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Reject Panel */}
-            {showReject && (
-              <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-lg shadow-rose-100/20 backdrop-blur-xl">
-                <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-rose-400">
-                  Decline Proposal
-                </h3>
-                <p className="mb-3 text-[12px] text-rose-600/80">
-                  Are you sure? The sender will be notified of your decision.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowReject(false)}
-                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleReject}
-                    disabled={rejecting}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-rose-500 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-rose-600 disabled:opacity-50"
-                  >
-                    {rejecting && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {rejecting ? "Declining…" : "Confirm Decline"}
-                  </button>
-                </div>
               </div>
             )}
           </aside>
         </div>
       </main>
 
-      {/* ── Proposal content styles ────────────────────────── */}
       <style jsx global>{`
         .proposal-content {
           font-family: Georgia, 'Times New Roman', serif;
@@ -718,49 +880,23 @@ export default function ProposalPortalPage() {
           line-height: 1.8;
           color: #1e293b;
         }
-        .proposal-content p {
-          margin-bottom: 0.75em;
-        }
+        .proposal-content p { margin-bottom: 0.75em; }
         .proposal-content h1, .proposal-content h2, .proposal-content h3 {
           font-family: system-ui, -apple-system, sans-serif;
-          font-weight: 700;
-          margin-top: 1.5em;
-          margin-bottom: 0.5em;
-          color: #0f172a;
+          font-weight: 700; margin-top: 1.5em; margin-bottom: 0.5em; color: #0f172a;
         }
         .proposal-content h1 { font-size: 1.5em; }
         .proposal-content h2 { font-size: 1.25em; }
         .proposal-content h3 { font-size: 1.1em; }
-        .proposal-content ul, .proposal-content ol {
-          padding-left: 1.5em;
-          margin-bottom: 0.75em;
-        }
-        .proposal-content table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-bottom: 1em;
-        }
-        .proposal-content th, .proposal-content td {
-          border: 1px solid #e2e8f0;
-          padding: 0.5em 0.75em;
-          text-align: left;
-          font-size: 13px;
-        }
-        .proposal-content th {
-          background: #f8fafc;
-          font-weight: 600;
-        }
-        .proposal-filled {
-          font-weight: 600;
-          color: #4338ca;
-        }
-        .proposal-placeholder {
-          background: #fef3c7;
-          padding: 0 4px;
-          border-radius: 3px;
-          color: #92400e;
-          font-size: 0.9em;
-        }
+        .proposal-content ul, .proposal-content ol { padding-left: 1.5em; margin-bottom: 0.75em; }
+        .proposal-content table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
+        .proposal-content th, .proposal-content td { border: 1px solid #e2e8f0; padding: 0.5em 0.75em; text-align: left; font-size: 13px; }
+        .proposal-content th { background: #f8fafc; font-weight: 600; }
+        
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoom-in { from { transform: translateX(-50%) scale(0.95); } to { transform: translateX(-50%) scale(1); } }
+        .animate-in { animation: fade-in 0.2s ease-out forwards, zoom-in 0.2s ease-out forwards; }
+
         @media print {
           header, aside, .no-print { display: none !important; }
           .proposal-content { font-size: 12px; }
