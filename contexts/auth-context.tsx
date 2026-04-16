@@ -14,7 +14,14 @@ import { auth, db } from "@/lib/firebase";
 // ─── TYPES ───────────────────────────────────────────────────
 export type UserRole = "staff" | "admin" | "ceo";
 
-export const DEPARTMENTS = ["Sales", "Marketing", "Legal", "Engineering", "Operations", "Finance"] as const;
+export const DEPARTMENTS = [
+  "Sales",
+  "Marketing",
+  "Legal",
+  "Engineering",
+  "Operations",
+  "Finance",
+] as const;
 export type Department = (typeof DEPARTMENTS)[number];
 
 export interface UserProfile {
@@ -71,13 +78,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let unsubProfile: (() => void) | null = null;
 
     const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-
-      // Clean up previous profile listener
+      // Clean up previous profile listener before doing anything else
       if (unsubProfile) {
         unsubProfile();
         unsubProfile = null;
       }
+
+      setUser(firebaseUser);
 
       if (firebaseUser) {
         // Real-time profile listener — detects role/department changes instantly
@@ -87,20 +94,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (snap.exists()) {
               const data = snap.data();
               setProfile({
-                ...data,
-                role: data.role || "staff",
-                department: data.department || null,
-              } as UserProfile);
+                email: data.email ?? "",
+                firstName: data.firstName ?? "",
+                lastName: data.lastName ?? "",
+                companyName: data.companyName ?? null,
+                role: (data.role as UserRole) ?? "staff",
+                department: data.department ?? null,
+                createdAt: data.createdAt,
+                updatedAt: data.updatedAt,
+              });
+            } else {
+              // User doc not yet created (e.g. just registered)
+              setProfile(null);
             }
             setLoading(false);
           },
           (error) => {
-            // ✅ THE FIX: We MUST check the error code BEFORE logging an error
+            // permission-denied fires briefly during sign-out before the
+            // listener is torn down — suppress it gracefully.
             if (error.code === "permission-denied") {
-              // Just do a quiet console.log instead of an error
-              console.log("[AuthProvider] Listener closed gracefully during logout.");
+              console.log(
+                "[AuthProvider] Listener closed gracefully during logout."
+              );
             } else {
-              // ONLY throw the red screen error if it's something else entirely
               console.error(
                 `[AuthProvider] onSnapshot error for user ${firebaseUser.uid}:`,
                 error.code ?? "",
@@ -111,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         );
       } else {
+        // Signed out
         setProfile(null);
         setLoading(false);
       }
@@ -122,9 +139,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, profile, role: profile?.role ?? "staff", loading }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value: AuthContextValue = {
+    user,
+    profile,
+    role: profile?.role ?? "staff",
+    loading,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
