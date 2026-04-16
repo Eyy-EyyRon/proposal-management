@@ -46,6 +46,10 @@ export default function ProposalPortalPage() {
   const [activeTab, setActiveTab] = useState<TabMode>("action");
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
+  
+  // 🔥 NEW: Dedicated quote state instead of pasting text
+  const [activeQuote, setActiveQuote] = useState(""); 
+  
   const [submittingComment, setSubmittingComment] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -192,11 +196,14 @@ export default function ProposalPortalPage() {
     try {
       await addDoc(collection(db, "proposals", proposal.id, "comments"), {
         text: newComment.trim(),
+        quote: activeQuote || null, // 🔥 NEW: Saves quote as structured data
         authorRole: "client",
         authorName: proposal.clientName || "Client",
         createdAt: serverTimestamp(),
       });
+      
       setNewComment("");
+      setActiveQuote(""); // Clear the quote after sending
       
       fetch("/api/send-comment-notification", {
         method: "POST",
@@ -205,6 +212,7 @@ export default function ProposalPortalPage() {
           proposalId: proposal.id,
           clientName: proposal.clientName,
           comment: newComment.trim(),
+          quote: activeQuote || null, // Pass to API
           staffId: proposal.userId
         })
       }).catch(console.error);
@@ -238,17 +246,15 @@ export default function ProposalPortalPage() {
     }
   };
 
-  // 🔥 FIX: Changed from onClick to onMouseDown and added preventDefault
   const handleQuoteClick = (e: React.MouseEvent) => {
-    e.preventDefault(); // Prevents the browser from clearing the text selection
-    e.stopPropagation(); // Stops the global click listener from firing
+    e.preventDefault(); 
+    e.stopPropagation(); 
 
     setActiveTab('discuss');
-    setNewComment((prev) => `${prev ? prev + '\n\n' : ''}> "${quoteTooltip.text}"\n\n`);
+    setActiveQuote(quoteTooltip.text); // 🔥 Set as a clean state variable
     setQuoteTooltip({ visible: false, x: 0, y: 0, text: "" });
     window.getSelection()?.removeAllRanges();
 
-    // Auto-focus the chat box so they can immediately type their question
     setTimeout(() => {
       document.getElementById("chat-textarea")?.focus();
     }, 50);
@@ -469,14 +475,13 @@ export default function ProposalPortalPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       
-      {/* Floating Quote Tooltip */}
       {quoteTooltip.visible && (
         <div 
           className="fixed z-50 animate-in fade-in zoom-in duration-200"
           style={{ top: quoteTooltip.y - 45, left: quoteTooltip.x, transform: 'translateX(-50%)' }}
         >
           <button
-            onMouseDown={handleQuoteClick} // 🔥 FIX IS HERE
+            onMouseDown={handleQuoteClick}
             className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg shadow-xl hover:bg-slate-800 transition"
           >
             <Quote className="w-3.5 h-3.5" />
@@ -567,7 +572,6 @@ export default function ProposalPortalPage() {
 
           <aside className="flex flex-col gap-5 h-full">
             
-            {/* Tab Switcher */}
             <div className="flex p-1 bg-slate-200/50 rounded-xl">
               <button 
                 onClick={() => setActiveTab('action')} 
@@ -584,7 +588,6 @@ export default function ProposalPortalPage() {
               </button>
             </div>
 
-            {/* TAB CONTENT: Discuss */}
             {activeTab === 'discuss' ? (
               <div className="flex flex-col flex-1 border border-slate-200/60 bg-white/80 rounded-2xl shadow-lg backdrop-blur-xl overflow-hidden min-h-[500px] max-h-[700px] sticky top-24">
                 <div className="p-4 border-b border-slate-100 bg-slate-50/50">
@@ -601,17 +604,16 @@ export default function ProposalPortalPage() {
                         <span className="text-[10px] text-slate-400 mb-1 px-1">{c.authorName || 'Client'}</span>
                         <div className={`px-3 py-2.5 rounded-xl max-w-[85%] text-[13px] leading-relaxed shadow-sm ${c.authorRole === 'client' ? 'bg-violet-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'}`}>
                           
-                          {c.text.split('\n').map((line: string, i: number) => {
-                            if (line.trim().startsWith('> "') || line.trim().startsWith('> ')) {
-                              return (
-                                <div key={i} className={`border-l-2 pl-2 my-1 text-[11px] italic opacity-90 ${c.authorRole === 'client' ? 'border-white/50' : 'border-slate-300 text-slate-500'}`}>
-                                  {line.replace(/^>\s*/, '')}
-                                </div>
-                              );
-                            }
-                            return <span key={i}>{line}<br/></span>;
-                          })}
+                          {/* 🔥 Graceful Structured Quote Render */}
+                          {c.quote && (
+                            <div className={`mb-2 pl-2 border-l-2 text-[11px] italic opacity-90 ${c.authorRole === 'client' ? 'border-white/50' : 'border-slate-300 text-slate-500'}`}>
+                              "{c.quote}"
+                            </div>
+                          )}
 
+                          {c.text.split('\n').map((line: string, i: number) => (
+                            <span key={i}>{line}<br/></span>
+                          ))}
                         </div>
                       </div>
                     ))
@@ -619,23 +621,45 @@ export default function ProposalPortalPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <form onSubmit={handleAddComment} className="p-3 border-t border-slate-100 bg-white flex flex-col gap-2">
-                  <textarea 
-                    id="chat-textarea" // 🔥 ADDED ID FOR AUTO-FOCUS
-                    value={newComment} 
-                    onChange={e => setNewComment(e.target.value)} 
-                    placeholder="Type a message..." 
-                    rows={newComment.includes('>') ? 3 : 1}
-                    className="w-full text-[13px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-200 resize-none transition-all"
-                  />
-                  <div className="flex justify-end">
-                    <button 
-                      disabled={!newComment.trim() || submittingComment} 
-                      className="bg-violet-600 text-white rounded-lg px-4 py-1.5 disabled:opacity-50 hover:bg-violet-700 transition flex items-center gap-1.5"
-                    >
-                      <span className="text-[12px] font-medium">Send</span>
-                      <Send className="w-3.5 h-3.5" />
-                    </button>
+                <form onSubmit={handleAddComment} className="p-3 border-t border-slate-100 bg-white flex flex-col relative">
+                  
+                  {/* 🔥 Active Quote Preview Above the Text Box */}
+                  {activeQuote && (
+                    <div className="mb-2 relative bg-violet-50 border-l-2 border-violet-500 p-2.5 rounded-r-lg">
+                      <button
+                        type="button"
+                        onClick={() => setActiveQuote("")} // Lets them clear the quote if they change their mind
+                        className="absolute top-1 right-1 p-1 text-violet-400 hover:text-violet-600 rounded-md hover:bg-violet-100 transition"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                      <p className="text-[11px] font-medium text-violet-800 mb-1 flex items-center gap-1">
+                        <Quote className="w-3 h-3" /> Replying to quote
+                      </p>
+                      <p className="text-[11px] text-violet-600 italic pr-6 line-clamp-2">
+                        "{activeQuote}"
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    <textarea 
+                      id="chat-textarea"
+                      value={newComment} 
+                      onChange={e => setNewComment(e.target.value)} 
+                      placeholder="Type a message..." 
+                      rows={2}
+                      className="w-full text-[13px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-200 resize-none transition-all"
+                    />
+                    <div className="flex justify-end">
+                      <button 
+                        disabled={!newComment.trim() || submittingComment} 
+                        className="bg-violet-600 text-white rounded-lg px-4 py-1.5 disabled:opacity-50 hover:bg-violet-700 transition flex items-center gap-1.5"
+                      >
+                        <span className="text-[12px] font-medium">Send</span>
+                        <Send className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>
