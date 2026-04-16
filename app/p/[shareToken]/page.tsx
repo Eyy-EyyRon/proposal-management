@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import {
   FileText, X, Check, AlertCircle, Download, Pen, Upload,
   Image as ImageIcon, Loader2, ShieldCheck, Sparkles, PenLine, Eraser, LockKeyhole,
-  MessageCircle, Send // Added new icons for the chat feature
+  MessageCircle, Send, Quote // 🔥 Added Quote icon
 } from "lucide-react";
 import {
   getProposal, markProposalViewed, acceptProposal, rejectProposal,
@@ -15,13 +15,13 @@ import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
-// 🔥 Added Firebase imports for real-time chat
+// Firebase imports for real-time chat
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase"; 
 
 type SignatureMode = "draw" | "type" | "upload";
 type ViewState = "loading" | "not-found" | "locked" | "document" | "rejected";
-type TabMode = "action" | "discuss"; // Added Tab State Type
+type TabMode = "action" | "discuss";
 
 export default function ProposalPortalPage() {
   const params = useParams();
@@ -47,12 +47,17 @@ export default function ProposalPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // 🔥 Discussion State
+  // Discussion State
   const [activeTab, setActiveTab] = useState<TabMode>("action");
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 🔥 NEW: Text Highlighting State
+  const [quoteTooltip, setQuoteTooltip] = useState<{ visible: boolean; x: number; y: number; text: string }>({
+    visible: false, x: 0, y: 0, text: ""
+  });
 
   // Draw canvas
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -116,7 +121,6 @@ export default function ProposalPortalPage() {
     setHasDrawn(false);
   };
 
-  // Re-initialize canvas if they switch back to the draw tab
   useEffect(() => {
     if (signatureMode === "draw" && activeTab === "action" && proposal?.status !== "accepted") {
       const canvas = canvasRef.current;
@@ -174,26 +178,24 @@ export default function ProposalPortalPage() {
   useEffect(() => {
     if (viewState !== "document" || viewTracked.current || !shareToken) return;
     viewTracked.current = true;
-    // Don't mark as viewed if already accepted
     if (proposal?.status !== "accepted") {
         markProposalViewed(shareToken).catch(console.error);
     }
   }, [viewState, shareToken, proposal?.status]);
 
-  // 🔥 Real-time Comments Listener
+  // Real-time Comments Listener
   useEffect(() => {
     if (!proposal?.id) return;
     const q = query(collection(db, "proposals", proposal.id, "comments"), orderBy("createdAt", "asc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedComments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setComments(fetchedComments);
-      // Auto-scroll to bottom on new message
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
     return () => unsubscribe();
   }, [proposal?.id]);
 
-  // 🔥 Submit Comment Handler
+  // Submit Comment Handler
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !proposal) return;
@@ -207,7 +209,6 @@ export default function ProposalPortalPage() {
       });
       setNewComment("");
       
-      // Trigger email notification to staff
       fetch("/api/send-comment-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -225,6 +226,50 @@ export default function ProposalPortalPage() {
       setSubmittingComment(false);
     }
   };
+
+  // 🔥 NEW: Highlighting Logic
+  const handleTextSelection = () => {
+    // Prevent quoting if the document is already signed
+    if (proposal?.status === "accepted") return;
+
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+
+    if (text && text.length > 0) {
+      const range = selection?.getRangeAt(0);
+      const rect = range?.getBoundingClientRect();
+      if (rect) {
+        setQuoteTooltip({
+          visible: true,
+          x: rect.left + (rect.width / 2),
+          y: rect.top - 10, // Position just above the text
+          text: text
+        });
+      }
+    } else {
+      setQuoteTooltip((prev) => ({ ...prev, visible: false }));
+    }
+  };
+
+  // 🔥 NEW: Action when "Quote" is clicked
+  const handleQuoteClick = () => {
+    setActiveTab('discuss');
+    // Prepend the selected text as a quote, then add two newlines so they can type below it
+    setNewComment((prev) => `${prev ? prev + '\n\n' : ''}> "${quoteTooltip.text}"\n\n`);
+    setQuoteTooltip({ visible: false, x: 0, y: 0, text: "" });
+    window.getSelection()?.removeAllRanges(); // Clear the text highlight
+  };
+
+  // Hide tooltip if they click anywhere else on the screen
+  useEffect(() => {
+    const hideTooltip = () => {
+      if (window.getSelection()?.toString().trim() === "") {
+        setQuoteTooltip((prev) => ({ ...prev, visible: false }));
+      }
+    };
+    document.addEventListener("mousedown", hideTooltip);
+    return () => document.removeEventListener("mousedown", hideTooltip);
+  }, []);
 
   // Handle Accept
   const handleAccept = useCallback(async () => {
@@ -268,16 +313,14 @@ export default function ProposalPortalPage() {
         return;
       }
 
-      // 1. Save to Firestore
       await acceptProposal(proposal.id, sigType, sigUrl);
 
-      // 2. Trigger Email Notification to Staff and Client
       try {
         await fetch("/api/send-copies", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            proposalId: shareToken, // using shareToken as the ID in the URL
+            proposalId: shareToken,
             clientEmail: proposal.fieldValues?.email || proposal.clientEmail || "client@example.com",
             clientName: proposal.clientName,
             staffId: proposal.userId
@@ -287,7 +330,6 @@ export default function ProposalPortalPage() {
         console.error("Failed to trigger email copies:", emailError);
       }
 
-      // 3. Update local state to hide signature box immediately
       setProposal({ ...proposal, status: "accepted" });
 
     } catch (err: unknown) {
@@ -435,7 +477,25 @@ export default function ProposalPortalPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-lg sticky top-0 z-50">
+      
+      {/* 🔥 NEW: Floating Quote Tooltip */}
+      {quoteTooltip.visible && (
+        <div 
+          className="fixed z-50 animate-in fade-in zoom-in duration-200"
+          style={{ top: quoteTooltip.y - 45, left: quoteTooltip.x, transform: 'translateX(-50%)' }}
+        >
+          <button
+            onClick={handleQuoteClick}
+            className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg shadow-xl hover:bg-slate-800 transition"
+          >
+            <Quote className="w-3.5 h-3.5" />
+            <span className="text-[12px] font-medium whitespace-nowrap">Quote in Discussion</span>
+          </button>
+          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900 mx-auto -mt-px"></div>
+        </div>
+      )}
+
+      <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-lg sticky top-0 z-40">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-md shadow-indigo-200/60">
@@ -483,6 +543,7 @@ export default function ProposalPortalPage() {
                 <div
                   className="proposal-content px-8 py-6 sm:px-10 sm:py-8"
                   dangerouslySetInnerHTML={{ __html: documentHtml }}
+                  onMouseUp={handleTextSelection} // 🔥 Tracks text selection
                 />
               ) : renderError ? (
                 <div className="px-8 py-16 text-center">
@@ -515,7 +576,7 @@ export default function ProposalPortalPage() {
 
           <aside className="flex flex-col gap-5 h-full">
             
-            {/* 🔥 Tab Switcher */}
+            {/* Tab Switcher */}
             <div className="flex p-1 bg-slate-200/50 rounded-xl">
               <button 
                 onClick={() => setActiveTab('action')} 
@@ -537,7 +598,7 @@ export default function ProposalPortalPage() {
               <div className="flex flex-col flex-1 border border-slate-200/60 bg-white/80 rounded-2xl shadow-lg backdrop-blur-xl overflow-hidden min-h-[500px] max-h-[700px] sticky top-24">
                 <div className="p-4 border-b border-slate-100 bg-slate-50/50">
                   <h3 className="text-[13px] font-bold text-slate-800">Discussion Thread</h3>
-                  <p className="text-[11px] text-slate-500">Ask questions or request changes.</p>
+                  <p className="text-[11px] text-slate-500">Highlight text in the document to quote it.</p>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -547,8 +608,20 @@ export default function ProposalPortalPage() {
                     comments.map(c => (
                       <div key={c.id} className={`flex flex-col ${c.authorRole === 'client' ? 'items-end' : 'items-start'}`}>
                         <span className="text-[10px] text-slate-400 mb-1 px-1">{c.authorName || 'Client'}</span>
-                        <div className={`px-3 py-2 rounded-xl max-w-[85%] text-[13px] leading-relaxed shadow-sm ${c.authorRole === 'client' ? 'bg-violet-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'}`}>
-                          {c.text}
+                        <div className={`px-3 py-2.5 rounded-xl max-w-[85%] text-[13px] leading-relaxed shadow-sm ${c.authorRole === 'client' ? 'bg-violet-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'}`}>
+                          
+                          {/* 🔥 Smart Chat Formatting: Renders quotes beautifully */}
+                          {c.text.split('\n').map((line: string, i: number) => {
+                            if (line.trim().startsWith('> "') || line.trim().startsWith('> ')) {
+                              return (
+                                <div key={i} className={`border-l-2 pl-2 my-1 text-[11px] italic opacity-90 ${c.authorRole === 'client' ? 'border-white/50' : 'border-slate-300 text-slate-500'}`}>
+                                  {line.replace(/^>\s*/, '')}
+                                </div>
+                              );
+                            }
+                            return <span key={i}>{line}<br/></span>;
+                          })}
+
                         </div>
                       </div>
                     ))
@@ -556,20 +629,23 @@ export default function ProposalPortalPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <form onSubmit={handleAddComment} className="p-3 border-t border-slate-100 bg-white flex gap-2">
-                  <input 
-                    type="text" 
+                <form onSubmit={handleAddComment} className="p-3 border-t border-slate-100 bg-white flex flex-col gap-2">
+                  <textarea 
                     value={newComment} 
                     onChange={e => setNewComment(e.target.value)} 
                     placeholder="Type a message..." 
-                    className="flex-1 text-[13px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-200"
+                    rows={newComment.includes('>') ? 3 : 1}
+                    className="w-full text-[13px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-200 resize-none transition-all"
                   />
-                  <button 
-                    disabled={!newComment.trim() || submittingComment} 
-                    className="bg-violet-600 text-white rounded-lg px-3 py-2 disabled:opacity-50 hover:bg-violet-700 transition"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
+                  <div className="flex justify-end">
+                    <button 
+                      disabled={!newComment.trim() || submittingComment} 
+                      className="bg-violet-600 text-white rounded-lg px-4 py-1.5 disabled:opacity-50 hover:bg-violet-700 transition flex items-center gap-1.5"
+                    >
+                      <span className="text-[12px] font-medium">Send</span>
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </form>
               </div>
             ) : (
@@ -828,6 +904,12 @@ export default function ProposalPortalPage() {
         .proposal-content table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
         .proposal-content th, .proposal-content td { border: 1px solid #e2e8f0; padding: 0.5em 0.75em; text-align: left; font-size: 13px; }
         .proposal-content th { background: #f8fafc; font-weight: 600; }
+        
+        /* Tooltip Animations */
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoom-in { from { transform: translateX(-50%) scale(0.95); } to { transform: translateX(-50%) scale(1); } }
+        .animate-in { animation: fade-in 0.2s ease-out forwards, zoom-in 0.2s ease-out forwards; }
+
         @media print {
           header, aside, .no-print { display: none !important; }
           .proposal-content { font-size: 12px; }
