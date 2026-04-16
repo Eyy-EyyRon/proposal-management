@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import {
   FileText, X, Check, AlertCircle, Download, Pen, Upload,
   Image as ImageIcon, Loader2, ShieldCheck, Sparkles, PenLine, Eraser, LockKeyhole,
-  MessageCircle, Send, Quote // 🔥 Added Quote icon
+  MessageCircle, Send, Quote
 } from "lucide-react";
 import {
   getProposal, markProposalViewed, acceptProposal, rejectProposal,
@@ -15,7 +15,6 @@ import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
-// Firebase imports for real-time chat
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase"; 
 
@@ -27,7 +26,6 @@ export default function ProposalPortalPage() {
   const params = useParams();
   const shareToken = params.shareToken as string;
 
-  // State
   const [viewState, setViewState] = useState<ViewState>("loading");
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [documentHtml, setDocumentHtml] = useState<string>("");
@@ -35,11 +33,9 @@ export default function ProposalPortalPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const documentRef = useRef<HTMLDivElement>(null);
 
-  // Access code gate
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [accessCodeError, setAccessCodeError] = useState(false);
 
-  // Signature
   const [signatureMode, setSignatureMode] = useState<SignatureMode>("draw");
   const [typedName, setTypedName] = useState("");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
@@ -47,19 +43,16 @@ export default function ProposalPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Discussion State
   const [activeTab, setActiveTab] = useState<TabMode>("action");
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 🔥 NEW: Text Highlighting State
   const [quoteTooltip, setQuoteTooltip] = useState<{ visible: boolean; x: number; y: number; text: string }>({
     visible: false, x: 0, y: 0, text: ""
   });
 
-  // Draw canvas
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
   const [hasDrawn, setHasDrawn] = useState(false);
@@ -137,7 +130,6 @@ export default function ProposalPortalPage() {
   const [rejecting, setRejecting] = useState(false);
   const viewTracked = useRef(false);
 
-  // Fetch proposal
   useEffect(() => {
     if (!shareToken) return;
     let cancelled = false;
@@ -174,7 +166,6 @@ export default function ProposalPortalPage() {
     return () => { cancelled = true; };
   }, [shareToken]);
 
-  // Track view
   useEffect(() => {
     if (viewState !== "document" || viewTracked.current || !shareToken) return;
     viewTracked.current = true;
@@ -183,7 +174,6 @@ export default function ProposalPortalPage() {
     }
   }, [viewState, shareToken, proposal?.status]);
 
-  // Real-time Comments Listener
   useEffect(() => {
     if (!proposal?.id) return;
     const q = query(collection(db, "proposals", proposal.id, "comments"), orderBy("createdAt", "asc"));
@@ -195,7 +185,6 @@ export default function ProposalPortalPage() {
     return () => unsubscribe();
   }, [proposal?.id]);
 
-  // Submit Comment Handler
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !proposal) return;
@@ -227,9 +216,7 @@ export default function ProposalPortalPage() {
     }
   };
 
-  // 🔥 NEW: Highlighting Logic
   const handleTextSelection = () => {
-    // Prevent quoting if the document is already signed
     if (proposal?.status === "accepted") return;
 
     const selection = window.getSelection();
@@ -242,7 +229,7 @@ export default function ProposalPortalPage() {
         setQuoteTooltip({
           visible: true,
           x: rect.left + (rect.width / 2),
-          y: rect.top - 10, // Position just above the text
+          y: rect.top - 10,
           text: text
         });
       }
@@ -251,16 +238,22 @@ export default function ProposalPortalPage() {
     }
   };
 
-  // 🔥 NEW: Action when "Quote" is clicked
-  const handleQuoteClick = () => {
+  // 🔥 FIX: Changed from onClick to onMouseDown and added preventDefault
+  const handleQuoteClick = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevents the browser from clearing the text selection
+    e.stopPropagation(); // Stops the global click listener from firing
+
     setActiveTab('discuss');
-    // Prepend the selected text as a quote, then add two newlines so they can type below it
     setNewComment((prev) => `${prev ? prev + '\n\n' : ''}> "${quoteTooltip.text}"\n\n`);
     setQuoteTooltip({ visible: false, x: 0, y: 0, text: "" });
-    window.getSelection()?.removeAllRanges(); // Clear the text highlight
+    window.getSelection()?.removeAllRanges();
+
+    // Auto-focus the chat box so they can immediately type their question
+    setTimeout(() => {
+      document.getElementById("chat-textarea")?.focus();
+    }, 50);
   };
 
-  // Hide tooltip if they click anywhere else on the screen
   useEffect(() => {
     const hideTooltip = () => {
       if (window.getSelection()?.toString().trim() === "") {
@@ -271,7 +264,6 @@ export default function ProposalPortalPage() {
     return () => document.removeEventListener("mousedown", hideTooltip);
   }, []);
 
-  // Handle Accept
   const handleAccept = useCallback(async () => {
     if (!proposal) return;
     setSubmitting(true);
@@ -391,7 +383,6 @@ export default function ProposalPortalPage() {
     setViewState("document");
   }, [proposal, accessCodeInput]);
 
-  // UI Renders
   if (viewState === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -478,14 +469,14 @@ export default function ProposalPortalPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       
-      {/* 🔥 NEW: Floating Quote Tooltip */}
+      {/* Floating Quote Tooltip */}
       {quoteTooltip.visible && (
         <div 
           className="fixed z-50 animate-in fade-in zoom-in duration-200"
           style={{ top: quoteTooltip.y - 45, left: quoteTooltip.x, transform: 'translateX(-50%)' }}
         >
           <button
-            onClick={handleQuoteClick}
+            onMouseDown={handleQuoteClick} // 🔥 FIX IS HERE
             className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg shadow-xl hover:bg-slate-800 transition"
           >
             <Quote className="w-3.5 h-3.5" />
@@ -543,7 +534,7 @@ export default function ProposalPortalPage() {
                 <div
                   className="proposal-content px-8 py-6 sm:px-10 sm:py-8"
                   dangerouslySetInnerHTML={{ __html: documentHtml }}
-                  onMouseUp={handleTextSelection} // 🔥 Tracks text selection
+                  onMouseUp={handleTextSelection}
                 />
               ) : renderError ? (
                 <div className="px-8 py-16 text-center">
@@ -610,7 +601,6 @@ export default function ProposalPortalPage() {
                         <span className="text-[10px] text-slate-400 mb-1 px-1">{c.authorName || 'Client'}</span>
                         <div className={`px-3 py-2.5 rounded-xl max-w-[85%] text-[13px] leading-relaxed shadow-sm ${c.authorRole === 'client' ? 'bg-violet-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'}`}>
                           
-                          {/* 🔥 Smart Chat Formatting: Renders quotes beautifully */}
                           {c.text.split('\n').map((line: string, i: number) => {
                             if (line.trim().startsWith('> "') || line.trim().startsWith('> ')) {
                               return (
@@ -631,6 +621,7 @@ export default function ProposalPortalPage() {
 
                 <form onSubmit={handleAddComment} className="p-3 border-t border-slate-100 bg-white flex flex-col gap-2">
                   <textarea 
+                    id="chat-textarea" // 🔥 ADDED ID FOR AUTO-FOCUS
                     value={newComment} 
                     onChange={e => setNewComment(e.target.value)} 
                     placeholder="Type a message..." 
@@ -665,7 +656,6 @@ export default function ProposalPortalPage() {
                   </dl>
                 </div>
 
-                {/* ── ALREADY ACCEPTED VIEW (LOCKED) ── */}
                 {proposal?.status === "accepted" ? (
                   <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/80 p-6 shadow-lg text-center backdrop-blur-xl">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 mb-4">
@@ -693,7 +683,6 @@ export default function ProposalPortalPage() {
                     </button>
                   </div>
                 ) : !showReject ? (
-                  /* ── SIGNING VIEW ── */
                   <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">
                     <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
                       Sign &amp; Accept
@@ -853,7 +842,6 @@ export default function ProposalPortalPage() {
                     </div>
                   </div>
                 ) : (
-                  /* ── REJECT VIEW ── */
                   <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-lg shadow-rose-100/20 backdrop-blur-xl">
                     <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-rose-400">
                       Decline Proposal
@@ -905,7 +893,6 @@ export default function ProposalPortalPage() {
         .proposal-content th, .proposal-content td { border: 1px solid #e2e8f0; padding: 0.5em 0.75em; text-align: left; font-size: 13px; }
         .proposal-content th { background: #f8fafc; font-weight: 600; }
         
-        /* Tooltip Animations */
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes zoom-in { from { transform: translateX(-50%) scale(0.95); } to { transform: translateX(-50%) scale(1); } }
         .animate-in { animation: fade-in 0.2s ease-out forwards, zoom-in 0.2s ease-out forwards; }
