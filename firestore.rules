@@ -41,20 +41,14 @@ service cloud.firestore {
     }
 
     // ─── USERS ───────────────────────────────────────────────
-    // Create: only the authenticated owner can create their own doc (signup).
-    // Read:   owner, admin (same dept), or CEO.
-    // Update: owner (cannot change own role), or CEO (unrestricted).
-    // Delete: CEO only.
     match /users/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
 
       allow read: if isOwner(userId) || isAdminOrCeo();
 
       allow update: if
-        // CEO can update anyone
         isCeo()
         ||
-        // Owner can update self but CANNOT change their own role
         (
           isOwner(userId)
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role"])
@@ -64,8 +58,6 @@ service cloud.firestore {
     }
 
     // ─── DEPARTMENTS ────────────────────────────────────────
-    // Read:  any authenticated user (needed for onboarding).
-    // Create/delete: admin or CEO only.
     match /departments/{deptId} {
       allow read: if isSignedIn();
       allow create, delete: if isAdminOrCeo();
@@ -73,15 +65,11 @@ service cloud.firestore {
     }
 
     // ─── ORGANIZATION SETTINGS ───────────────────────────────
-    // Only the authenticated owner can read/write their org settings.
     match /orgSettings/{userId} {
       allow read, write: if isOwner(userId);
     }
 
     // ─── TEMPLATES ───────────────────────────────────────────
-    // Read:  owner, admin (same dept via user lookup), or CEO.
-    // Create: owner sets themselves as userId.
-    // Update/delete: owner, or admin/CEO.
     match /templates/{templateId} {
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
@@ -100,11 +88,6 @@ service cloud.firestore {
     }
 
     // ─── PROPOSALS ───────────────────────────────────────────
-    // get:    public (client portal needs to fetch by ID).
-    // list:   owner, admin (same department), or CEO.
-    // create: owner only, status must be "sent".
-    // delete: owner, or admin/CEO.
-    // update: owner (full), admin/CEO (full), or public (restricted).
     match /proposals/{proposalId} {
 
       allow get: if true;
@@ -150,9 +133,11 @@ service cloud.firestore {
           && request.resource.data.clientEmail == resource.data.clientEmail
           && request.resource.data.fieldValues == resource.data.fieldValues
           && request.resource.data.createdAt == resource.data.createdAt
+          // 🔥 NEW: Explicitly protect the version field from the public
+          && request.resource.data.get('version', 1) == resource.data.get('version', 1)
         );
 
-      // 🔥 NEW: Allow public chat inside the specific proposal
+      // Allow public chat inside the specific proposal
       match /comments/{commentId} {
         allow read: if true;
         allow create: if true; // Allows the client portal to post messages
@@ -162,9 +147,6 @@ service cloud.firestore {
     }
 
     // ─── NOTIFICATIONS ─────────────────────────────────────────
-    // Read:  owner of the notification, or CEO (global feed).
-    // Update: owner only (mark as read).
-    // Create/delete: Cloud Functions via Admin SDK only.
     match /notifications/{notificationId} {
       allow read: if isSignedIn()
         && (
@@ -178,16 +160,12 @@ service cloud.firestore {
     }
 
     // ─── ANALYTICS ───────────────────────────────────────────
-    // Read:  owner, or CEO (global view).
-    // Write: owner can create/update their own analytics doc.
     match /analytics/{userId} {
       allow read: if isOwner(userId) || isCeo();
       allow write: if isOwner(userId);
     }
 
     // ─── STATS (Aggregated) ─────────────────────────────────
-    // Read: any authenticated user.
-    // Write: only Cloud Functions (admin SDK bypasses rules).
     match /stats/{docId} {
       allow read: if isSignedIn();
       allow write: if false;
