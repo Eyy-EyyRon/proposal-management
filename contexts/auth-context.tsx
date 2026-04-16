@@ -95,14 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setLoading(false);
           },
           (error) => {
-            console.error(
-              `[AuthProvider] onSnapshot error for user ${firebaseUser.uid}:`,
-              error.code ?? "",
-              error.message
-            );
+            // ✅ THE FIX: We MUST check the error code BEFORE logging an error
             if (error.code === "permission-denied") {
-              console.warn(
-                "[AuthProvider] permission-denied — check Firestore rules for /users/{userId}"
+              // Just do a quiet console.log instead of an error
+              console.log("[AuthProvider] Listener closed gracefully during logout.");
+            } else {
+              // ONLY throw the red screen error if it's something else entirely
+              console.error(
+                `[AuthProvider] onSnapshot error for user ${firebaseUser.uid}:`,
+                error.code ?? "",
+                error.message
               );
             }
             setLoading(false);
