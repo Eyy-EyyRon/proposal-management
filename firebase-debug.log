@@ -1,0 +1,16 @@
+[debug] [2026-04-16T18:52:52.243Z] ----------------------------------------------------------------------
+[debug] [2026-04-16T18:52:52.245Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Administrator\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy
+[debug] [2026-04-16T18:52:52.245Z] CLI Version:   15.14.0
+[debug] [2026-04-16T18:52:52.245Z] Platform:      win32
+[debug] [2026-04-16T18:52:52.245Z] Node Version:  v24.14.1
+[debug] [2026-04-16T18:52:52.245Z] Time:          Fri Apr 17 2026 02:52:52 GMT+0800 (Singapore Standard Time)
+[debug] [2026-04-16T18:52:52.246Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-04-16T18:52:53.188Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-16T18:52:53.188Z] > authorizing via signed-in user (ahronp@hyacinthindustriesllc.com)
+[debug] [2026-04-16T18:52:53.188Z] [iam] checking project proposal-management-1d4ec for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]
+[debug] [2026-04-16T18:52:53.189Z] Checked if tokens are valid: true, expires at: 1776367490696
+[debug] [2026-04-16T18:52:53.189Z] Checked if tokens are valid: true, expires at: 1776367490696
+[debug] [2026-04-16T18:52:53.190Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions [none]
+[debug] [2026-04-16T18:52:53.190Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions  x-goog-user-project=proposal-management-1d4ec
+[debug] [2026-04-16T18:52:53.190Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/proposal-management-1d4ec:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}

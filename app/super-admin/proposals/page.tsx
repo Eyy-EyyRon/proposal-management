@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import {
   getAllProposals,
-  resolveUserNames,
+  batchGetUserNames, // 🔥 CHANGED THIS
   type Proposal,
 } from "@/lib/firestore";
 
@@ -35,7 +35,8 @@ export default function ProposalsPage() {
       try {
         const data = await getAllProposals();
         setProposals(data);
-        const names = await resolveUserNames(data.map((p) => p.userId));
+        // 🔥 CHANGED THIS TO MATCH YOUR FIRESTORE.TS
+        const names = await batchGetUserNames(data.map((p) => p.userId));
         setUserNames(names);
       } finally {
         setLoading(false);
