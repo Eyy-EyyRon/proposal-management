@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Check, Upload, Link as LinkIcon, Loader2 } from "lucide-react";
+import { FileText, Check, Upload, Link as LinkIcon, Loader2, Lock } from "lucide-react";
 
 interface Template {
   id: string;
@@ -20,6 +20,7 @@ interface ProposalFormProps {
   onSubmit: (data: {
     templateId: string;
     fieldValues: Record<string, string>;
+    accessCode?: string;
   }) => Promise<void>;
   submitting?: boolean;
 }
@@ -30,6 +31,7 @@ const inputClass =
 export function ProposalForm({ templates, onSubmit, submitting = false }: ProposalFormProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [accessCode, setAccessCode] = useState("");
 
   const handleTemplateSelect = (template: Template) => {
     setSelectedTemplate(template);
@@ -55,6 +57,7 @@ export function ProposalForm({ templates, onSubmit, submitting = false }: Propos
     await onSubmit({
       templateId: selectedTemplate.id,
       fieldValues,
+      ...(accessCode.trim() ? { accessCode: accessCode.trim() } : {}),
     });
   };
 
@@ -140,6 +143,31 @@ export function ProposalForm({ templates, onSubmit, submitting = false }: Propos
                 />
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Access Code (optional security) */}
+      {selectedTemplate && (
+        <div>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+            Security (Optional)
+          </p>
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-slate-700">
+              <Lock className="h-3.5 w-3.5 text-slate-400" />
+              Access Code
+            </label>
+            <input
+              type="text"
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value)}
+              placeholder="Leave empty for no protection"
+              className={inputClass}
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              If set, the client must enter this code before viewing the proposal.
+            </p>
           </div>
         </div>
       )}

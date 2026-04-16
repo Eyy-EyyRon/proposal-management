@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
   FileText, X, Check, AlertCircle, Download, Pen, Upload,
-  Image as ImageIcon, Loader2, ShieldCheck, Sparkles,
+  Image as ImageIcon, Loader2, ShieldCheck, Sparkles, PenLine, Eraser, LockKeyhole,
 } from "lucide-react";
 import {
   getProposal, markProposalViewed, acceptProposal, rejectProposal,
@@ -14,8 +14,8 @@ import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
-type SignatureMode = "type" | "upload";
-type ViewState = "loading" | "not-found" | "document" | "accepted" | "rejected";
+type SignatureMode = "draw" | "type" | "upload";
+type ViewState = "loading" | "not-found" | "locked" | "document" | "accepted" | "rejected";
 
 export default function ProposalPortalPage() {
   const params = useParams();
@@ -29,13 +29,94 @@ export default function ProposalPortalPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const documentRef = useRef<HTMLDivElement>(null);
 
+  // Access code gate
+  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [accessCodeError, setAccessCodeError] = useState(false);
+
   // Signature
-  const [signatureMode, setSignatureMode] = useState<SignatureMode>("type");
+  const [signatureMode, setSignatureMode] = useState<SignatureMode>("draw");
   const [typedName, setTypedName] = useState("");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Draw canvas
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef = useRef(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+
+  const getCanvasPoint = (e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if ("touches" in e) {
+      return {
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY,
+      };
+    }
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    isDrawingRef.current = true;
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) return;
+    const pt = getCanvasPoint(e);
+    ctx.beginPath();
+    ctx.moveTo(pt.x, pt.y);
+  };
+
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawingRef.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) return;
+    const pt = getCanvasPoint(e);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineTo(pt.x, pt.y);
+    ctx.stroke();
+    setHasDrawn(true);
+  };
+
+  const stopDrawing = () => {
+    isDrawingRef.current = false;
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    setHasDrawn(false);
+  };
+
+  // Initialize canvas background on mount / mode switch
+  useEffect(() => {
+    if (signatureMode === "draw") {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }, [signatureMode]);
+
+  // Legal consent
+  const [consentChecked, setConsentChecked] = useState(false);
 
   // Reject
   const [showReject, setShowReject] = useState(false);
@@ -55,8 +136,15 @@ export default function ProposalPortalPage() {
 
         setProposal(p);
 
+        if (p.status === "archived") { if (!cancelled) setViewState("not-found"); return; }
         if (p.status === "accepted") { setViewState("accepted"); return; }
         if (p.status === "rejected") { setViewState("rejected"); return; }
+
+        // Access code gate — show lock screen before rendering document
+        if (p.accessCode) {
+          if (!cancelled) setViewState("locked");
+          return;
+        }
 
         // Render docx → HTML with mail-merge using URL stored on the proposal
         if (p.templateFileUrl) {
@@ -94,7 +182,12 @@ export default function ProposalPortalPage() {
       let sigUrl = "";
       let sigType: "draw" | "upload" = "draw";
 
-      if (signatureMode === "type" && typedName.trim()) {
+      if (signatureMode === "draw" && hasDrawn && canvasRef.current) {
+        const dataUrl = canvasRef.current.toDataURL("image/png");
+        const res = await uploadSignature(dataUrl, proposal.id);
+        sigUrl = res.url;
+        sigType = "draw";
+      } else if (signatureMode === "type" && typedName.trim()) {
         // Create a canvas with the typed name and upload as image
         const canvas = document.createElement("canvas");
         canvas.width = 600;
@@ -129,7 +222,7 @@ export default function ProposalPortalPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [proposal, signatureMode, typedName, signatureFile]);
+  }, [proposal, signatureMode, typedName, signatureFile, hasDrawn]);
 
   const handleReject = useCallback(async () => {
     if (!proposal) return;
@@ -164,6 +257,27 @@ export default function ProposalPortalPage() {
     });
   };
 
+  // ─── Unlock handler ──────────────────────────────────────────
+  const handleUnlock = useCallback(async () => {
+    if (!proposal) return;
+    if (accessCodeInput.trim() !== proposal.accessCode) {
+      setAccessCodeError(true);
+      return;
+    }
+    setAccessCodeError(false);
+
+    // Render document after unlock
+    if (proposal.templateFileUrl) {
+      try {
+        const html = await renderProposalHtml(proposal.templateFileUrl, proposal.fieldValues);
+        setDocumentHtml(html);
+      } catch {
+        setRenderError(true);
+      }
+    }
+    setViewState("document");
+  }, [proposal, accessCodeInput]);
+
   // ─── Loading ────────────────────────────────────────────────
   if (viewState === "loading") {
     return (
@@ -171,6 +285,50 @@ export default function ProposalPortalPage() {
         <div className="text-center">
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-400" />
           <p className="mt-4 text-sm font-medium text-slate-500">Loading proposal…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Locked (Access Code Gate) ─────────────────────────────
+  if (viewState === "locked") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <div className="mx-4 w-full max-w-sm rounded-3xl border border-slate-200/60 bg-white/70 p-10 text-center shadow-xl shadow-slate-200/40 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50">
+            <LockKeyhole className="h-7 w-7 text-violet-600" />
+          </div>
+          <h2 className="mt-5 text-xl font-semibold text-slate-900">Protected Proposal</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">
+            This proposal is password-protected. Enter the access code to continue.
+          </p>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleUnlock(); }}
+            className="mt-6 space-y-3"
+          >
+            <input
+              type="text"
+              value={accessCodeInput}
+              onChange={(e) => { setAccessCodeInput(e.target.value); setAccessCodeError(false); }}
+              placeholder="Enter access code"
+              autoFocus
+              className={`w-full rounded-xl border px-4 py-3 text-center text-[14px] font-medium tracking-wider outline-none transition ${
+                accessCodeError
+                  ? "border-rose-300 bg-rose-50/50 text-rose-700 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                  : "border-slate-200 bg-slate-50/80 text-slate-900 focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+              }`}
+            />
+            {accessCodeError && (
+              <p className="text-[12px] font-medium text-rose-500">Incorrect access code. Please try again.</p>
+            )}
+            <button
+              type="submit"
+              disabled={!accessCodeInput.trim()}
+              className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-violet-600 px-4 py-3 text-[13px] font-semibold text-white shadow-lg shadow-violet-200/50 transition hover:from-violet-600 hover:to-violet-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+            >
+              Unlock Proposal
+            </button>
+          </form>
         </div>
       </div>
     );
@@ -357,34 +515,77 @@ export default function ProposalPortalPage() {
                 </h3>
 
                 {/* Mode Toggle */}
-                <div className="mb-4 grid grid-cols-2 gap-1.5">
+                <div className="mb-4 grid grid-cols-3 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setSignatureMode("draw")}
+                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
+                      signatureMode === "draw"
+                        ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                        : "text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    <PenLine className="h-3.5 w-3.5" />
+                    Draw
+                  </button>
                   <button
                     type="button"
                     onClick={() => setSignatureMode("type")}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition ${
+                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
                       signatureMode === "type"
                         ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
                         : "text-slate-500 hover:bg-slate-50"
                     }`}
                   >
                     <Pen className="h-3.5 w-3.5" />
-                    Type Name
+                    Type
                   </button>
                   <button
                     type="button"
                     onClick={() => setSignatureMode("upload")}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition ${
+                    className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
                       signatureMode === "upload"
                         ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
                         : "text-slate-500 hover:bg-slate-50"
                     }`}
                   >
                     <ImageIcon className="h-3.5 w-3.5" />
-                    Upload Image
+                    Upload
                   </button>
                 </div>
 
-                {signatureMode === "type" ? (
+                {signatureMode === "draw" ? (
+                  <div>
+                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                      <canvas
+                        ref={canvasRef}
+                        width={560}
+                        height={160}
+                        className="w-full cursor-crosshair touch-none"
+                        onMouseDown={startDrawing}
+                        onMouseMove={draw}
+                        onMouseUp={stopDrawing}
+                        onMouseLeave={stopDrawing}
+                        onTouchStart={startDrawing}
+                        onTouchMove={draw}
+                        onTouchEnd={stopDrawing}
+                      />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <p className="text-[11px] text-slate-400">
+                        {hasDrawn ? "Signature captured" : "Draw your signature above"}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={clearCanvas}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        <Eraser className="h-3 w-3" />
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                ) : signatureMode === "type" ? (
                   <div>
                     <input
                       type="text"
@@ -436,9 +637,31 @@ export default function ProposalPortalPage() {
                   <p className="mt-3 text-[12px] text-rose-600">{submitError}</p>
                 )}
 
+                {/* Legal Consent */}
+                <label className="mt-4 flex items-start gap-2.5 cursor-pointer group">
+                  <div className="relative mt-0.5 flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={consentChecked}
+                      onChange={(e) => setConsentChecked(e.target.checked)}
+                      className="peer h-4 w-4 appearance-none rounded border border-slate-300 bg-slate-50 checked:border-violet-600 checked:bg-violet-600 focus:ring-2 focus:ring-violet-200 focus:ring-offset-1 transition-all"
+                    />
+                    <svg className="absolute w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <span className="text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-700 transition-colors">
+                    I agree to the terms and conditions and understand this is a legally binding signature.
+                  </span>
+                </label>
+
                 <button
                   onClick={handleAccept}
-                  disabled={submitting || (signatureMode === "type" ? !typedName.trim() : !signatureFile)}
+                  disabled={
+                    submitting ||
+                    !consentChecked ||
+                    (signatureMode === "draw" ? !hasDrawn : signatureMode === "type" ? !typedName.trim() : !signatureFile)
+                  }
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-lg shadow-emerald-200/50 transition hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}

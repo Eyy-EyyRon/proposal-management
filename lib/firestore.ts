@@ -152,6 +152,7 @@ export interface Proposal {
   clientEmail: string;
   fieldValues: Record<string, string>;
   status: ProposalStatus;
+  accessCode: string | null;
   signatureType: "draw" | "upload" | null;
   signatureUrl: string | null;
   signedAt: Timestamp | null;
@@ -176,6 +177,7 @@ export async function createProposal(
     clientName: string;
     clientEmail: string;
     fieldValues: Record<string, string>;
+    accessCode?: string | null;
   }
 ): Promise<void> {
   await setDoc(doc(db, "proposals", proposalId), {
@@ -188,6 +190,7 @@ export async function createProposal(
     clientName: data.clientName,
     clientEmail: data.clientEmail,
     fieldValues: data.fieldValues,
+    accessCode: data.accessCode ?? null,
     status: "sent",
     signatureType: null,
     signatureUrl: null,
@@ -383,6 +386,36 @@ export function subscribeToUserTrashedTemplates(
   });
 }
 
+// ─── ADMIN GLOBAL QUERIES ───────────────────────────────────
+
+/** Get all templates (admin / CEO global view) — no userId filter */
+export async function getAllTemplates(): Promise<Template[]> {
+  const q = query(
+    collection(db, "templates"),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Template[];
+}
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  department: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Get all users (admin / CEO global view) */
+export async function getAllUsers(): Promise<TeamMember[]> {
+  const snapshot = await getDocs(collection(db, "users"));
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as TeamMember[];
+}
+
 // ─── DEPARTMENT-SCOPED QUERIES ──────────────────────────────
 
 /** Get all proposals (CEO global view) — no userId filter */
@@ -523,4 +556,36 @@ export async function batchGetUserNames(
     })
   );
   return names;
+}
+
+// ─── GLOBAL STATS (Aggregated) ─────────────────────────────
+
+export interface GlobalStats {
+  totalProposals: number;
+  totalSent: number;
+  totalViewed: number;
+  totalAccepted: number;
+  totalRejected: number;
+  updatedAt: Timestamp | null;
+}
+
+const DEFAULT_STATS: GlobalStats = {
+  totalProposals: 0,
+  totalSent: 0,
+  totalViewed: 0,
+  totalAccepted: 0,
+  totalRejected: 0,
+  updatedAt: null,
+};
+
+export function subscribeToGlobalStats(
+  callback: (stats: GlobalStats) => void
+): () => void {
+  return onSnapshot(doc(db, "stats", "global"), (snap) => {
+    if (snap.exists()) {
+      callback({ ...DEFAULT_STATS, ...snap.data() } as GlobalStats);
+    } else {
+      callback(DEFAULT_STATS);
+    }
+  });
 }

@@ -44,7 +44,7 @@ export default function CreateProposalPage() {
     return () => { cancelled = true; };
   }, [user]);
 
-  const handleSubmit = async (data: { templateId: string; fieldValues: Record<string, string> }) => {
+  const handleSubmit = async (data: { templateId: string; fieldValues: Record<string, string>; accessCode?: string }) => {
     if (!user) return;
     setSubmitting(true);
     setError(null);
@@ -79,6 +79,7 @@ export default function CreateProposalPage() {
         clientName,
         clientEmail,
         fieldValues: data.fieldValues,
+        accessCode: data.accessCode ?? null,
       });
 
       const url = `${window.location.origin}/p/${proposalId}`;
