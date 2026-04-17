@@ -42,17 +42,17 @@ export default function NewProposalPage() {
   const selectedTemplateData = templates.find((t) => t.id === selectedTemplate);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-8 pt-12 lg:px-10">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link
           href="/super-admin"
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-[#800000] hover:text-[#800000]"
+          className="group flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-all duration-300 ease-out hover:border-[#800020] hover:text-[#800020]"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-4 w-4 transition-transform duration-300 ease-out group-hover:-translate-x-1" />
         </Link>
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">
+          <h2 className="text-3xl font-semibold tracking-tight text-slate-900">
             Create New Proposal
           </h2>
           <p className="text-[13px] text-slate-500">
@@ -62,24 +62,26 @@ export default function NewProposalPage() {
       </div>
 
       {step === "select" ? (
-        <>
+        <div className="space-y-8">
           {/* Template Selection */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {templates.map((template) => (
+          <div className="mx-auto mt-10 grid w-full max-w-6xl gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {templates.map((template) => {
+              const active = selectedTemplate === template.id;
+              return (
               <button
                 key={template.id}
                 onClick={() => setSelectedTemplate(template.id)}
-                className={`relative flex flex-col items-start gap-3 rounded-xl border bg-white p-5 text-left transition-all ${
-                  selectedTemplate === template.id
-                    ? "border-[#800000] bg-[#800000]/5 ring-1 ring-[#800000]"
-                    : "border-slate-200 hover:border-[#800000]/50"
+                className={`group relative flex min-h-[160px] flex-col items-start gap-3 overflow-hidden rounded-xl border bg-white p-5 text-left transition-all duration-300 ease-out ${
+                  active
+                    ? "border-[#800020] bg-[#800020]/5 shadow-[0_0_15px_rgba(128,0,32,0.1)] scale-[1.02]"
+                    : "border-slate-200 hover:border-[#800020]/50 hover:shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
                 }`}
               >
                 <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                    selectedTemplate === template.id
-                      ? "bg-[#800000] text-white"
-                      : "bg-slate-100 text-slate-600"
+                  className={`flex h-10 w-10 items-center justify-center rounded-lg transition-all duration-300 ease-out ${
+                    active
+                      ? "bg-[#800020] text-white"
+                      : "bg-slate-100 text-slate-600 group-hover:bg-rose-50 group-hover:text-[#800020]"
                   }`}
                 >
                   <LayoutTemplate className="h-5 w-5" />
@@ -91,12 +93,15 @@ export default function NewProposalPage() {
                   <p className="mt-1 text-[12px] text-slate-500">
                     {template.description}
                   </p>
-                  <p className="mt-2 text-[11px] text-slate-400">
+                  <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-slate-400">
                     Last used {template.lastUsed}
                   </p>
                 </div>
-                {selectedTemplate === template.id && (
-                  <div className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[#800000]">
+                <span className="absolute bottom-4 right-4 rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500 shadow-sm">
+                  {template.fields.length} Fields
+                </span>
+                {active && (
+                  <div className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[#800020]">
                     <svg
                       className="h-3 w-3 text-white"
                       fill="none"
@@ -113,11 +118,12 @@ export default function NewProposalPage() {
                   </div>
                 )}
               </button>
-            ))}
+              );
+            })}
 
             {/* Create Blank Option */}
-            <button className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-5 text-left transition hover:border-[#800000]/50 hover:bg-slate-50">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-400">
+            <button className="flex min-h-[160px] flex-col items-start gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-5 text-left transition-all duration-300 ease-out hover:border-[#800020]/50 hover:bg-slate-50">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-300">
                 <FilePlus className="h-5 w-5" />
               </div>
               <div>
@@ -132,22 +138,22 @@ export default function NewProposalPage() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3">
+          <div className="mx-auto mt-8 flex w-full max-w-6xl items-center justify-end gap-3 border-t border-slate-100 pt-8">
             <Link
               href="/super-admin"
-              className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition-all duration-300 ease-out hover:bg-slate-50"
             >
               Cancel
             </Link>
             <button
               onClick={() => selectedTemplate && setStep("details")}
               disabled={!selectedTemplate}
-              className="rounded-lg bg-[#800000] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660000] disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition-all duration-300 ease-out hover:bg-[#660018] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Continue
             </button>
           </div>
-        </>
+        </div>
       ) : (
         /* Proposal Details Form */
         <div className="rounded-xl border border-slate-200/80 bg-white p-6">
@@ -245,14 +251,14 @@ export default function NewProposalPage() {
             </div>
           </div>
 
-          <div className="mt-6 flex items-center justify-end gap-3">
+          <div className="mx-auto mt-6 flex w-full max-w-6xl items-center justify-end gap-3">
             <button
               onClick={() => setStep("select")}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition-all duration-300 ease-out hover:bg-slate-50"
             >
               Back
             </button>
-            <button className="rounded-lg bg-[#800000] px-6 py-2 text-[13px] font-medium text-white transition hover:bg-[#660000]">
+            <button className="rounded-lg bg-[#800020] px-6 py-2 text-[13px] font-medium text-white transition-all duration-300 ease-out hover:bg-[#660018]">
               Create Proposal
             </button>
           </div>

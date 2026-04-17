@@ -109,40 +109,63 @@ const allActivities: Activity[] = [
 
 export default function ActivityPage() {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col space-y-8 px-8 pb-10 pt-12 lg:px-10">
       {/* Header */}
-      <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-slate-900">Activity Log</h2>
-        <p className="text-[13px] text-slate-500">
-          Track all actions across your organization.
+      <div className="flex flex-col gap-2">
+        <h2 className="text-3xl font-bold tracking-tight text-slate-900 lg:text-4xl">
+          Activity Log
+        </h2>
+        <p className="max-w-2xl text-[13px] text-slate-500">
+          Track the business story as proposals, team changes, and system updates happen.
         </p>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <Filter className="h-4 w-4 text-slate-400" />
-            <select className="border-none bg-transparent text-[13px] text-slate-700 outline-none">
-              <option value="all">All Activity</option>
-              <option value="proposals">Proposals</option>
-              <option value="team">Team</option>
-              <option value="templates">Templates</option>
-            </select>
+      <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.1),0_10px_20px_rgba(0,0,0,0.02)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="grid gap-3 sm:grid-cols-2 lg:max-w-2xl lg:flex-1">
+            <label className="space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Activity Type
+              </span>
+              <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] transition-colors duration-300 ease-out focus-within:border-[#800020]/30 focus-within:bg-white">
+                <Filter className="h-4 w-4 text-slate-400" />
+                <select className="w-full appearance-none border-none bg-transparent text-[13px] text-slate-700 outline-none">
+                  <option value="all">All Activity</option>
+                  <option value="proposals">Proposals</option>
+                  <option value="team">Team</option>
+                  <option value="templates">Templates</option>
+                </select>
+                <kbd className="hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:inline-flex">
+                  ⌘K
+                </kbd>
+              </div>
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Date Range
+              </span>
+              <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] transition-colors duration-300 ease-out focus-within:border-[#800020]/30 focus-within:bg-white">
+                <Clock className="h-4 w-4 text-slate-400" />
+                <select className="w-full appearance-none border-none bg-transparent text-[13px] text-slate-700 outline-none">
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                  <option value="all">All time</option>
+                </select>
+                <kbd className="hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:inline-flex">
+                  ⌘K
+                </kbd>
+              </div>
+            </label>
           </div>
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <select className="border-none bg-transparent text-[13px] text-slate-700 outline-none">
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-              <option value="all">All time</option>
-            </select>
-          </div>
+
+          <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-medium text-slate-700 shadow-sm transition-all duration-300 ease-out hover:border-[#800020]/30 hover:text-[#800020]">
+            <Download className="h-4 w-4" />
+            Export
+          </button>
         </div>
-        <button className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50">
-          <Download className="h-4 w-4" />
-          Export
-        </button>
       </div>
 
       {/* Activity Table */}
@@ -153,23 +176,23 @@ export default function ActivityPage() {
       />
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.1),0_10px_20px_rgba(0,0,0,0.02)]">
         <p className="text-[13px] text-slate-500">
           Showing 1-{allActivities.length} of {allActivities.length} activities
         </p>
         <div className="flex items-center gap-2">
           <button
             disabled
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] text-slate-400 disabled:opacity-50"
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-400 transition disabled:opacity-50"
           >
             Previous
           </button>
-          <button className="rounded-lg bg-[#800000] px-3 py-1.5 text-[13px] text-white">
+          <button className="rounded-full bg-[#800020] px-3 py-1.5 text-[13px] text-white shadow-sm shadow-[#800020]/20">
             1
           </button>
           <button
             disabled
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] text-slate-400 disabled:opacity-50"
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-400 transition disabled:opacity-50"
           >
             Next
           </button>
