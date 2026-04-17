@@ -7,6 +7,8 @@ import { EmptyState } from "@/components/empty-state";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
 import { getUserTemplates, moveToTrash, type Template } from "@/lib/firestore";
+import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
+import { toast } from "@/components/providers/goey-toast-provider";
 
 function formatDate(ts: { seconds: number } | null) {
   if (!ts) return "—";
@@ -53,6 +55,8 @@ export default function TemplatesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const { confirm, modalProps } = useConfirmModal();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -75,13 +79,26 @@ export default function TemplatesPage() {
     return () => { cancelled = true; };
   }, [user, retryCount]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Move this template to trash?")) return;
+  const handleDelete = async (id: string, name: string) => {
+    const confirmed = await confirm({
+      title: "Move to Trash?",
+      description: `You are about to move "${name}" to trash. You can restore this later from the trash folder.`,
+      actionType: "danger",
+      confirmText: "Move to Trash",
+      cancelText: "Keep",
+    });
+
+    if (!confirmed) return;
+
+    setDeletingId(id);
     try {
       await moveToTrash("templates", id);
       setTemplates((prev) => prev.filter((t) => t.id !== id));
+      toast.success(`"${name}" moved to trash successfully!`);
     } catch (err) {
-      console.error("Failed to trash template:", err);
+      toast.error("Failed to move template to trash. Please try again.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -227,11 +244,16 @@ export default function TemplatesPage() {
                         </td>
                         <td className="px-3 py-3">
                           <button
-                            onClick={() => handleDelete(template.id)}
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
+                            onClick={() => handleDelete(template.id, template.name)}
+                            disabled={deletingId === template.id}
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 active:scale-95 disabled:opacity-50"
                             title="Delete template"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {deletingId === template.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
                           </button>
                         </td>
                       </tr>
@@ -250,6 +272,7 @@ export default function TemplatesPage() {
           </div>
         )}
       </div>
+      <ConfirmModal {...modalProps} />
     </main>
   );
 }

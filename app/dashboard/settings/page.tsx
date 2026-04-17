@@ -8,7 +8,7 @@ import { getOrgSettings, saveOrgSettings, updateUserProfile } from "@/lib/firest
 import { uploadAvatar } from "@/lib/storage";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
-import { toast } from "sonner";
+import { toast } from "@/components/providers/goey-toast-provider";
 import {
   Building2, Upload, Save, Loader2, Check, ImageIcon, Type, Mail, User, Briefcase,
 } from "lucide-react";

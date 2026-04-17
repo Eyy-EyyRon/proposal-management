@@ -3,11 +3,11 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { AuthProvider } from "@/contexts/auth-context";
 import { RedirectController } from "@/components/redirect-controller";
-import { ToasterProvider } from "@/components/providers/toaster-provider";
+import { GoeyToastProvider } from "@/components/providers/goey-toast-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Proposal Management System",
+  title: "Hyacinth Proposal System",
   description: "Manage, send, track, and sign proposals with Firebase.",
 };
 
@@ -41,7 +41,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <AuthProvider>
           <RedirectController>{children}</RedirectController>
-          <ToasterProvider />
+          <GoeyToastProvider />
         </AuthProvider>
       </body>
     </html>
