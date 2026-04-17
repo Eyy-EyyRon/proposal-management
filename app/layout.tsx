@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { AuthProvider } from "@/contexts/auth-context";
 import { RedirectController } from "@/components/redirect-controller";
+import { ToasterProvider } from "@/components/providers/toaster-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -40,6 +41,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <AuthProvider>
           <RedirectController>{children}</RedirectController>
+          <ToasterProvider />
         </AuthProvider>
       </body>
     </html>

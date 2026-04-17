@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { signIn, signUp, signInWithGoogle, resetPassword } from "@/lib/auth";
+import Image from "next/image";
 
 const FIREBASE_ERROR_MAP: Record<string, string> = {
   "auth/email-already-in-use": "This email is already registered. Try signing in instead.",
@@ -248,6 +249,16 @@ export default function Home() {
                   view === "login" ? "translate-x-0 opacity-100 z-10" : "-translate-x-12 opacity-0 pointer-events-none z-0"
                 }`}
               >
+                <div className="relative h-16 w-16 overflow-hidden rounded-xl shadow-lg">
+                  <Image
+                    src="/assets/logo.png"
+                    alt="Hyacinth Proposal System"
+                    fill
+                    sizes="64px"
+                    className="object-contain"
+                    priority
+                  />
+                </div>
                 <h2 className="font-serif text-3xl font-medium text-slate-900 tracking-tight">
                   Welcome back
                 </h2>

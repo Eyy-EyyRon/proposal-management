@@ -74,7 +74,7 @@ export default function OnboardingPage() {
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 shadow-lg shadow-indigo-200">
               <Sparkles className="h-6 w-6 text-white" />
             </div>
-            <h1 className="mt-5 text-xl font-semibold text-slate-900">Welcome to ProposalMS</h1>
+            <h1 className="mt-5 text-xl font-semibold text-slate-900">Welcome to Hyacinth Proposal System</h1>
             <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
               Before you get started, please select the department you belong to.
               This helps organize proposals and analytics across the team.

@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
           <tr>
             <td style="background-color:#f8fafc;padding:20px 40px;text-align:center;border-top:1px solid #f1f5f9;">
               <p style="margin:0;font-size:12px;color:#94a3b8;">
-                Sent via <strong style="color:#64748b;">ProposalMS</strong> on behalf of ${displayCompany}
+                Sent via <strong style="color:#64748b;">Hyacinth Proposal System</strong> on behalf of ${displayCompany}
               </p>
             </td>
           </tr>

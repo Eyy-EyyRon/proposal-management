@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;">
           <tr>
             <td style="background:linear-gradient(135deg,#800020 0%,#a00030 100%);padding:32px 40px;text-align:center;">
-              <div style="font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">ProposalMS</div>
+              <div style="font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">Hyacinth Proposal System</div>
             </td>
           </tr>
 
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
           <tr>
             <td style="background-color:#f8fafc;padding:20px 40px;text-align:center;border-top:1px solid #f1f5f9;">
               <p style="margin:0;font-size:12px;color:#94a3b8;">
-                Sent via <strong style="color:#64748b;">ProposalMS</strong>
+                Sent via <strong style="color:#64748b;">Hyacinth Proposal System</strong>
               </p>
             </td>
           </tr>
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
     // Send to client
     emails.push(
       resend.emails.send({
-        from: `ProposalMS <${fromAddress}>`,
+        from: `Hyacinth Proposal System <${fromAddress}>`,
         to: [clientEmail],
         subject: `✍️ Your proposal has been signed - ${proposalTitle} (v${version})`,
         html: createEmailHtml("client"),
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
     if (staffEmails && staffEmails.length > 0) {
       emails.push(
         resend.emails.send({
-          from: `ProposalMS <${fromAddress}>`,
+          from: `Hyacinth Proposal System <${fromAddress}>`,
           to: staffEmails,
           subject: `✍️ Proposal signed by client - ${proposalTitle} (v${version})`,
           html: createEmailHtml("staff"),
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
     if (ceoEmail && !staffEmails?.includes(ceoEmail)) {
       emails.push(
         resend.emails.send({
-          from: `ProposalMS <${fromAddress}>`,
+          from: `Hyacinth Proposal System <${fromAddress}>`,
           to: [ceoEmail],
           subject: `✍️ Proposal signed by client - ${proposalTitle} (v${version})`,
           html: createEmailHtml("ceo"),

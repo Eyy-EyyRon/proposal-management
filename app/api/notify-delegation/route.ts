@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;">
           <tr>
             <td style="background:linear-gradient(135deg,#7c3aed 0%,#8b5cf6 100%);padding:32px 40px;text-align:center;">
-              <div style="font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">ProposalMS</div>
+              <div style="font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">Hyacinth Proposal System</div>
             </td>
           </tr>
 
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
           <tr>
             <td style="background-color:#f8fafc;padding:20px 40px;text-align:center;border-top:1px solid #f1f5f9;">
               <p style="margin:0;font-size:12px;color:#94a3b8;">
-                Sent via <strong style="color:#64748b;">ProposalMS</strong> Delegated Authority
+                Sent via <strong style="color:#64748b;">Hyacinth Proposal System</strong> Delegated Authority
               </p>
             </td>
           </tr>
@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
 </html>`.trim();
 
     await resend.emails.send({
-      from: `ProposalMS <${fromAddress}>`,
+      from: `Hyacinth Proposal System <${fromAddress}>`,
       to: [ceoEmail],
       subject: `Staff ${staffName} sent a proposal on your behalf`,
       html: emailHtml,

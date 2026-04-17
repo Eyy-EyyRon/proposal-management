@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   FileText,
   ArrowLeft,
@@ -310,7 +311,7 @@ export default function ProposalDetailPage() {
                           router.push(`/dashboard/proposals/${newProposalId}`);
                         } catch (err) {
                           console.error("Failed to create revision:", err);
-                          alert("Failed to create new version. Please try again.");
+                          toast.error("Failed to create new version. Please try again.");
                         } finally {
                           setResending(false);
                         }

@@ -4,11 +4,13 @@ import { useEffect, useState, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
-import { getOrgSettings, saveOrgSettings } from "@/lib/firestore";
+import { getOrgSettings, saveOrgSettings, updateUserProfile } from "@/lib/firestore";
+import { uploadAvatar } from "@/lib/storage";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
+import { toast } from "sonner";
 import {
-  Building2, Upload, Save, Loader2, Check, ImageIcon, Type, Mail,
+  Building2, Upload, Save, Loader2, Check, ImageIcon, Type, Mail, User, Briefcase,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -75,7 +77,10 @@ export default function SettingsPage() {
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-    if (!file.type.startsWith("image/")) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
 
     setUploading(true);
     try {
@@ -97,8 +102,10 @@ export default function SettingsPage() {
         companyLogoUrl,
         emailSignature,
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      toast.success("Organization settings saved!");
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+      toast.error("Failed to save settings. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -124,8 +131,11 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Left Column — Form */}
+            {/* Left Column — Profile & Settings */}
             <div className="space-y-5">
+              {/* Profile Section */}
+              <ProfileSection />
+
               {/* Company Name */}
               <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
                 <label className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
@@ -323,7 +333,7 @@ export default function SettingsPage() {
                 </div>
                 {/* Preview Footer */}
                 <div className="border-t border-slate-100 bg-slate-50 px-6 py-3 text-center text-[11px] text-slate-400">
-                  Sent via <strong className="text-slate-500">ProposalMS</strong> on behalf of{" "}
+                  Sent via <strong className="text-slate-500">Hyacinth Proposal System</strong> on behalf of{" "}
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.span
                       key={companyName || "Your Company-footer"}
@@ -343,5 +353,191 @@ export default function SettingsPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// ─── PROFILE SETTINGS COMPONENT ─────────────────────────────
+function ProfileSection() {
+  const { user, profile } = useAuth();
+  const [firstName, setFirstName] = useState(profile?.firstName || "");
+  const [lastName, setLastName] = useState(profile?.lastName || "");
+  const [jobTitle, setJobTitle] = useState(profile?.jobTitle || "");
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatarUrl || "");
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Update local state when profile changes
+  useEffect(() => {
+    if (profile) {
+      setFirstName(profile.firstName || "");
+      setLastName(profile.lastName || "");
+      setJobTitle(profile.jobTitle || "");
+      setAvatarUrl(profile.avatarUrl || "");
+    }
+  }, [profile]);
+
+  const handleSave = async () => {
+    if (!user?.uid) return;
+    setSaving(true);
+    try {
+      await updateUserProfile(user?.uid, {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        jobTitle: jobTitle.trim(),
+        avatarUrl,
+      });
+      toast.success("Profile saved successfully!");
+    } catch (err) {
+      console.error("Failed to update profile:", err);
+      toast.error("Failed to update profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.uid) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be less than 5MB");
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const result = await uploadAvatar(file, user.uid);
+      setAvatarUrl(result.url);
+      toast.success("Avatar uploaded successfully!");
+    } catch (err) {
+      console.error("Failed to upload avatar:", err);
+      toast.error("Failed to upload avatar. Please try again.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const hasChanges =
+    firstName.trim() !== (profile?.firstName || "") ||
+    lastName.trim() !== (profile?.lastName || "") ||
+    jobTitle.trim() !== (profile?.jobTitle || "") ||
+    avatarUrl !== (profile?.avatarUrl || "");
+
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        <User className="h-4 w-4 text-slate-400" />
+        <h3 className="text-[13px] font-semibold text-slate-800">My Profile</h3>
+      </div>
+
+      <div className="mb-4 flex items-center gap-4">
+        <div
+          onClick={handleAvatarClick}
+          className="relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-slate-100 text-lg font-semibold text-slate-600 transition hover:opacity-80"
+        >
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+          ) : (
+            <span>{firstName?.[0]}{lastName?.[0]}</span>
+          )}
+          {uploadingAvatar && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+              <Loader2 className="h-4 w-4 animate-spin text-white" />
+            </div>
+          )}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition hover:opacity-100">
+            <Upload className="h-4 w-4 text-white" />
+          </div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <div>
+          <p className="text-[12px] text-slate-500">Click to change avatar</p>
+          <p className="text-[11px] text-slate-400">Max 5MB, JPG/PNG</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-slate-700">First Name</label>
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-slate-700">Last Name</label>
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[12px] font-medium text-slate-700">
+            <Briefcase className="inline h-3 w-3 mr-1" />
+            Job Title
+          </label>
+          <input
+            type="text"
+            value={jobTitle}
+            onChange={(e) => setJobTitle(e.target.value)}
+            placeholder="e.g., Sales Manager"
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[12px] font-medium text-slate-500">Email</label>
+          <input
+            type="email"
+            value={profile?.email || ""}
+            disabled
+            className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-[13px] text-slate-500 outline-none cursor-not-allowed"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center justify-end">
+        <button
+          onClick={handleSave}
+          disabled={!hasChanges || saving}
+          className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] disabled:opacity-50"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="h-4 w-4" />
+              Save
+            </>
+          )}
+        </button>
+      </div>
+    </div>
   );
 }

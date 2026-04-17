@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import {
   LayoutDashboard,
   FileText,
@@ -53,6 +54,7 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "All Proposals",     href: "/ceo-dashboard/proposals",  icon: FileText },
       { label: "Contracts",         href: "/ceo-dashboard/documents",  icon: FolderOpen },
       { label: "Trash",             href: "/ceo-dashboard/trash",      icon: Trash2 },
+      { label: "Settings",          href: "/ceo-dashboard/settings", icon: Settings },
     ],
     switchTo: [
       { label: "Staff Dashboard", href: "/dashboard",    icon: LayoutDashboard },
@@ -220,10 +222,17 @@ export function Sidebar() {
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col ${theme.aside}`}>
       {/* Brand */}
       <div className="flex h-14 shrink-0 items-center gap-2.5 px-5">
-        <div className={`flex h-7 w-7 items-center justify-center rounded-md ${theme.brand} ${theme.brandShadow}`}>
-          <BrandIcon className="h-3.5 w-3.5 text-white" />
+        <div className="relative h-8 w-8 overflow-hidden rounded-md">
+          <Image
+            src="/assets/logo.png"
+            alt="Hyacinth Proposal System"
+            fill
+            sizes="32px"
+            className="object-contain"
+            priority
+          />
         </div>
-        <span className="text-[14px] font-semibold tracking-tight text-slate-900">ProposalMS</span>
+        <span className="text-[14px] font-semibold tracking-tight text-slate-900">Hyacinth Proposal System</span>
       </div>
 
       {/* Nav */}
