@@ -342,8 +342,9 @@ export default function CeoProposalDetailPage() {
         </div>
 
         {/* Content */}
-        <div className="grid flex-1 gap-6 lg:grid-cols-[1fr_400px]">
-          {/* Document / Signature / History Content */}
+        <div className={`grid flex-1 gap-6 ${activeTab === "discuss" ? "lg:grid-cols-1" : "lg:grid-cols-[1fr_400px]"}`}>
+          {/* Document / Signature / History Content - Hidden when discuss tab is active */}
+          {activeTab !== "discuss" && (
           <div
             ref={documentRef}
             className="rounded-2xl border border-slate-200/60 bg-white shadow-sm"
@@ -448,10 +449,11 @@ export default function CeoProposalDetailPage() {
               </div>
             )}
           </div>
+          )}
 
-          {/* Discussion Panel - only show in document or discuss tabs */}
+          {/* Discussion Panel - full width when discuss tab, sidebar when document tab */}
           {(activeTab === "document" || activeTab === "discuss") && (
-            <div className="flex flex-col rounded-2xl border border-slate-200/60 bg-white shadow-sm">
+            <div className={`flex flex-col rounded-2xl border border-slate-200/60 bg-white shadow-sm ${activeTab === "discuss" ? "h-full" : ""}`}>
               <div className="border-b border-slate-100 p-4">
                 <h3 className="flex items-center gap-2 font-semibold text-slate-900">
                   <MessageCircle className="h-4 w-4" />
