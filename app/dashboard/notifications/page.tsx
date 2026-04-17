@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  Bell, BellOff, Eye, CheckCircle, XCircle, Check, Loader2,
+  Bell, Eye, CheckCircle, XCircle, Check, Loader2,
   Users, LayoutTemplate, Trophy, Info,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -39,11 +41,35 @@ function timeAgo(ts: { seconds: number } | null | undefined): string {
   });
 }
 
+function getSecondaryInfo(notification: AppNotification): string {
+  if (notification.type === "viewed") {
+    return `Duration: ${timeAgo(notification.createdAt as unknown as { seconds: number })}`;
+  }
+  if (notification.department) {
+    return `Department: ${notification.department}`;
+  }
+  return `Logged ${timeAgo(notification.createdAt as unknown as { seconds: number })}`;
+}
+
+function SwingingBell() {
+  return (
+    <motion.div
+      animate={{ rotate: [0, -8, 6, -4, 0] }}
+      transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 10, ease: "easeInOut" }}
+      style={{ transformOrigin: "50% 0%" }}
+    >
+      <Bell className="h-5 w-5 text-white" />
+    </motion.div>
+  );
+}
+
 export default function NotificationsPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [markingAll, setMarkingAll] = useState(false);
+  const [fadingId, setFadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -63,21 +89,37 @@ export default function NotificationsPage() {
     setMarkingAll(false);
   };
 
+  const handleNotificationClick = async (
+    event: MouseEvent<HTMLAnchorElement>,
+    notification: AppNotification,
+  ) => {
+    event.preventDefault();
+    if (!notification.read) {
+      setFadingId(notification.id);
+      await markNotificationRead(notification.id);
+      window.setTimeout(() => {
+        router.push("/dashboard/proposals");
+      }, 160);
+      return;
+    }
+    router.push("/dashboard/proposals");
+  };
+
   return (
     <>
       <Topbar title="Notifications" />
 
-      <div className="flex-1 overflow-y-auto px-6 py-8">
+      <div className="flex-1 overflow-y-auto bg-slate-50 px-6 py-8">
         <div className="mx-auto max-w-2xl">
 
           {/* Header */}
           <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-md shadow-indigo-200/60">
-                <Bell className="h-5 w-5 text-white" />
+                <SwingingBell />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">All Notifications</h2>
+                <h2 className="text-lg font-bold tracking-tight text-slate-950">All Notifications</h2>
                 <p className="text-[12px] text-slate-400">
                   {unreadCount > 0 ? `${unreadCount} unread` : "You're all caught up"}
                 </p>
@@ -87,7 +129,7 @@ export default function NotificationsPage() {
               <button
                 onClick={handleMarkAllRead}
                 disabled={markingAll}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
               >
                 {markingAll ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -105,42 +147,60 @@ export default function NotificationsPage() {
               <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
             </div>
           ) : notifications.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/60 bg-white/80 py-20 shadow-sm backdrop-blur-xl">
-              <BellOff className="h-10 w-10 text-slate-200" />
-              <p className="text-sm font-medium text-slate-400">No notifications yet</p>
-              <p className="text-[12px] text-slate-400">
-                You&apos;ll be notified when clients view or sign your proposals.
-              </p>
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white/80 py-20 shadow-sm ring-1 ring-slate-100 backdrop-blur-sm">
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent_0%,transparent_48%,rgba(120,1,22,0.06)_49%,transparent_50%,transparent_74%,rgba(15,23,42,0.04)_75%,transparent_76%,transparent_100%)] opacity-60" />
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_25%,rgba(120,1,22,0.05),transparent_28%),radial-gradient(circle_at_50%_70%,rgba(15,23,42,0.03),transparent_34%)]" />
+              <div className="relative flex flex-col items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 shadow-sm ring-1 ring-slate-100">
+                  <motion.div
+                    animate={{ rotate: [0, -8, 6, -4, 0] }}
+                    transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 10, ease: "easeInOut" }}
+                    style={{ transformOrigin: "50% 0%" }}
+                  >
+                    <Bell className="h-7 w-7 text-slate-300" />
+                  </motion.div>
+                </div>
+                <p className="text-sm font-medium text-slate-500">No notifications yet</p>
+                <p className="max-w-sm text-[12px] leading-relaxed text-slate-400">
+                  You&apos;ll be notified when clients view or sign your proposals.
+                </p>
+              </div>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white/80 shadow-sm backdrop-blur-xl">
+            <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white/90 shadow-sm ring-1 ring-slate-100 backdrop-blur-sm">
               {notifications.map((n, i) => {
                 const cfg = iconConfig[n.type] ?? iconConfig.viewed;
                 const Icon = cfg.icon;
+                const isFading = fadingId === n.id;
                 return (
                   <Link
                     href="/dashboard/proposals"
                     key={n.id}
-                    onClick={() => {
-                      if (!n.read) markNotificationRead(n.id);
-                    }}
-                    className={`flex items-start gap-4 px-5 py-4 transition hover:bg-slate-50/80 ${
+                    onClick={(event) => { void handleNotificationClick(event, n); }}
+                    className={`group flex items-start gap-4 px-5 py-4 transition hover:bg-slate-50/80 ${
                       i !== notifications.length - 1 ? "border-b border-slate-100/60" : ""
-                    } ${!n.read ? "bg-indigo-50/20" : ""}`}
+                    } ${!n.read ? "bg-[#780116]/[0.03]" : ""}`}
                   >
                     <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${cfg.bg}`}>
                       <Icon className={`h-4 w-4 ${cfg.color}`} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className={`text-[13px] leading-snug ${!n.read ? "font-semibold text-slate-900" : "text-slate-600"}`}>
+                      <p className={`text-[13px] leading-snug ${!n.read ? "font-semibold text-slate-950" : "font-medium text-slate-700"}`}>
                         {n.message}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-400">
+                        {getSecondaryInfo(n)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
                         {timeAgo(n.createdAt as unknown as { seconds: number })}
                       </p>
                     </div>
                     {!n.read && (
-                      <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
+                      <span
+                        className={`mt-2 h-2 w-2 shrink-0 rounded-full bg-[#780116] transition-all duration-300 ${
+                          isFading ? "opacity-0 scale-0" : "opacity-100 scale-100"
+                        }`}
+                      />
                     )}
                   </Link>
                 );

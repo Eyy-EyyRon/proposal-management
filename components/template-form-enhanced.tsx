@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Plus, X, Upload, Link, FileText, Mail, Phone, Calendar, Type, Check, Loader2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { extractFieldsFromDocx } from "@/lib/docx-parser";
 
 interface TemplateField {
@@ -29,6 +30,14 @@ const fieldIcons = {
   phone: Phone,
   date: Calendar,
 };
+
+function VariablePill({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-slate-200/80 bg-slate-100/70 px-2 py-0.5 font-mono text-[11px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+      {label}
+    </span>
+  );
+}
 
 export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateFormEnhancedProps) {
   const [name, setName] = useState("");
@@ -138,6 +147,8 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
     setFields(fields.filter(f => f.id !== id));
   };
 
+  const visibleFields = fields.filter((field) => field.name.trim());
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,9 +167,9 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
 
   return (
     <>
-      <form onSubmit={handleSubmit} className="flex h-full gap-6">
+      <form onSubmit={handleSubmit} className="flex h-full flex-col gap-6 lg:flex-row lg:gap-0">
         {/* Form Column */}
-        <div className="flex-1 space-y-6">
+        <div className="flex-1 min-w-0 space-y-6 lg:flex-[0.7] lg:pr-6">
           {/* Basic Info */}
           <section>
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
@@ -173,7 +184,7 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Standard Service Agreement"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#780116] focus:ring-2 focus:ring-[#780116]/20"
               />
             </div>
           </section>
@@ -190,8 +201,8 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
                   onClick={() => setSourceType("docx")}
                   className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium transition ${
                     sourceType === "docx"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      ? "border-[#780116] bg-[#780116] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.08)]"
+                      : "border-slate-200 bg-white/70 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                   }`}
                 >
                   <Upload className="h-3.5 w-3.5" />
@@ -202,11 +213,11 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
                   onClick={() => setSourceType("gdocs")}
                   className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium transition ${
                     sourceType === "gdocs"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      ? "border-[#780116] bg-[#780116] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.08)]"
+                      : "border-slate-200 bg-white/70 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                   }`}
                 >
-                  <Link className="h-3.5 w-3.5" />
+                  <Link className={`h-3.5 w-3.5 ${sourceType === "gdocs" ? "opacity-100" : "opacity-80"}`} />
                   Google Docs
                 </button>
               </div>
@@ -271,7 +282,7 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
                     placeholder="https://docs.google.com/document/d/..."
                     className={`w-full rounded-lg border bg-white px-3 py-2 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 ${
                       gdocsValid === null
-                        ? "border-slate-200 focus:border-slate-300 focus:ring-slate-100"
+                        ? "border-slate-200 focus:border-[#780116] focus:ring-[#780116]/20"
                         : gdocsValid
                         ? "border-emerald-300 focus:border-emerald-400 focus:ring-emerald-100"
                         : "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
@@ -317,23 +328,31 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
               <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                 Dynamic Fields
               </p>
-              <button
+              <motion.button
                 type="button"
                 onClick={addField}
+                whileHover={{ y: -1 }}
+                whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[12px] font-medium text-slate-600 transition hover:bg-slate-200"
               >
                 <Plus className="h-3 w-3" />
                 Add field
-              </button>
+              </motion.button>
             </div>
 
             <div className="space-y-2">
-              {fields.map((field) => {
+              <AnimatePresence initial={false}>
+                {fields.map((field) => {
                 const Icon = fieldIcons[field.type];
                 return (
-                  <div
+                  <motion.div
                     key={field.id}
-                    className="rounded-lg border border-slate-200/80 bg-white p-3"
+                    layout
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ type: "spring", stiffness: 520, damping: 34 }}
+                    className="rounded-xl border border-slate-200 bg-white p-3 transition-colors hover:bg-slate-50"
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex-1 space-y-2">
@@ -344,14 +363,14 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
                             value={field.name}
                             onChange={(e) => updateField(field.id, { name: e.target.value })}
                             placeholder="Field name (e.g., Company Name)"
-                            className="flex-1 rounded-md border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
+                            className="flex-1 rounded-md border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#780116] focus:bg-white focus:ring-2 focus:ring-[#780116]/20"
                           />
                         </div>
                         <div className="flex items-center gap-3 pl-5">
                           <select
                             value={field.type}
                             onChange={(e) => updateField(field.id, { type: e.target.value as TemplateField["type"] })}
-                            className="rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-[12px] text-slate-600 outline-none focus:border-slate-300 focus:bg-white"
+                            className="rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-[12px] text-slate-600 outline-none focus:border-[#780116] focus:bg-white focus:ring-2 focus:ring-[#780116]/20"
                           >
                             <option value="text">Text</option>
                             <option value="email">Email</option>
@@ -379,21 +398,22 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
                         </button>
                       )}
                     </div>
-                  </div>
+                  </motion.div>
                 );
-              })}
+                })}
+              </AnimatePresence>
             </div>
           </section>
         </div>
 
         {/* Preview Column */}
-        <div className="w-72 shrink-0 border-l border-slate-100 pl-6">
+        <div className="w-full shrink-0 rounded-2xl border-t border-slate-200/80 bg-slate-50/80 pt-6 lg:w-[30%] lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
           <div className="sticky top-6">
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
               Preview
             </p>
 
-            <div className="rounded-lg border border-slate-200/80 bg-slate-50/50 p-4">
+            <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-sm">
               <div className="space-y-3">
                 <div>
                   <p className="text-[11px] font-medium text-slate-400">Name</p>
@@ -404,29 +424,20 @@ export function TemplateFormEnhanced({ onSubmit, submitting = false }: TemplateF
 
                 <div>
                   <p className="text-[11px] font-medium text-slate-400">Source</p>
-                  <p className="mt-0.5 text-[13px] text-slate-600">
-                    {sourceType === "docx" ? "Document Upload" : "Google Docs Link"}
-                  </p>
+                  <div className="mt-1">
+                    <VariablePill label={sourceType === "docx" ? "Document Upload" : "Google Docs Link"} />
+                  </div>
                 </div>
 
                 <div>
                   <p className="text-[11px] font-medium text-slate-400">
-                    Fields ({fields.filter(f => f.name).length})
+                    Fields ({visibleFields.length})
                   </p>
                   <div className="mt-1.5 space-y-1">
-                    {fields.filter(f => f.name).map((field) => {
-                      const Icon = fieldIcons[field.type];
-                      return (
-                        <div key={field.id} className="flex items-center gap-1.5 rounded-md bg-white px-2 py-1.5">
-                          <Icon className="h-3 w-3 text-slate-400" />
-                          <span className="text-[12px] text-slate-600">{field.name}</span>
-                          {field.required && (
-                            <span className="text-[11px] text-rose-500">*</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {fields.filter(f => f.name).length === 0 && (
+                    {visibleFields.map((field) => (
+                      <VariablePill key={field.id} label={field.name} />
+                    ))}
+                    {visibleFields.length === 0 && (
                       <p className="text-[12px] text-slate-400">No fields added</p>
                     )}
                   </div>

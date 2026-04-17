@@ -225,26 +225,36 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 pt-2">
-        <p className={`mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest ${theme.sectionLabel}`}>
+        <p className={`mb-1.5 px-2 text-[9px] font-semibold uppercase tracking-[0.1em] ${theme.sectionLabel}`}>
           {config.sectionLabel}
         </p>
 
         {navItems.map((item) => {
           const active = pathname === item.href;
+          const focusIndicator = active && item.label === "Dashboard";
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150 ${
-                active ? theme.activeLink : theme.hoverLink
+              className={`group relative grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-lg px-2.5 py-3 text-[13px] font-medium transition-all duration-200 ease-out ${
+                active
+                  ? `${theme.activeLink} shadow-[inset_0_0_0_1px_rgba(120,1,22,0.08)]`
+                  : `${theme.hoverLink} hover:bg-slate-100/50`
               }`}
             >
               <item.icon
-                className={`h-4 w-4 shrink-0 ${active ? theme.activeIcon : "text-slate-400"}`}
+                className={`h-4 w-4 shrink-0 justify-self-center transition-opacity duration-150 ${
+                  active
+                    ? `${theme.activeIcon} opacity-100`
+                    : "text-slate-400 opacity-60 group-hover:opacity-100"
+                }`}
               />
-              {item.label}
+              <span className="min-w-0 truncate">{item.label}</span>
               {active && (
-                <ChevronRight className={`ml-auto h-3 w-3 ${theme.chevron}`} />
+                <ChevronRight className={`h-3 w-3 justify-self-end ${theme.chevron}`} />
+              )}
+              {focusIndicator && (
+                <span className="absolute right-0 top-0 h-full w-[2px] rounded-l-full bg-[#780116]" />
               )}
             </Link>
           );
@@ -255,7 +265,7 @@ export function Sidebar() {
           {config.quickAction && (
             <Link
               href={config.quickAction.href}
-              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition ${theme.quickBtn} ${theme.quickBtnHover}`}
+              className={`relative flex items-center gap-2.5 overflow-hidden rounded-lg px-2.5 py-2 text-[13px] font-medium transition ${theme.quickBtn} ${theme.quickBtnHover} before:pointer-events-none before:absolute before:left-0 before:top-0 before:h-px before:w-full before:bg-white/10 before:content-['']`}
             >
               <config.quickAction.icon className="h-4 w-4 shrink-0" />
               {config.quickAction.label}
@@ -319,7 +329,13 @@ export function Sidebar() {
 
         {/* Role Badge */}
         <div className="mt-2 flex items-center justify-center">
-          <span className={theme.badgeCls}>
+          <span
+            className={
+              activeRole === "staff"
+                ? "rounded-md border-[0.5px] border-current px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500"
+                : theme.badgeCls
+            }
+          >
             {role.toUpperCase()} Access
           </span>
         </div>

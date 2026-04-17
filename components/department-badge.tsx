@@ -11,7 +11,7 @@ export function DepartmentBadge({ department }: { department?: string }) {
   const dept = department || "Sales";
   const colors = DEPT_COLORS[dept] ?? { bg: "bg-slate-50", text: "text-slate-600" };
   return (
-    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${colors.bg} ${colors.text}`}>
+    <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] ${colors.bg} ${colors.text}`}>
       {dept}
     </span>
   );

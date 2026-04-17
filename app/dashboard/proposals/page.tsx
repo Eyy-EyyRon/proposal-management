@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download } from "lucide-react";
-import { StatusBadge, type ProposalStatus as BadgeStatus } from "@/components/status-badge";
+import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth, useRole } from "@/contexts/auth-context";
@@ -12,6 +11,7 @@ import { DepartmentBadge } from "@/components/department-badge";
 import { exportProposalsCsv, exportProposalsJson } from "@/lib/export-utils";
 
 type StatusFilter = "all" | "sent" | "viewed" | "accepted" | "rejected" | "archived";
+type GridStatus = "pending" | "viewed" | "accepted" | "rejected" | "archived";
 
 function formatTs(ts: { seconds: number } | null): string {
   if (!ts) return "";
@@ -22,15 +22,15 @@ function formatTs(ts: { seconds: number } | null): string {
   });
 }
 
-function toBadgeStatus(s: string): BadgeStatus {
-  const map: Record<string, BadgeStatus> = {
-    sent: "Sent",
-    viewed: "Viewed",
-    accepted: "Accepted",
-    rejected: "Rejected",
-    archived: "Archived",
+function toGridStatus(s: string): GridStatus {
+  const map: Record<string, GridStatus> = {
+    sent: "pending",
+    viewed: "viewed",
+    accepted: "accepted",
+    rejected: "rejected",
+    archived: "archived",
   };
-  return map[s] ?? "Sent";
+  return map[s] ?? "pending";
 }
 
 function ClientAvatar({ name }: { name: string }) {
@@ -50,6 +50,76 @@ function ClientAvatar({ name }: { name: string }) {
   );
 }
 
+function StatusCell({ status }: { status: GridStatus }) {
+  const meta = {
+    pending: {
+      label: "Pending",
+      shell: "bg-amber-50/80 text-amber-700 ring-amber-100/90",
+      dot: "bg-amber-500 animate-pulse [animation-duration:2200ms]",
+      inner: <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />,
+    },
+    viewed: {
+      label: "Viewed",
+      shell: "bg-sky-50/80 text-sky-700 ring-sky-100/90",
+      dot: "",
+      inner: (
+        <span className="relative inline-flex h-3 w-3 items-center justify-center">
+          <span className="absolute inset-0 rounded-full bg-sky-400/30 animate-ping [animation-duration:1800ms]" />
+          <span className="relative h-2.5 w-2.5 rounded-full bg-sky-500 shadow-[0_0_0_4px_rgba(59,130,246,0.14)]" />
+        </span>
+      ),
+    },
+    accepted: {
+      label: "Accepted",
+      shell: "bg-emerald-50/80 text-emerald-700 ring-emerald-100/90",
+      dot: "bg-emerald-500",
+      inner: <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />,
+    },
+    rejected: {
+      label: "Rejected",
+      shell: "bg-rose-50/80 text-rose-700 ring-rose-100/90",
+      dot: "bg-rose-500",
+      inner: <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />,
+    },
+    archived: {
+      label: "Archived",
+      shell: "bg-slate-50/80 text-slate-600 ring-slate-200/80",
+      dot: "bg-slate-400",
+      inner: <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />,
+    },
+  }[status];
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md shadow-sm ring-1 ${meta.shell}`}>
+      {meta.inner}
+      <span>{meta.label}</span>
+    </span>
+  );
+}
+
+function EmptyScanState({ onCreate }: { onCreate: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+      <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-3xl bg-slate-50/70 ring-1 ring-slate-200/80 shadow-sm">
+        <div className="absolute inset-x-4 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-slate-400/70 to-transparent opacity-60" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent_0%,transparent_44%,rgba(120,1,22,0.08)_45%,transparent_46%,transparent_52%,rgba(15,23,42,0.06)_53%,transparent_54%,transparent_100%)] opacity-60" />
+        <FolderOpen className="relative h-9 w-9 text-slate-400/60" />
+      </div>
+      <p className="mt-4 text-sm font-semibold text-slate-800">No matching results</p>
+      <p className="mt-1 max-w-[280px] text-[13px] leading-relaxed text-slate-500">
+        Scan a different client, status, or template, or create a new proposal to fill the void.
+      </p>
+      <Link
+        href={onCreate}
+        className="mt-5 inline-flex h-10 items-center gap-2 rounded-lg bg-[#780116] px-4 text-[13px] font-medium text-white transition hover:bg-[#C32F27] shadow-sm shadow-[#780116]/15"
+      >
+        <FilePlus className="h-3.5 w-3.5" />
+        Create New
+      </Link>
+    </div>
+  );
+}
+
 export default function ProposalsPage() {
   const { user, profile } = useAuth();
   const { isCeo } = useRole();
@@ -59,6 +129,8 @@ export default function ProposalsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+
+  const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
 
   useEffect(() => {
     if (!user) return;
@@ -91,7 +163,7 @@ export default function ProposalsPage() {
   ];
 
   const filteredProposals = proposals.filter(proposal => {
-    const q = searchQuery.toLowerCase();
+    const q = normalizedSearch;
     const matchesSearch = !q ||
       proposal.clientName.toLowerCase().includes(q) ||
       proposal.clientEmail.toLowerCase().includes(q) ||
@@ -122,36 +194,52 @@ export default function ProposalsPage() {
 
       <div className="flex flex-1 flex-col gap-5 p-6">
         {/* Header */}
-        <div className="flex items-end justify-between">
+        <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200 shadow-sm xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h2 className="font-sans text-lg font-semibold text-slate-900">Proposals</h2>
-            <p className="mt-0.5 text-[13px] text-slate-500">
+            <h2 className="font-sans text-xl font-bold tracking-tight text-slate-950">Proposals</h2>
+            <p className="mt-1 text-[13px] text-slate-400">
               Track and manage all client proposals.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <button
-                onClick={() => setExportOpen(!exportOpen)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Export
-              </button>
-              {exportOpen && (
-                <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-                  <button onClick={() => { exportProposalsCsv(proposals); setExportOpen(false); }} className="w-full px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">Export CSV</button>
-                  <button onClick={() => { exportProposalsJson(proposals); setExportOpen(false); }} className="w-full px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">Export JSON</button>
-                </div>
-              )}
+          <div className="flex w-full flex-col gap-3 xl:w-auto xl:flex-row xl:items-center">
+            <div className="relative w-full xl:w-[24rem]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Command-K search proposals"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-9 pr-14 text-[13px] text-slate-800 outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.06)] transition placeholder:text-slate-400 focus:border-[#780116] focus:bg-white focus:ring-4 focus:ring-[#780116]/10"
+              />
+              <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 shadow-[inset_0_1px_1px_rgba(15,23,42,0.04)]">
+                ⌘K
+              </kbd>
             </div>
-            <Link
-              href="/dashboard/create-proposal"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
-            >
-              <FilePlus className="h-3.5 w-3.5" />
-              New proposal
-            </Link>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <button
+                  onClick={() => setExportOpen(!exportOpen)}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </button>
+                {exportOpen && (
+                  <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                    <button onClick={() => { exportProposalsCsv(proposals); setExportOpen(false); }} className="w-full px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">Export CSV</button>
+                    <button onClick={() => { exportProposalsJson(proposals); setExportOpen(false); }} className="w-full px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">Export JSON</button>
+                  </div>
+                )}
+              </div>
+              <Link
+                href="/dashboard/create-proposal"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#780116] px-3 text-[13px] font-medium text-white transition hover:bg-[#C32F27] shadow-sm shadow-[#780116]/15"
+              >
+                <FilePlus className="h-3.5 w-3.5" />
+                New proposal
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -184,7 +272,7 @@ export default function ProposalsPage() {
                         : "text-slate-400 hover:text-slate-600"
                     }`}
                   >
-                    {tab.label}
+                    {tab.label === "Sent" ? "Pending" : tab.label}
                     <span className={`ml-1 text-[11px] ${statusFilter === tab.key ? "text-slate-500" : "text-slate-300"}`}>
                       {tab.count}
                     </span>
@@ -194,36 +282,11 @@ export default function ProposalsPage() {
                   </button>
                 ))}
               </div>
-
-              {/* Search */}
-              <div className="relative pb-3">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-[calc(50%+6px)] text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search..."
-                  className="w-56 rounded-md border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-3 text-[13px] text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none"
-                />
-              </div>
             </div>
 
             {/* Table */}
             {filteredProposals.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
-                  <FileText className="h-5 w-5 text-slate-400" />
-                </div>
-                <p className="mt-4 text-sm font-semibold text-slate-800">
-                  {searchQuery || statusFilter !== "all" ? "No results" : "No proposals yet"}
-                </p>
-                <p className="mt-1 max-w-[260px] text-[13px] text-slate-500">
-                  {searchQuery || statusFilter !== "all"
-                    ? "Try a different search term or filter."
-                    : "Create your first proposal to get started."
-                  }
-                </p>
-              </div>
+              <EmptyScanState onCreate="/dashboard/create-proposal" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -254,11 +317,12 @@ export default function ProposalsPage() {
                     {filteredProposals.map((proposal, i) => (
                       <tr
                         key={proposal.id}
-                        className={`group transition-colors hover:bg-slate-50/80 ${
+                        className={`group relative bg-transparent transition-colors duration-200 hover:bg-slate-50/50 ${
                           i !== filteredProposals.length - 1 ? "border-b border-slate-100/80" : ""
                         }`}
                       >
-                        <td className="px-5 py-3">
+                        <td className="relative px-5 py-3 pl-6">
+                          <span className="absolute left-0 top-0 h-full w-1 bg-[#780116] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
                           <div className="flex items-center gap-3">
                             <ClientAvatar name={proposal.clientName} />
                             <div className="min-w-0">
@@ -278,12 +342,12 @@ export default function ProposalsPage() {
                           <DepartmentBadge department={proposal.department} />
                         </td>
                         <td className="whitespace-nowrap px-5 py-3">
-                          <StatusBadge status={toBadgeStatus(proposal.status)} />
+                          <StatusCell status={toGridStatus(proposal.status)} />
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-500">
+                        <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
                           {formatTs(proposal.createdAt as unknown as { seconds: number })}
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-500">
+                        <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
                           {proposal.viewedAt
                             ? formatTs(proposal.viewedAt as unknown as { seconds: number })
                             : <span className="text-slate-300">&mdash;</span>

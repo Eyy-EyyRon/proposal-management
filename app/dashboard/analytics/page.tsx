@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import {
-  FileText, Eye, CheckCircle, Clock, Loader2, AlertTriangle,
+  FileText, Eye, CheckCircle, Clock, Loader2, AlertTriangle, CalendarDays, ChevronDown,
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell,
@@ -23,6 +23,7 @@ export default function AnalyticsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState("Last 30 Days");
 
   useEffect(() => {
     if (!user) return;
@@ -75,14 +76,46 @@ export default function AnalyticsPage() {
     return buckets;
   }, [active]);
 
+  const statusTotal = useMemo(
+    () => statusDist.reduce((sum, item) => sum + item.value, 0),
+    [statusDist]
+  );
+
+  const pipelineMax = useMemo(
+    () => Math.max(0, ...timeline.map((item) => Math.max(item.sent, item.accepted))),
+    [timeline]
+  );
+
+  const pipelineDomainMax = Math.max(pipelineMax, 2);
+
+  const baselineTicks = useMemo(() => {
+    return [0, Math.ceil(pipelineDomainMax / 2), pipelineDomainMax];
+  }, [pipelineDomainMax]);
+
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex min-h-screen flex-col bg-slate-50">
       <Topbar title="Analytics" />
 
       <div className="flex flex-1 flex-col gap-5 p-6">
-        <div>
-          <h2 className="font-sans text-lg font-semibold text-slate-900">Analytics</h2>
-          <p className="mt-0.5 text-[13px] text-slate-500">Your proposal performance metrics.</p>
+        <div className="flex items-end justify-between gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200 shadow-sm">
+          <div>
+            <h2 className="font-sans text-xl font-bold tracking-tight text-slate-950">Analytics</h2>
+            <p className="mt-1 text-[13px] text-slate-400">Your proposal performance metrics.</p>
+          </div>
+          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[13px] text-slate-600 shadow-[inset_0_1px_3px_rgba(15,23,42,0.06)]">
+            <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+            <select
+              value={dateRange}
+              onChange={(event) => setDateRange(event.target.value)}
+              className="bg-transparent text-[13px] font-medium text-slate-700 outline-none"
+            >
+              <option>Last 7 Days</option>
+              <option>Last 30 Days</option>
+              <option>Last 90 Days</option>
+              <option>All Time</option>
+            </select>
+            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+          </label>
         </div>
 
         {loading ? (
@@ -109,22 +142,50 @@ export default function AnalyticsPage() {
 
             <div className="grid gap-5 lg:grid-cols-2">
               {/* Donut */}
-              <div className="rounded-xl border border-slate-200/80 bg-white">
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div className="px-5 py-4"><h3 className="text-sm font-semibold text-slate-900">Status Distribution</h3></div>
                 <div className="flex items-center justify-center px-5 pb-5">
                   {statusDist.length === 0 ? (
                     <p className="py-10 text-[13px] text-slate-400">No data yet</p>
                   ) : (
                     <div className="flex items-center gap-6">
-                      <div className="h-[180px] w-[180px] min-h-[180px]">
+                      <div className="relative h-[200px] w-[200px] min-h-[200px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
-                            <Pie data={statusDist} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value" strokeWidth={0}>
-                              {statusDist.map((entry, idx) => (<Cell key={idx} fill={entry.color} />))}
+                            <defs>
+                              <filter id="segmentShadow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feDropShadow dx="0" dy="6" stdDeviation="5" floodColor="#780116" floodOpacity="0.12" />
+                              </filter>
+                            </defs>
+                            <Pie
+                              data={statusDist}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={68}
+                              outerRadius={92}
+                              paddingAngle={2}
+                              dataKey="value"
+                              strokeWidth={12}
+                              strokeLinecap="round"
+                            >
+                              {statusDist.map((entry, idx) => (
+                                <Cell
+                                  key={idx}
+                                  fill={entry.color}
+                                  stroke={entry.color}
+                                  filter="url(#segmentShadow)"
+                                />
+                              ))}
                             </Pie>
                             <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} />
                           </PieChart>
                         </ResponsiveContainer>
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                          <div className="text-center">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Grand Total</p>
+                            <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">{statusTotal}</p>
+                          </div>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         {statusDist.map((d) => (
@@ -141,7 +202,7 @@ export default function AnalyticsPage() {
               </div>
 
               {/* Area Chart */}
-              <div className="rounded-xl border border-slate-200/80 bg-white">
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center justify-between px-5 py-4">
                   <h3 className="text-sm font-semibold text-slate-900">Pipeline Activity (14 days)</h3>
                   <div className="flex items-center gap-3">
@@ -153,21 +214,21 @@ export default function AnalyticsPage() {
                   <ResponsiveContainer width="100%" height={240}>
                     <AreaChart data={timeline} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
                       <defs>
-                        <linearGradient id="gradSent" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                        <linearGradient id="pipelineStroke" x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor="#780116" />
+                          <stop offset="100%" stopColor="#64748b" />
                         </linearGradient>
-                        <linearGradient id="gradAcc" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                        <linearGradient id="pipelineFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#780116" stopOpacity={0.1} />
+                          <stop offset="100%" stopColor="#64748b" stopOpacity={0.1} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="date" tickFormatter={(d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <YAxis ticks={baselineTicks} domain={[0, pipelineDomainMax]} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
                       <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }} labelFormatter={(d) => new Date(String(d) + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} />
-                      <Area type="monotone" dataKey="sent" stroke="#818cf8" fill="url(#gradSent)" strokeWidth={2} dot={false} />
-                      <Area type="monotone" dataKey="accepted" stroke="#34d399" fill="url(#gradAcc)" strokeWidth={2} dot={false} />
+                      <Area type="monotone" dataKey="sent" stroke="url(#pipelineStroke)" fill="url(#pipelineFill)" strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: "#780116", strokeWidth: 2, fill: "#fff" }} />
+                      <Area type="monotone" dataKey="accepted" stroke="#34d399" fill="rgba(52, 211, 153, 0.06)" strokeWidth={2} dot={false} activeDot={{ r: 4, stroke: "#34d399", strokeWidth: 2, fill: "#fff" }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

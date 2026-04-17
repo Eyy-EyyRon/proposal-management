@@ -232,52 +232,54 @@ export default function CreateProposalPage() {
   }));
 
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,rgba(120,1,22,0.06),transparent_42%),linear-gradient(180deg,#f8fafc_0%,#fdfdfd_100%)]">
       <Topbar title="Create Proposal" />
 
-      <div className="flex flex-1 flex-col gap-5 p-6">
-        {/* Header */}
-        <div>
-          <Link
-            href="/dashboard/proposals"
-            className="mb-3 inline-flex items-center gap-1 text-[13px] font-medium text-slate-500 transition hover:text-slate-900"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to proposals
-          </Link>
-          <h2 className="font-sans text-lg font-semibold text-slate-900">
-            New proposal
-          </h2>
-          <p className="mt-0.5 text-[13px] text-slate-500">
-            Select a template and fill in client details.
-          </p>
-        </div>
-
-        {error && (
-          <div className="max-w-2xl rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
-            {error}
+      <div className="flex flex-1 justify-center px-4 py-6 sm:px-6 lg:px-8">
+        <div className="w-full max-w-4xl space-y-5">
+          <div className="space-y-5">
+            {/* Header */}
+            <Link
+              href="/dashboard/proposals"
+              className="group mb-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-900"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 transition-transform duration-200 group-hover:-translate-x-1" />
+              Back to proposals
+            </Link>
+            <h2 className="font-sans text-lg font-semibold text-slate-900">
+              New proposal
+            </h2>
+            <p className="mt-0.5 text-[13px] text-slate-500">
+              Select a template and fill in client details.
+            </p>
           </div>
-        )}
 
-        {/* Form */}
-        <div className="max-w-2xl rounded-xl border border-slate-200/80 bg-white p-6">
-          {loadingTemplates ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          {error && (
+            <div className="max-w-2xl rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+              {error}
             </div>
-          ) : formTemplates.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-[13px] font-medium text-slate-700">No templates yet</p>
-              <p className="mt-1 text-[13px] text-slate-500">
-                <Link href="/dashboard/templates/new" className="text-slate-900 underline underline-offset-2">
-                  Create a template
-                </Link>{" "}
-                first, then come back to create a proposal.
-              </p>
-            </div>
-          ) : (
-            <ProposalForm templates={formTemplates} onSubmit={handleSubmit} submitting={submitting} />
           )}
+
+          {/* Form */}
+          <div className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+            {loadingTemplates ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              </div>
+            ) : formTemplates.length === 0 ? (
+              <div className="py-12 text-center">
+                <p className="text-[13px] font-medium text-slate-700">No templates yet</p>
+                <p className="mt-1 text-[13px] text-slate-500">
+                  <Link href="/dashboard/templates/new" className="text-slate-900 underline underline-offset-2">
+                    Create a template
+                  </Link>{" "}
+                  first, then come back to create a proposal.
+                </p>
+              </div>
+            ) : (
+              <ProposalForm templates={formTemplates} onSubmit={handleSubmit} submitting={submitting} />
+            )}
+          </div>
         </div>
       </div>
     </main>

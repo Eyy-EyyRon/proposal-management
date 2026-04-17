@@ -2,11 +2,49 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Plus, Upload, Link as LinkIcon, Search, Trash2, Loader2, LayoutTemplate, AlertTriangle } from "lucide-react";
+import { FileCode2, FileDown, Plus, Upload, Link as LinkIcon, Search, Trash2, Loader2, LayoutTemplate, AlertTriangle } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
 import { getUserTemplates, moveToTrash, type Template } from "@/lib/firestore";
+
+function formatDate(ts: { seconds: number } | null) {
+  if (!ts) return "—";
+  return new Date(ts.seconds * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function DocumentSchemaIcon() {
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[#780116] ring-1 ring-slate-200/80">
+      <FileCode2 className="h-4 w-4" />
+    </div>
+  );
+}
+
+function SourceModuleBadge({ type }: { type: Template["type"] }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200/80 bg-slate-50/80 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+      {type === "docx" ? (
+        <FileDown className="h-3 w-3 opacity-50" />
+      ) : (
+        <LinkIcon className="h-3 w-3 opacity-50" />
+      )}
+      {type === "docx" ? "DOCX" : "GDOC"}
+    </span>
+  );
+}
+
+function VariablePill({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-slate-200/80 bg-slate-100/70 px-2 py-0.5 font-mono text-[11px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+      {label}
+    </span>
+  );
+}
 
 export default function TemplatesPage() {
   const { user } = useAuth();
@@ -51,31 +89,22 @@ export default function TemplatesPage() {
     t.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const formatDate = (ts: { seconds: number } | null) => {
-    if (!ts) return "—";
-    return new Date(ts.seconds * 1000).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
   return (
     <main className="flex min-h-screen flex-col">
       <Topbar title="Templates" />
 
       <div className="flex flex-1 flex-col gap-5 p-6">
         {/* Header */}
-        <div className="flex items-end justify-between">
+        <div className="flex items-end justify-between gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/50 shadow-sm backdrop-blur-sm">
           <div>
-            <h2 className="font-sans text-lg font-semibold text-slate-900">Templates</h2>
-            <p className="mt-0.5 text-[13px] text-slate-500">
+            <h2 className="font-sans text-xl font-bold tracking-tight text-slate-950">Templates</h2>
+            <p className="mt-1 text-[13px] text-slate-400">
               Create reusable templates with dynamic fields.
             </p>
           </div>
           <Link
             href="/dashboard/templates/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-white/10 bg-slate-900 px-3 text-[13px] font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:bg-slate-800"
           >
             <Plus className="h-3.5 w-3.5" />
             New template
@@ -116,21 +145,24 @@ export default function TemplatesPage() {
             actionHref="/dashboard/templates/new"
           />
         ) : (
-          <div className="rounded-xl border border-slate-200/80 bg-white">
+          <div className="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm ring-1 ring-slate-200/50 shadow-sm">
             {/* Toolbar */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-3">
               <p className="text-[13px] font-medium text-slate-900">
                 {filtered.length} template{filtered.length !== 1 ? "s" : ""}
               </p>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <div className="relative w-full max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-48 rounded-md border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-3 text-[13px] text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-9 pr-14 text-[13px] text-slate-800 outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.06)] transition placeholder:text-slate-400 focus:border-[#780116] focus:bg-white focus:ring-4 focus:ring-[#780116]/10"
                 />
+                <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 shadow-[inset_0_1px_1px_rgba(15,23,42,0.04)]">
+                  ⌘K
+                </kbd>
               </div>
             </div>
 
@@ -162,53 +194,35 @@ export default function TemplatesPage() {
                     return (
                       <tr
                         key={template.id}
-                        className={`group transition-colors hover:bg-slate-50/80 ${
+                        className={`group bg-transparent transition-all duration-200 hover:bg-slate-50/50 hover:shadow-md hover:shadow-[#780116]/5 hover:ring-1 hover:ring-[#780116]/20 ${
                           i !== filtered.length - 1 ? "border-b border-slate-100/80" : ""
                         }`}
                       >
-                        <td className="px-5 py-3">
+                        <td className="relative px-5 py-3 pl-6">
+                          <span className="absolute left-0 top-0 h-full w-px bg-[#780116]/20 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
                           <div className="flex items-center gap-3">
-                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                              template.type === "docx"
-                                ? "bg-slate-100 text-slate-600"
-                                : "bg-sky-50 text-sky-600"
-                            }`}>
-                              <FileText className="h-4 w-4" />
-                            </div>
+                            <DocumentSchemaIcon />
                             <p className="text-[13px] font-medium text-slate-800">
                               {template.name}
                             </p>
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-5 py-3">
-                          <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] font-medium ${
-                            template.type === "docx"
-                              ? "bg-slate-50 text-slate-600"
-                              : "bg-sky-50 text-sky-700"
-                          }`}>
-                            {template.type === "docx" ? (
-                              <Upload className="h-3 w-3" />
-                            ) : (
-                              <LinkIcon className="h-3 w-3" />
-                            )}
-                            {template.type === "docx" ? "DOCX" : "Google Docs"}
-                          </span>
+                          <SourceModuleBadge type={template.type} />
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3">
-                          <div className="flex gap-1">
+                        <td className="px-5 py-3">
+                          <div className="flex flex-wrap gap-1.5">
                             {fieldNames.slice(0, 3).map((f) => (
-                              <span key={f} className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-                                {f}
-                              </span>
+                              <VariablePill key={f} label={f} />
                             ))}
                             {fieldNames.length > 3 && (
-                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-400">
+                              <span className="inline-flex items-center rounded-md border border-slate-200/80 bg-slate-100/70 px-2 py-0.5 font-mono text-[11px] text-slate-400">
                                 +{fieldNames.length - 3}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-500">
+                        <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
                           {formatDate(template.createdAt as unknown as { seconds: number })}
                         </td>
                         <td className="px-3 py-3">
