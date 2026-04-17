@@ -50,13 +50,13 @@ export function AdminStatCard({
   return (
     <article
       className={cn(
-        "group relative overflow-hidden rounded-xl border border-slate-200/80 bg-white transition-all duration-200",
-        "hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:border-slate-300"
+        "group relative overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.1),0_10px_20px_rgba(0,0,0,0.02)] transition-all duration-300 ease-out",
+        "hover:border-[#800020]/20 hover:shadow-[0_1px_3px_rgba(0,0,0,0.12),0_12px_24px_rgba(0,0,0,0.04)]"
       )}
     >
       <div
         className={cn(
-          "absolute left-0 top-0 h-full w-[3px] opacity-0 transition-opacity duration-200 group-hover:opacity-100",
+          "absolute left-0 top-0 h-full w-[3px] opacity-0 transition-opacity duration-300 group-hover:opacity-100",
           styles.bar
         )}
       />
@@ -83,7 +83,7 @@ export function AdminStatCard({
             </span>
           )}
         </div>
-        <p className="mt-4 font-sans text-3xl font-semibold tracking-tight text-slate-900">
+        <p className="mt-4 font-sans text-3xl font-semibold tabular-nums tracking-tight text-slate-900">
           {value}
         </p>
         <p className="mt-1 text-[14px] font-medium text-slate-700">{label}</p>

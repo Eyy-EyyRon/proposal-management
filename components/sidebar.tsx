@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   FileText,
@@ -135,22 +136,22 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
     quickBtnHover: "",
   },
   admin: {
-    aside:         "border-r border-violet-100/60 bg-gradient-to-b from-[#faf8ff] to-white/95 backdrop-blur-xl",
-    brand:         "bg-gradient-to-br from-violet-500 to-violet-600",
-    brandShadow:   "shadow-sm shadow-violet-200",
+    aside:         "border-r border-slate-200/60 bg-white/95 backdrop-blur-xl",
+    brand:         "bg-[#800020]",
+    brandShadow:   "",
     brandIcon:     Shield,
-    badgeCls:      "rounded-md bg-gradient-to-r from-violet-50 to-violet-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 ring-1 ring-violet-200/50",
-    badgeLabel:    "ADMIN",
-    sectionLabel:  "text-violet-400/80",
-    activeLink:    "bg-violet-50 text-violet-800 shadow-sm shadow-violet-100/50",
-    activeIcon:    "text-violet-600",
-    hoverLink:     "text-slate-500 hover:bg-violet-50/50 hover:text-slate-700",
-    chevron:       "text-violet-400",
-    divider:       "border-violet-100/60",
-    avatar:        "bg-gradient-to-br from-violet-500 to-violet-600",
-    avatarShadow:  "shadow-sm shadow-violet-200",
-    hoverUser:     "hover:bg-violet-50/50",
-    hoverLogout:   "hover:bg-violet-50 hover:text-violet-700",
+    badgeCls:      "rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500",
+    badgeLabel:    "ADMIN ACCESS",
+    sectionLabel:  "text-slate-500",
+    activeLink:    "bg-[#800020]/10 text-[#800020]",
+    activeIcon:    "text-[#800020]",
+    hoverLink:     "text-slate-500 hover:bg-slate-50 hover:text-[#5f0018]",
+    chevron:       "text-[#800020]/40",
+    divider:       "border-slate-100",
+    avatar:        "bg-[#800020]",
+    avatarShadow:  "",
+    hoverUser:     "hover:bg-slate-50",
+    hoverLogout:   "hover:bg-slate-100 hover:text-slate-700",
     quickBtn:      "",
     quickBtnHover: "",
   },
@@ -159,7 +160,7 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
     brand:         "bg-[#780116]",
     brandShadow:   "",
     brandIcon:     FileText,
-    badgeCls:      "rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500",
+    badgeCls:      "rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500",
     badgeLabel:    "STAFF",
     sectionLabel:  "text-slate-400",
     activeLink:    "bg-[#780116]/10 text-[#780116]",
@@ -220,41 +221,47 @@ export function Sidebar() {
           <BrandIcon className="h-3.5 w-3.5 text-white" />
         </div>
         <span className="text-[14px] font-semibold tracking-tight text-slate-900">ProposalMS</span>
-        <span className={`ml-auto ${theme.badgeCls}`}>{theme.badgeLabel}</span>
       </div>
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 pt-2">
-        <p className={`mb-1.5 px-2 text-[9px] font-semibold uppercase tracking-[0.1em] ${theme.sectionLabel}`}>
+        <p className={`mb-1.5 px-2 text-[9px] font-semibold uppercase tracking-[0.15em] ${theme.sectionLabel}`}>
           {config.sectionLabel}
         </p>
 
         {navItems.map((item) => {
           const active = pathname === item.href;
-          const focusIndicator = active && item.label === "Dashboard";
+          const focusIndicator = active && item.label === "Overview";
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`group relative grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-lg px-2.5 py-3 text-[13px] font-medium transition-all duration-200 ease-out ${
                 active
-                  ? `${theme.activeLink} shadow-[inset_0_0_0_1px_rgba(120,1,22,0.08)]`
+                  ? `${theme.activeLink} shadow-[inset_0_0_0_1px_rgba(128,0,32,0.08)]`
                   : `${theme.hoverLink} hover:bg-slate-100/50`
               }`}
             >
+              {active && (
+                <motion.span
+                  layoutId={`sidebar-active-${activeRole}`}
+                  className="absolute inset-0 rounded-lg bg-[#800020]/10"
+                  transition={{ type: "spring", stiffness: 500, damping: 38 }}
+                />
+              )}
               <item.icon
                 className={`h-4 w-4 shrink-0 justify-self-center transition-opacity duration-150 ${
                   active
                     ? `${theme.activeIcon} opacity-100`
-                    : "text-slate-400 opacity-60 group-hover:opacity-100"
+                    : "text-slate-400 opacity-50 group-hover:opacity-100"
                 }`}
               />
-              <span className="min-w-0 truncate">{item.label}</span>
+              <span className="relative z-10 min-w-0 truncate">{item.label}</span>
               {active && (
-                <ChevronRight className={`h-3 w-3 justify-self-end ${theme.chevron}`} />
+                <ChevronRight className={`relative z-10 h-3 w-3 justify-self-end ${theme.chevron}`} />
               )}
               {focusIndicator && (
-                <span className="absolute right-0 top-0 h-full w-[2px] rounded-l-full bg-[#780116]" />
+                <span className="absolute right-0 top-0 h-full w-[3px] rounded-l-full bg-[#800020]" />
               )}
             </Link>
           );
@@ -265,7 +272,7 @@ export function Sidebar() {
           {config.quickAction && (
             <Link
               href={config.quickAction.href}
-              className={`relative flex items-center gap-2.5 overflow-hidden rounded-lg px-2.5 py-2 text-[13px] font-medium transition ${theme.quickBtn} ${theme.quickBtnHover} before:pointer-events-none before:absolute before:left-0 before:top-0 before:h-px before:w-full before:bg-white/10 before:content-['']`}
+              className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:text-[#800020] hover:ring-[#800020]/50"
             >
               <config.quickAction.icon className="h-4 w-4 shrink-0" />
               {config.quickAction.label}
@@ -277,7 +284,7 @@ export function Sidebar() {
             <Link
               key={sw.href}
               href={sw.href}
-              className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
+              className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:text-[#800020] hover:ring-[#800020]/50"
             >
               <sw.icon className="h-4 w-4 shrink-0 text-slate-400" />
               {sw.label}
@@ -330,13 +337,9 @@ export function Sidebar() {
         {/* Role Badge */}
         <div className="mt-2 flex items-center justify-center">
           <span
-            className={
-              activeRole === "staff"
-                ? "rounded-md border-[0.5px] border-current px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500"
-                : theme.badgeCls
-            }
+            className={theme.badgeCls}
           >
-            {role.toUpperCase()} Access
+            {activeRole === "staff" ? "STAFF" : theme.badgeLabel}
           </span>
         </div>
       </div>
