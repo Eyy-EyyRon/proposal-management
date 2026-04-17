@@ -141,6 +141,11 @@ export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "arch
 
 export interface Proposal {
   id: string;
+  // Delegated Authority fields
+  ownerId: string; // The UID of the identity used (e.g., CEO) - for branding/signatures
+  sentById: string; // The UID of the actual person who created/sent the doc
+  isDelegated: boolean; // Flag to indicate if it was sent on behalf of another
+  // Original field (deprecated, use ownerId/sentById)
   userId: string;
   department: string;
   templateId: string;
@@ -160,7 +165,9 @@ export interface Proposal {
   deletedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  version?: number; 
+  // Versioning fields
+  version: number; // Defaults to 1, increments on every revision
+  previousVersionId: string | null; // Reference to the ID of the previous version
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────
@@ -168,7 +175,9 @@ export interface Proposal {
 export async function createProposal(
   proposalId: string,
   data: {
-    userId: string;
+    ownerId: string;
+    sentById: string;
+    isDelegated: boolean;
     department: string;
     templateId: string;
     templateName: string;
@@ -178,10 +187,17 @@ export async function createProposal(
     clientEmail: string;
     fieldValues: Record<string, string>;
     accessCode?: string | null;
+    version?: number;
+    previousVersionId?: string | null;
   }
 ): Promise<void> {
   await setDoc(doc(db, "proposals", proposalId), {
-    userId: data.userId,
+    // Delegated Authority fields
+    ownerId: data.ownerId,
+    sentById: data.sentById,
+    isDelegated: data.isDelegated,
+    // Legacy field for backward compatibility
+    userId: data.ownerId,
     department: data.department,
     templateId: data.templateId,
     templateName: data.templateName,
@@ -200,22 +216,99 @@ export async function createProposal(
     deletedAt: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    version: 1, 
+    // Versioning fields
+    version: data.version ?? 1,
+    previousVersionId: data.previousVersionId ?? null,
   });
 }
 
+// Get proposal with full history (all versions)
+export async function getProposalHistory(proposalId: string): Promise<Proposal[]> {
+  const history: Proposal[] = [];
+  let currentId: string | null = proposalId;
+  
+  while (currentId) {
+    const snap = await getDoc(doc(db, "proposals", currentId));
+    if (!snap.exists()) break;
+    
+    const proposal = { id: snap.id, ...snap.data() } as Proposal;
+    history.push(proposal);
+    currentId = proposal.previousVersionId;
+  }
+  
+  return history.reverse(); // Oldest first
+}
+
+// Create a new version of an existing proposal
+export async function createProposalRevision(
+  newProposalId: string,
+  currentProposal: Proposal,
+  updates: {
+    fieldValues?: Record<string, string>;
+    templateFileUrl?: string | null;
+    templateGdocUrl?: string | null;
+    templateId?: string;
+    templateName?: string;
+  }
+): Promise<void> {
+  const newVersionNum = (currentProposal.version || 1) + 1;
+
+  await setDoc(doc(db, "proposals", newProposalId), {
+    // Delegated Authority fields (preserve from original)
+    ownerId: currentProposal.ownerId,
+    sentById: currentProposal.sentById,
+    isDelegated: currentProposal.isDelegated,
+    // Legacy field
+    userId: currentProposal.ownerId,
+    department: currentProposal.department,
+    // Template info (use updated values or preserve original)
+    templateId: updates.templateId ?? currentProposal.templateId,
+    templateName: updates.templateName ?? currentProposal.templateName,
+    templateFileUrl: updates.templateFileUrl ?? currentProposal.templateFileUrl,
+    templateGdocUrl: updates.templateGdocUrl ?? currentProposal.templateGdocUrl,
+    // Client info (preserve)
+    clientName: currentProposal.clientName,
+    clientEmail: currentProposal.clientEmail,
+    // Field values (use updated or preserve original)
+    fieldValues: updates.fieldValues ?? currentProposal.fieldValues,
+    // Reset status for new version
+    accessCode: null,
+    status: "sent",
+    // Clear signature for new version
+    signatureType: null,
+    signatureUrl: null,
+    signedAt: null,
+    viewedAt: null,
+    isDeleted: false,
+    deletedAt: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    // Versioning
+    version: newVersionNum,
+    previousVersionId: currentProposal.id,
+  });
+
+  // Add system comment about the revision
+  await addDoc(collection(db, "proposals", newProposalId, "comments"), {
+    text: `Document revised to Version ${newVersionNum}. Previous signature has been voided.`,
+    authorRole: "system",
+    authorName: "System",
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Get proposals where user is either owner (identity used) or sender (actual sender)
 export async function getUserProposals(userId: string): Promise<Proposal[]> {
+  // Query for proposals where user is owner or sender
   const q = query(
     collection(db, "proposals"),
-    where("userId", "==", userId),
     where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-  })) as Proposal[];
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Proposal)
+    .filter((p) => p.ownerId === userId || p.sentById === userId);
 }
 
 export function subscribeToProposals(
@@ -224,12 +317,47 @@ export function subscribeToProposals(
 ): () => void {
   const q = query(
     collection(db, "proposals"),
-    where("userId", "==", userId),
     where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
   return onSnapshot(
     q, 
+    (snapshot) => {
+      const proposals = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }) as Proposal)
+        .filter((p) => p.ownerId === userId || p.sentById === userId);
+      callback(proposals);
+    },
+    (error) => {
+      if (error.code !== "permission-denied") console.error(error);
+    }
+  );
+}
+
+// Get proposals by owner (for CEO to see all proposals sent using their identity)
+export async function getProposalsByOwner(ownerId: string): Promise<Proposal[]> {
+  const q = query(
+    collection(db, "proposals"),
+    where("ownerId", "==", ownerId),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[];
+}
+
+export function subscribeToProposalsByOwner(
+  ownerId: string,
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("ownerId", "==", ownerId),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(
+    q,
     (snapshot) => {
       callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]);
     },
@@ -237,6 +365,18 @@ export function subscribeToProposals(
       if (error.code !== "permission-denied") console.error(error);
     }
   );
+}
+
+// Get proposals by sender (to track who actually sent what)
+export async function getProposalsBySender(senderId: string): Promise<Proposal[]> {
+  const q = query(
+    collection(db, "proposals"),
+    where("sentById", "==", senderId),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[];
 }
 
 export async function getProposal(proposalId: string): Promise<Proposal | null> {
@@ -446,10 +586,113 @@ export interface TeamMember {
   email: string;
   firstName: string;
   lastName: string;
-  role: string;
-  department: string | null;
+  role: "staff" | "admin" | "ceo";
+  department: string | null; // Legacy single department (for backward compatibility)
+  departments?: string[]; // NEW: Multiple departments for staff
+  jobTitle?: string; // NEW: Job title (e.g., "IT Specialist")
+  delegatedUserIds?: string[]; // For CEO: stores UIDs of authorized staff who can send on their behalf
+  canSendOnBehalfOf?: string[]; // For staff: stores CEO UIDs they can send on behalf of
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+// ─── DELEGATION FUNCTIONS ───────────────────────────────────
+
+// Get all users who can be delegated (staff and admins)
+export async function getDelegatableUsers(): Promise<TeamMember[]> {
+  const snapshot = await getDocs(collection(db, "users"));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as TeamMember)
+    .filter((u) => u.role === "staff" || u.role === "admin");
+}
+
+// Get delegation settings for a CEO
+export async function getDelegationSettings(ceoId: string): Promise<string[]> {
+  const snap = await getDoc(doc(db, "users", ceoId));
+  if (!snap.exists()) return [];
+  const data = snap.data();
+  return data.delegatedUserIds || [];
+}
+
+// Update CEO's delegation settings
+export async function updateDelegationSettings(
+  ceoId: string,
+  delegatedUserIds: string[]
+): Promise<void> {
+  await updateDoc(doc(db, "users", ceoId), {
+    delegatedUserIds,
+    updatedAt: serverTimestamp(),
+  });
+  
+  // Also update each delegated user's canSendOnBehalfOf array
+  const allUsersSnap = await getDocs(collection(db, "users"));
+  const batchUpdates: Promise<void>[] = [];
+  
+  allUsersSnap.docs.forEach((userDoc) => {
+    const userData = userDoc.data();
+    const userId = userDoc.id;
+    const currentCanSend = userData.canSendOnBehalfOf || [];
+    
+    if (delegatedUserIds.includes(userId)) {
+      // Add CEO to this user's canSendOnBehalfOf if not already there
+      if (!currentCanSend.includes(ceoId)) {
+        batchUpdates.push(
+          updateDoc(doc(db, "users", userId), {
+            canSendOnBehalfOf: [...currentCanSend, ceoId],
+            updatedAt: serverTimestamp(),
+          })
+        );
+      }
+    } else {
+      // Remove CEO from this user's canSendOnBehalfOf
+      if (currentCanSend.includes(ceoId)) {
+        batchUpdates.push(
+          updateDoc(doc(db, "users", userId), {
+            canSendOnBehalfOf: currentCanSend.filter((id: string) => id !== ceoId),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      }
+    }
+  });
+  
+  await Promise.all(batchUpdates);
+}
+
+// Check if user can send on behalf of another user
+export async function canSendOnBehalfOf(
+  userId: string,
+  targetUserId: string
+): Promise<boolean> {
+  const snap = await getDoc(doc(db, "users", userId));
+  if (!snap.exists()) return false;
+  const data = snap.data();
+  const canSend = data.canSendOnBehalfOf || [];
+  return canSend.includes(targetUserId);
+}
+
+// Get all users this person can send on behalf of
+export async function getAvailableIdentities(userId: string): Promise<TeamMember[]> {
+  const snap = await getDoc(doc(db, "users", userId));
+  if (!snap.exists()) return [];
+  
+  const data = snap.data();
+  const canSend = data.canSendOnBehalfOf || [];
+  
+  if (canSend.length === 0) return [];
+  
+  // Fetch full details of each available identity
+  const identities: TeamMember[] = [];
+  await Promise.all(
+    canSend.map(async (targetId: string) => {
+      const targetSnap = await getDoc(doc(db, "users", targetId));
+      if (targetSnap.exists()) {
+        identities.push({ id: targetSnap.id, ...targetSnap.data() } as TeamMember);
+      }
+    })
+  );
+  
+  return identities;
 }
 
 export async function getAllUsers(): Promise<TeamMember[]> {
@@ -548,6 +791,108 @@ export async function updateUserDepartment(
 ): Promise<void> {
   await updateDoc(doc(db, "users", userId), {
     department,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Add user to multiple departments
+export async function addUserToDepartments(
+  userId: string,
+  departmentNames: string[]
+): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  const userSnap = await getDoc(userRef);
+  
+  if (!userSnap.exists()) throw new Error("User not found");
+  
+  const currentData = userSnap.data();
+  const currentDepartments = currentData.departments || [];
+  
+  // Merge and deduplicate
+  const newDepartments = [...new Set([...currentDepartments, ...departmentNames])];
+  
+  await updateDoc(userRef, {
+    departments: newDepartments,
+    department: newDepartments[0] || null, // Keep legacy field in sync
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Remove user from departments
+export async function removeUserFromDepartments(
+  userId: string,
+  departmentNames: string[]
+): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  const userSnap = await getDoc(userRef);
+  
+  if (!userSnap.exists()) throw new Error("User not found");
+  
+  const currentData = userSnap.data();
+  const currentDepartments = currentData.departments || [];
+  
+  // Remove specified departments
+  const newDepartments = currentDepartments.filter((d: string) => !departmentNames.includes(d));
+  
+  await updateDoc(userRef, {
+    departments: newDepartments,
+    department: newDepartments[0] || null, // Keep legacy field in sync
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Set user's departments (replace all)
+export async function setUserDepartments(
+  userId: string,
+  departmentNames: string[]
+): Promise<void> {
+  await updateDoc(doc(db, "users", userId), {
+    departments: departmentNames,
+    department: departmentNames[0] || null, // Keep legacy field in sync
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Subscribe to all users with real-time updates
+export function subscribeToAllUsers(
+  callback: (users: TeamMember[]) => void
+): () => void {
+  return onSnapshot(
+    collection(db, "users"),
+    (snapshot) => {
+      const users = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as TeamMember);
+      callback(users);
+    },
+    (error) => {
+      console.error("Error subscribing to users:", error);
+    }
+  );
+}
+
+// Get users filtered by department
+export async function getUsersByDepartment(department: string): Promise<TeamMember[]> {
+  const snapshot = await getDocs(collection(db, "users"));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as TeamMember)
+    .filter((u) => 
+      u.departments?.includes(department) || u.department === department
+    );
+}
+
+// ─── USER PROFILE UPDATE ───────────────────────────────────
+
+export interface UpdateProfileData {
+  firstName?: string;
+  lastName?: string;
+  jobTitle?: string;
+}
+
+export async function updateUserProfile(
+  userId: string,
+  data: UpdateProfileData
+): Promise<void> {
+  await updateDoc(doc(db, "users", userId), {
+    ...data,
     updatedAt: serverTimestamp(),
   });
 }

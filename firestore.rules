@@ -90,33 +90,44 @@ service cloud.firestore {
     // ─── PROPOSALS ───────────────────────────────────────────
     match /proposals/{proposalId} {
 
+      // Allow public read for client portal
       allow get: if true;
 
+      // List: Allow if user is owner (identity used), sender (actual sender), or Admin/CEO
       allow list: if isSignedIn()
         && (
-          resource.data.userId == request.auth.uid
+          resource.data.ownerId == request.auth.uid
+          || resource.data.sentById == request.auth.uid
           || isCeo()
           || (isAdmin() && resource.data.department == getUserDept())
         );
 
+      // Create: Allow if authenticated, and ownerId/sentById are properly set
       allow create: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.sentById == request.auth.uid
+        && request.resource.data.ownerId == request.resource.data.sentById || request.resource.data.isDelegated == true
         && request.resource.data.status == "sent";
 
+      // Delete: Allow if owner, sender, or Admin/CEO
       allow delete: if isSignedIn()
         && (
-          resource.data.userId == request.auth.uid
+          resource.data.ownerId == request.auth.uid
+          || resource.data.sentById == request.auth.uid
           || isAdminOrCeo()
         );
 
+      // Update: Allow if owner, sender, or Admin/CEO
       allow update: if
-        // Path 1: Authenticated owner — unrestricted
-        (isSignedIn() && resource.data.userId == request.auth.uid)
+        // Path 1: Authenticated owner (identity owner) — unrestricted
+        (isSignedIn() && resource.data.ownerId == request.auth.uid)
         ||
-        // Path 2: Admin/CEO — unrestricted (trash, restore, etc.)
+        // Path 2: Authenticated sender (actual sender) — unrestricted
+        (isSignedIn() && resource.data.sentById == request.auth.uid)
+        ||
+        // Path 3: Admin/CEO — unrestricted (trash, restore, etc.)
         isAdminOrCeo()
         ||
-        // Path 3: Public (unauthenticated) — restricted fields only
+        // Path 4: Public (unauthenticated) — restricted fields only
         (
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
@@ -124,7 +135,8 @@ service cloud.firestore {
             (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
             || (resource.data.status == "viewed" && request.resource.data.status in ["accepted", "rejected"])
           )
-          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.sentById == resource.data.sentById
           && request.resource.data.templateId == resource.data.templateId
           && request.resource.data.templateName == resource.data.templateName
           && request.resource.data.templateFileUrl == resource.data.templateFileUrl
@@ -133,15 +145,16 @@ service cloud.firestore {
           && request.resource.data.clientEmail == resource.data.clientEmail
           && request.resource.data.fieldValues == resource.data.fieldValues
           && request.resource.data.createdAt == resource.data.createdAt
-          // 🔥 NEW: Explicitly protect the version field from the public
+          // Protect versioning fields from public modification
           && request.resource.data.get('version', 1) == resource.data.get('version', 1)
+          && request.resource.data.get('previousVersionId', null) == resource.data.get('previousVersionId', null)
         );
 
-      // Allow public chat inside the specific proposal
+      // Comments subcollection - accessible to all for client portal
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if true; // Allows the client portal to post messages
-        // Prevent editing/deleting messages for audit trails
+        allow create: if true; // Allows client portal and staff to post
+        // Only Admin/CEO can edit/delete for audit trail integrity
         allow update, delete: if isSignedIn() && isAdminOrCeo(); 
       }
     }

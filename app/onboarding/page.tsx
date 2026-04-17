@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, ChevronRight, Loader2, Sparkles } from "lucide-react";
+import { signOut } from "firebase/auth";
+import { Building2, ChevronRight, Loader2, Sparkles, LogOut } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/auth-context";
+import { auth } from "@/lib/firebase";
 import {
   subscribeToDepartmentsList,
   updateUserDepartment,
@@ -152,6 +154,14 @@ export default function OnboardingPage() {
             )}
           </button>
         </div>
+
+        <button
+          onClick={() => signOut(auth)}
+          className="mt-4 flex w-full items-center justify-center gap-2 text-[13px] text-slate-500 transition hover:text-slate-700"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Sign out
+        </button>
 
         <p className="mt-4 text-center text-[11px] text-slate-400">
           You can change your department later in Settings.

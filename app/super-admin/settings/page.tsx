@@ -11,16 +11,21 @@ import {
   Plus,
   Trash2,
   Loader2,
+  User,
 } from "lucide-react";
 import {
   subscribeToDepartmentsList,
   createDepartment,
   deleteDepartment,
+  updateUserProfile,
   type FirestoreDepartment,
+  type UpdateProfileData,
 } from "@/lib/firestore";
+import { useAuth } from "@/contexts/auth-context";
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"general" | "departments" | "notifications" | "security" | "appearance">("general");
+  const { user, profile } = useAuth();
+  const [activeTab, setActiveTab] = useState<"profile" | "general" | "departments" | "notifications" | "security" | "appearance">("profile");
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col space-y-8 px-8 pb-10 pt-12 lg:px-10">
@@ -37,6 +42,17 @@ export default function SettingsPage() {
       <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
         {/* Sidebar Tabs */}
         <div className="flex flex-col gap-1 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_1px_3px_rgba(0,0,0,0.1),0_10px_20px_rgba(0,0,0,0.02)]">
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-300 ease-out ${
+              activeTab === "profile"
+                ? "bg-[#800020]/10 text-[#800020] shadow-[inset_0_0_0_1px_rgba(128,0,32,0.08)]"
+                : "text-slate-600 hover:bg-slate-50 hover:text-[#5f0018]"
+            }`}
+          >
+            <User className={`h-4 w-4 transition-opacity duration-150 ${activeTab === "profile" ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`} />
+            Profile
+          </button>
           <button
             onClick={() => setActiveTab("general")}
             className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-300 ease-out ${
@@ -96,6 +112,10 @@ export default function SettingsPage() {
 
         {/* Content Area */}
         <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.1),0_10px_20px_rgba(0,0,0,0.02)]">
+          {activeTab === "profile" && (
+            <ProfileSettings userId={user?.uid} profile={profile} />
+          )}
+
           {activeTab === "general" && (
             <div className="space-y-6">
               <div>
@@ -281,6 +301,168 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PROFILE SETTINGS COMPONENT ─────────────────────────────
+interface ProfileSettingsProps {
+  userId: string | undefined;
+  profile: { firstName: string; lastName: string; email: string; jobTitle?: string; role: string } | null;
+}
+
+function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
+  const [firstName, setFirstName] = useState(profile?.firstName || "");
+  const [lastName, setLastName] = useState(profile?.lastName || "");
+  const [jobTitle, setJobTitle] = useState(profile?.jobTitle || "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Update local state when profile changes
+  useEffect(() => {
+    if (profile) {
+      setFirstName(profile.firstName || "");
+      setLastName(profile.lastName || "");
+      setJobTitle(profile.jobTitle || "");
+    }
+  }, [profile]);
+
+  const handleSave = async () => {
+    if (!userId) return;
+    setSaving(true);
+    try {
+      await updateUserProfile(userId, {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        jobTitle: jobTitle.trim(),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error("Failed to update profile:", err);
+      alert("Failed to update profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasChanges =
+    firstName.trim() !== (profile?.firstName || "") ||
+    lastName.trim() !== (profile?.lastName || "") ||
+    jobTitle.trim() !== (profile?.jobTitle || "");
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+          Profile Settings
+        </h3>
+        <p className="mt-2 text-[13px] text-slate-500">
+          Manage your personal information and job details
+        </p>
+      </div>
+
+      {/* Avatar Section */}
+      <div className="flex items-center gap-4 rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#800020]/10 text-xl font-semibold text-[#800020]">
+          {firstName?.[0]}{lastName?.[0]}
+        </div>
+        <div>
+          <p className="text-[15px] font-semibold text-slate-900">
+            {firstName} {lastName}
+          </p>
+          <p className="text-[13px] text-slate-500">{profile?.email}</p>
+          <span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-medium text-amber-700">
+            {profile?.role === "admin" ? "Administrator" : profile?.role}
+          </span>
+        </div>
+      </div>
+
+      {/* Form Fields */}
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+            <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+              First Name
+            </label>
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+            />
+          </div>
+
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+            <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+              Last Name
+            </label>
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+          <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+            Job Title
+          </label>
+          <input
+            type="text"
+            value={jobTitle}
+            onChange={(e) => setJobTitle(e.target.value)}
+            placeholder="e.g., IT Specialist, Marketing Manager"
+            className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+          />
+          <p className="mt-1.5 text-[12px] text-slate-400">
+            Your job title will be visible to other team members
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
+          <label className="mb-1.5 block text-[13px] font-medium text-slate-500">
+            Email Address
+          </label>
+          <input
+            type="email"
+            value={profile?.email || ""}
+            disabled
+            className="w-full rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-[13px] text-slate-500 outline-none cursor-not-allowed"
+          />
+          <p className="mt-1.5 text-[12px] text-slate-400">
+            Email cannot be changed. Contact support for assistance.
+          </p>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-6">
+        {saved && (
+          <span className="text-[13px] font-medium text-emerald-600">
+            Profile saved successfully!
+          </span>
+        )}
+        <button
+          onClick={handleSave}
+          disabled={!hasChanges || saving || !userId}
+          className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] disabled:opacity-50"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="h-4 w-4" />
+              Save Changes
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

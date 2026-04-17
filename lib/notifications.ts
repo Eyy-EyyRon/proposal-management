@@ -17,13 +17,17 @@ import type { UserRole } from "@/contexts/auth-context";
 // ─── TYPES ───────────────────────────────────────────────────
 
 export type NotificationType =
-  | "viewed"
-  | "signed"
-  | "rejected"
+  | "viewed"           // Client viewed proposal
+  | "signed"           // Client signed proposal
+  | "rejected"         // Client rejected proposal
+  | "commented"        // Client or Staff commented
   | "team_joined"
   | "template_updated"
   | "major_deal"
-  | "system";
+  | "system"
+  | "delegated_proposal"  // Staff sent proposal on CEO's behalf
+  | "ceo_comment"        // CEO commented on proposal
+  | "staff_action";      // Staff performed an action
 
 export interface AppNotification {
   id: string;
@@ -35,13 +39,16 @@ export interface AppNotification {
   createdAt: Timestamp;
   targetRole?: UserRole | "all";
   department?: string;
+  actorRole?: "client" | "ceo" | "staff" | "system"; // Who performed the action
+  actorName?: string; // Name of the person who performed the action
 }
 
 // ─── NOTIFICATION TYPES PER ROLE ────────────────────────────
+// All roles now see actions from client, CEO, and staff
 const ROLE_NOTIFICATION_TYPES: Record<string, NotificationType[]> = {
-  staff:  ["viewed", "signed", "rejected"],
-  admin:  ["viewed", "signed", "rejected", "team_joined", "template_updated"],
-  ceo:    ["viewed", "signed", "rejected", "team_joined", "template_updated", "major_deal", "system"],
+  staff:  ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "delegated_proposal", "team_joined", "template_updated"],
+  admin:  ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "delegated_proposal", "team_joined", "template_updated"],
+  ceo:    ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "team_joined", "template_updated", "major_deal", "system", "delegated_proposal"],
 };
 
 // ─── REAL-TIME LISTENER ──────────────────────────────────────

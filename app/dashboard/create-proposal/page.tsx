@@ -4,12 +4,20 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ProposalForm } from "@/components/proposal-form";
 import { Topbar } from "@/components/topbar";
-import { ArrowLeft, Check, Copy, ExternalLink, Loader2, Mail } from "lucide-react";
-import { useAuth } from "@/contexts/auth-context";
-import { getUserTemplates, createProposal, getOrgSettings, type Template, type OrgSettings } from "@/lib/firestore";
+import { 
+  ArrowLeft, Check, Copy, ExternalLink, Loader2, Mail, 
+  Crown, User, Shield, AlertCircle 
+} from "lucide-react";
+import { useAuth, useRole } from "@/contexts/auth-context";
+import { 
+  getUserTemplates, createProposal, getOrgSettings, getAvailableIdentities,
+  type Template, type OrgSettings, type TeamMember 
+} from "@/lib/firestore";
 
 export default function CreateProposalPage() {
   const { user, profile } = useAuth();
+  const { role } = useRole();
+  
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -22,20 +30,28 @@ export default function CreateProposalPage() {
   const [lastClientEmail, setLastClientEmail] = useState("");
   const [lastClientName, setLastClientName] = useState("");
   const [lastTemplateName, setLastTemplateName] = useState("");
+  
+  // Delegated Authority state
+  const [availableIdentities, setAvailableIdentities] = useState<TeamMember[]>([]);
+  const [selectedIdentity, setSelectedIdentity] = useState<string>("self"); // "self" or userId of CEO
+  const [loadingIdentities, setLoadingIdentities] = useState(false);
+  const [isDelegated, setIsDelegated] = useState(false);
 
-  // Fetch user's templates and org settings
+  // Fetch user's templates, org settings, and available identities (for delegation)
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
       try {
-        const [data, settings] = await Promise.all([
+        const [data, settings, identities] = await Promise.all([
           getUserTemplates(user.uid),
           getOrgSettings(user.uid),
+          getAvailableIdentities(user.uid),
         ]);
         if (!cancelled) {
           setTemplates(data);
           setOrgSettings(settings);
+          setAvailableIdentities(identities);
         }
       } finally {
         if (!cancelled) setLoadingTemplates(false);
@@ -45,7 +61,7 @@ export default function CreateProposalPage() {
   }, [user]);
 
   const handleSubmit = async (data: { templateId: string; fieldValues: Record<string, string>; accessCode?: string }) => {
-    if (!user) return;
+    if (!user || !profile) return;
     setSubmitting(true);
     setError(null);
 
@@ -69,8 +85,21 @@ export default function CreateProposalPage() {
           return field?.type === "email" || field?.name.toLowerCase().includes("email");
         }) ?? ""] || "";
 
+      // Determine owner and sender based on identity selection
+      const isSendingOnBehalf = selectedIdentity !== "self" && availableIdentities.length > 0;
+      const ownerId = isSendingOnBehalf ? selectedIdentity : user.uid;
+      const sentById = user.uid;
+      
+      // Get the appropriate org settings (CEO's settings if delegated)
+      let senderOrgSettings = orgSettings;
+      if (isSendingOnBehalf) {
+        senderOrgSettings = await getOrgSettings(ownerId);
+      }
+
       await createProposal(proposalId, {
-        userId: user.uid,
+        ownerId,
+        sentById,
+        isDelegated: isSendingOnBehalf,
         department: profile?.department ?? "Sales",
         templateId: data.templateId,
         templateName: template?.name ?? "Unknown",
@@ -87,12 +116,33 @@ export default function CreateProposalPage() {
       setLastClientEmail(clientEmail);
       setLastClientName(clientName);
       setLastTemplateName(template?.name ?? "");
+      setIsDelegated(isSendingOnBehalf);
 
       // Auto-copy to clipboard
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+      }
+
+      // Send notification to CEO if this was sent on their behalf
+      if (isSendingOnBehalf) {
+        try {
+          await fetch("/api/notify-delegation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              proposalId,
+              ceoId: ownerId,
+              staffName: `${profile.firstName} ${profile.lastName}`,
+              clientName,
+              templateName: template?.name ?? "Proposal",
+            }),
+          });
+        } catch (notifyErr) {
+          console.error("Failed to notify CEO:", notifyErr);
+          // Don't fail the whole operation if notification fails
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to create proposal";
@@ -147,14 +197,39 @@ export default function CreateProposalPage() {
               </div>
             </div>
 
-            {/* Send via Email */}
+            {/* Delegation Notice */}
+          {isDelegated && (
+            <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+              <div className="flex items-center gap-2 text-[12px] text-violet-700">
+                <Crown className="h-3.5 w-3.5" />
+                <span>Sent on behalf of CEO identity</span>
+              </div>
+            </div>
+          )}
+
+          {/* Send via Email */}
             {lastClientEmail && (
               <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
                 <button
                   onClick={async () => {
                     setEmailSending(true);
                     try {
-                      const senderName = profile ? `${profile.firstName} ${profile.lastName}` : "";
+                      // Determine sender name and branding based on delegation
+                      const isDelegatedSend = isDelegated && selectedIdentity !== "self";
+                      const identityOwner = isDelegatedSend 
+                        ? availableIdentities.find(i => i.id === selectedIdentity)
+                        : null;
+                      
+                      const senderName = isDelegatedSend && identityOwner
+                        ? `${identityOwner.firstName} ${identityOwner.lastName}`
+                        : profile ? `${profile.firstName} ${profile.lastName}` : "";
+                      
+                      // Use CEO's org settings if delegated
+                      let senderOrgSettings = orgSettings;
+                      if (isDelegatedSend && selectedIdentity !== "self") {
+                        senderOrgSettings = await getOrgSettings(selectedIdentity);
+                      }
+
                       const res = await fetch("/api/send-proposal", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -164,9 +239,9 @@ export default function CreateProposalPage() {
                           proposalUrl: shareUrl,
                           templateName: lastTemplateName,
                           senderName,
-                          companyName: orgSettings?.companyName || profile?.companyName || "",
-                          emailSignature: orgSettings?.emailSignature || "",
-                          companyLogoUrl: orgSettings?.companyLogoUrl || null,
+                          companyName: senderOrgSettings?.companyName || profile?.companyName || "",
+                          emailSignature: senderOrgSettings?.emailSignature || "",
+                          companyLogoUrl: senderOrgSettings?.companyLogoUrl || null,
                         }),
                       });
                       if (res.ok) {
@@ -257,6 +332,80 @@ export default function CreateProposalPage() {
           {error && (
             <div className="max-w-2xl rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
               {error}
+            </div>
+          )}
+
+          {/* Identity Selection (for delegated users) */}
+          {availableIdentities.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="h-4 w-4 text-violet-600" />
+                <h3 className="text-[13px] font-semibold text-slate-900">Send Identity</h3>
+              </div>
+              <p className="text-[12px] text-slate-500 mb-3">
+                You are authorized to send proposals on behalf of these identities:
+              </p>
+              <div className="space-y-2">
+                <label className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${
+                  selectedIdentity === "self" 
+                    ? "border-violet-300 bg-violet-50" 
+                    : "border-slate-200 hover:border-slate-300"
+                }`}>
+                  <input
+                    type="radio"
+                    name="identity"
+                    value="self"
+                    checked={selectedIdentity === "self"}
+                    onChange={(e) => setSelectedIdentity(e.target.value)}
+                    className="h-4 w-4 text-violet-600"
+                  />
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
+                      <User className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-medium text-slate-900">Myself</p>
+                      <p className="text-[11px] text-slate-500">{profile?.firstName} {profile?.lastName}</p>
+                    </div>
+                  </div>
+                </label>
+                
+                {availableIdentities.map((identity) => (
+                  <label 
+                    key={identity.id}
+                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${
+                      selectedIdentity === identity.id 
+                        ? "border-violet-300 bg-violet-50" 
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="identity"
+                      value={identity.id}
+                      checked={selectedIdentity === identity.id}
+                      onChange={(e) => setSelectedIdentity(e.target.value)}
+                      className="h-4 w-4 text-violet-600"
+                    />
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-[11px] font-semibold text-violet-600">
+                        <Crown className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-[13px] font-medium text-slate-900">
+                          {identity.firstName} {identity.lastName}
+                        </p>
+                        <p className="text-[11px] text-slate-500">CEO · {identity.email}</p>
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-slate-400">
+                {selectedIdentity === "self" 
+                  ? "Your name and branding will appear to the client."
+                  : "The CEO's name, company branding, and email signature will appear to the client. You'll be listed as the sender internally."}
+              </p>
             </div>
           )}
 

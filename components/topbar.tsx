@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info } from "lucide-react";
+import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase } from "lucide-react";
 import Link from "next/link";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import {
@@ -20,10 +20,14 @@ const iconConfig: Record<NotificationType, { icon: typeof Eye; color: string; bg
   viewed:           { icon: Eye,            color: "text-sky-500",     bg: "bg-sky-50" },
   signed:           { icon: CheckCircle,    color: "text-emerald-500", bg: "bg-emerald-50" },
   rejected:         { icon: XCircle,        color: "text-rose-500",    bg: "bg-rose-50" },
+  commented:        { icon: MessageSquare,  color: "text-blue-500",    bg: "bg-blue-50" },
   team_joined:      { icon: Users,          color: "text-violet-500",  bg: "bg-violet-50" },
   template_updated: { icon: LayoutTemplate, color: "text-amber-500",   bg: "bg-amber-50" },
   major_deal:       { icon: Trophy,         color: "text-amber-600",   bg: "bg-amber-50" },
   system:           { icon: Info,           color: "text-slate-500",   bg: "bg-slate-50" },
+  delegated_proposal: { icon: Crown,        color: "text-violet-600",  bg: "bg-violet-50" },
+  ceo_comment:      { icon: Crown,          color: "text-purple-600",  bg: "bg-purple-50" },
+  staff_action:     { icon: Briefcase,      color: "text-indigo-500",  bg: "bg-indigo-50" },
 };
 
 function timeAgo(ts: { seconds: number } | null | undefined): string {
