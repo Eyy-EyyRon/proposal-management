@@ -3,70 +3,171 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ─── HELPER FUNCTIONS ───────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userDocExists() {
+      return isSignedIn() && exists(userDocPath());
+    }
+
+    function getUserRole() {
+      return userDocExists() ? get(userDocPath()).data.role : "none";
+    }
+
+    function getUserDept() {
+      return userDocExists() ? get(userDocPath()).data.department : null;
+    }
+
+    function isCeo() {
+      return isSignedIn() && getUserRole() == "ceo";
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserRole() == "admin";
+    }
+
+    function isAdminOrCeo() {
+      return isSignedIn() && getUserRole() in ["admin", "ceo"];
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
     // ─── USERS ───────────────────────────────────────────────
-    // Only the authenticated owner can read/write their own profile.
     match /users/{userId} {
-      allow read, write: if request.auth != null
-        && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      allow read: if isOwner(userId) || isAdminOrCeo();
+
+      allow update: if
+        isCeo()
+        ||
+        (
+          isOwner(userId)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role"])
+        );
+
+      allow delete: if isCeo();
+    }
+
+    // ─── DEPARTMENTS ────────────────────────────────────────
+    match /departments/{deptId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAdminOrCeo();
+      allow update: if isAdminOrCeo();
+    }
+
+    // ─── ORGANIZATION SETTINGS ───────────────────────────────
+    match /orgSettings/{userId} {
+      allow read, write: if isOwner(userId);
     }
 
     // ─── TEMPLATES ───────────────────────────────────────────
-    // Only the authenticated owner can CRUD their own templates.
     match /templates/{templateId} {
-      allow create: if request.auth != null
+      allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
 
-      allow read, update, delete: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdminOrCeo()
+        );
+
+      allow update, delete: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdminOrCeo()
+        );
     }
 
     // ─── PROPOSALS ───────────────────────────────────────────
-    // Owner: full CRUD (list queries must filter by userId).
-    // Public: can GET a single doc by ID (client portal).
-    // Public: can UPDATE only status/signature fields.
     match /proposals/{proposalId} {
 
-      // Anyone with the document ID can read a single proposal.
       allow get: if true;
 
-      // Only authenticated owner can list (dashboard queries).
-      allow list: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCeo()
+          || (isAdmin() && resource.data.department == getUserDept())
+        );
 
-      // Only authenticated owner can create.
-      allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == "sent";
 
-      // Only authenticated owner can delete.
-      allow delete: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdminOrCeo()
+        );
 
-      // Update: two paths — owner (full) or public (restricted fields).
       allow update: if
-        // Path 1: Authenticated owner — unrestricted update
-        (request.auth != null && resource.data.userId == request.auth.uid)
+        // Path 1: Authenticated owner — unrestricted
+        (isSignedIn() && resource.data.userId == request.auth.uid)
         ||
-        // Path 2: Public (unauthenticated) — restricted to these fields only
+        // Path 2: Admin/CEO — unrestricted (trash, restore, etc.)
+        isAdminOrCeo()
+        ||
+        // Path 3: Public (unauthenticated) — restricted fields only
         (
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
-          // Immutable fields cannot be tampered with
+          && (
+            (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
+            || (resource.data.status == "viewed" && request.resource.data.status in ["accepted", "rejected"])
+          )
           && request.resource.data.userId == resource.data.userId
           && request.resource.data.templateId == resource.data.templateId
+          && request.resource.data.templateName == resource.data.templateName
           && request.resource.data.templateFileUrl == resource.data.templateFileUrl
           && request.resource.data.templateGdocUrl == resource.data.templateGdocUrl
           && request.resource.data.clientName == resource.data.clientName
           && request.resource.data.clientEmail == resource.data.clientEmail
+          && request.resource.data.fieldValues == resource.data.fieldValues
           && request.resource.data.createdAt == resource.data.createdAt
+          // 🔥 NEW: Explicitly protect the version field from the public
+          && request.resource.data.get('version', 1) == resource.data.get('version', 1)
         );
+
+      // Allow public chat inside the specific proposal
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if true; // Allows the client portal to post messages
+        // Prevent editing/deleting messages for audit trails
+        allow update, delete: if isSignedIn() && isAdminOrCeo(); 
+      }
+    }
+
+    // ─── NOTIFICATIONS ─────────────────────────────────────────
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCeo()
+        );
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
+      allow create, delete: if false;
     }
 
     // ─── ANALYTICS ───────────────────────────────────────────
-    // Read: only the authenticated owner.
-    // Write: only Cloud Functions via Admin SDK (bypasses rules).
     match /analytics/{userId} {
-      allow read: if request.auth != null
-        && request.auth.uid == userId;
+      allow read: if isOwner(userId) || isCeo();
+      allow write: if isOwner(userId);
+    }
+
+    // ─── STATS (Aggregated) ─────────────────────────────────
+    match /stats/{docId} {
+      allow read: if isSignedIn();
       allow write: if false;
     }
 

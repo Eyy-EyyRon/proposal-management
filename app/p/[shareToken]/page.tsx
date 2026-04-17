@@ -1,224 +1,471 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { FileText, X, Check, AlertCircle, Download, Pen, Upload, Image } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams } from "next/navigation";
+import {
+  FileText, X, Check, AlertCircle, Download, Pen, Upload,
+  Image as ImageIcon, Loader2, ShieldCheck, Sparkles, PenLine, Eraser, LockKeyhole,
+  MessageCircle, Send, Quote
+} from "lucide-react";
+import {
+  getProposal, markProposalViewed, acceptProposal, rejectProposal,
+  type Proposal,
+} from "@/lib/firestore";
+import { renderProposalHtml } from "@/lib/proposal-renderer";
+import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
+import { exportProposalPdf } from "@/lib/export-utils";
 
-type SignatureMode = "draw" | "upload";
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase"; 
 
-interface ProposalData {
-  id: string;
-  templateName: string;
-  fieldValues: Record<string, string>;
-  status: "Sent" | "Viewed" | "Accepted" | "Rejected";
-  pdfUrl?: string;
-  createdAt: string;
-}
+type SignatureMode = "draw" | "type" | "upload";
+type ViewState = "loading" | "not-found" | "locked" | "document" | "rejected";
+type TabMode = "action" | "discuss";
 
 export default function ProposalPortalPage() {
   const params = useParams();
-  const router = useRouter();
-  const [proposal, setProposal] = useState<ProposalData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showSignature, setShowSignature] = useState(false);
+  const shareToken = params.shareToken as string;
+
+  const [viewState, setViewState] = useState<ViewState>("loading");
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [documentHtml, setDocumentHtml] = useState<string>("");
+  const [renderError, setRenderError] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const documentRef = useRef<HTMLDivElement>(null);
+
+  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [accessCodeError, setAccessCodeError] = useState(false);
+
   const [signatureMode, setSignatureMode] = useState<SignatureMode>("draw");
-  const [signature, setSignature] = useState<string | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
+  const [typedName, setTypedName] = useState("");
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // In production, fetch from Firestore using shareToken
-    const fetchProposal = async () => {
-      try {
-        // Mock data for now
-        const mockProposal: ProposalData = {
-          id: "1",
-          templateName: "Standard Service Agreement",
-          fieldValues: {
-            "Client Name": "John Doe",
-            "Email": "john@example.com",
-            "Phone": "+1 234 567 8900",
-            "Company": "Acme Corp",
-          },
-          status: "Sent",
-          pdfUrl: "/sample-proposal.pdf", // Mock PDF URL
-          createdAt: "Apr 15, 2026",
-        };
-        
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        setProposal(mockProposal);
-        setLoading(false);
-        
-        // Update status to "Viewed"
-        setProposal(prev => prev ? { ...prev, status: "Viewed" } : null);
-      } catch (err) {
-        setError("Proposal not found or has expired");
-        setLoading(false);
-      }
+  const [activeTab, setActiveTab] = useState<TabMode>("action");
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  
+  // 🔥 NEW: Dedicated quote state instead of pasting text
+  const [activeQuote, setActiveQuote] = useState(""); 
+  
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [quoteTooltip, setQuoteTooltip] = useState<{ visible: boolean; x: number; y: number; text: string }>({
+    visible: false, x: 0, y: 0, text: ""
+  });
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef = useRef(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+
+  const getCanvasPoint = (e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if ("touches" in e) {
+      return {
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY,
+      };
+    }
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
     };
-
-    if (params.shareToken) {
-      fetchProposal();
-    }
-  }, [params.shareToken]);
-
-  const handleAccept = async () => {
-    if (!signature) {
-      alert("Please provide your signature");
-      return;
-    }
-
-    // TODO: Save signature to Firebase Storage
-    // TODO: Update proposal status in Firestore
-    setProposal(prev => prev ? { ...prev, status: "Accepted" } : null);
   };
 
-  const handleReject = async () => {
-    if (!rejectReason.trim()) {
-      alert("Please provide a reason for rejection");
-      return;
-    }
-
-    // TODO: Update proposal status in Firestore
-    setProposal(prev => prev ? { ...prev, status: "Rejected" } : null);
-  };
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    const canvas = e.currentTarget;
-    const ctx = canvas.getContext("2d");
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    isDrawingRef.current = true;
+    const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
+    const pt = getCanvasPoint(e);
     ctx.beginPath();
-    ctx.moveTo(x, y);
+    ctx.moveTo(pt.x, pt.y);
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    
-    const canvas = e.currentTarget;
-    const ctx = canvas.getContext("2d");
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawingRef.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    ctx.lineWidth = 2;
+    const pt = getCanvasPoint(e);
+    ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#1e293b";
-    ctx.lineTo(x, y);
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineTo(pt.x, pt.y);
     ctx.stroke();
+    setHasDrawn(true);
   };
 
   const stopDrawing = () => {
-    setIsDrawing(false);
+    isDrawingRef.current = false;
   };
 
-  const clearSignature = () => {
-    const canvas = document.getElementById("signature-canvas") as HTMLCanvasElement;
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setSignature(null);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    setHasDrawn(false);
   };
 
-  const saveSignature = () => {
-    const canvas = document.getElementById("signature-canvas") as HTMLCanvasElement;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL();
-    setSignature(dataUrl);
-    setShowSignature(false);
+  useEffect(() => {
+    if (signatureMode === "draw" && activeTab === "action" && proposal?.status !== "accepted") {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }, [signatureMode, activeTab, proposal?.status]);
+
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const viewTracked = useRef(false);
+
+  useEffect(() => {
+    if (!shareToken) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const p = await getProposal(shareToken);
+        if (!p || cancelled) { if (!cancelled) setViewState("not-found"); return; }
+        setProposal(p);
+
+        if (p.status === "archived") { if (!cancelled) setViewState("not-found"); return; }
+        if (p.status === "rejected") { setViewState("rejected"); return; }
+
+        if (p.accessCode) {
+          if (!cancelled) setViewState("locked");
+          return;
+        }
+
+        if (p.templateFileUrl) {
+          try {
+            const html = await renderProposalHtml(p.templateFileUrl, p.fieldValues);
+            if (!cancelled) setDocumentHtml(html);
+          } catch {
+            if (!cancelled) setRenderError(true);
+          }
+        }
+
+        if (!cancelled) setViewState("document");
+      } catch {
+        if (!cancelled) setViewState("not-found");
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [shareToken]);
+
+  useEffect(() => {
+    if (viewState !== "document" || viewTracked.current || !shareToken) return;
+    viewTracked.current = true;
+    if (proposal?.status !== "accepted") {
+        markProposalViewed(shareToken).catch(console.error);
+    }
+  }, [viewState, shareToken, proposal?.status]);
+
+  useEffect(() => {
+    if (!proposal?.id) return;
+    const q = query(collection(db, "proposals", proposal.id, "comments"), orderBy("createdAt", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedComments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setComments(fetchedComments);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    });
+    return () => unsubscribe();
+  }, [proposal?.id]);
+
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim() || !proposal) return;
+    setSubmittingComment(true);
+    try {
+      await addDoc(collection(db, "proposals", proposal.id, "comments"), {
+        text: newComment.trim(),
+        quote: activeQuote || null, // 🔥 NEW: Saves quote as structured data
+        authorRole: "client",
+        authorName: proposal.clientName || "Client",
+        createdAt: serverTimestamp(),
+      });
+      
+      setNewComment("");
+      setActiveQuote(""); // Clear the quote after sending
+      
+      fetch("/api/send-comment-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId: proposal.id,
+          clientName: proposal.clientName,
+          comment: newComment.trim(),
+          quote: activeQuote || null, // Pass to API
+          staffId: proposal.userId
+        })
+      }).catch(console.error);
+
+    } catch (error) {
+      console.error("Failed to post comment", error);
+    } finally {
+      setSubmittingComment(false);
+    }
   };
 
-  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTextSelection = () => {
+    if (proposal?.status === "accepted") return;
+
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+
+    if (text && text.length > 0) {
+      const range = selection?.getRangeAt(0);
+      const rect = range?.getBoundingClientRect();
+      if (rect) {
+        setQuoteTooltip({
+          visible: true,
+          x: rect.left + (rect.width / 2),
+          y: rect.top - 10,
+          text: text
+        });
+      }
+    } else {
+      setQuoteTooltip((prev) => ({ ...prev, visible: false }));
+    }
+  };
+
+  const handleQuoteClick = (e: React.MouseEvent) => {
+    e.preventDefault(); 
+    e.stopPropagation(); 
+
+    setActiveTab('discuss');
+    setActiveQuote(quoteTooltip.text); // 🔥 Set as a clean state variable
+    setQuoteTooltip({ visible: false, x: 0, y: 0, text: "" });
+    window.getSelection()?.removeAllRanges();
+
+    setTimeout(() => {
+      document.getElementById("chat-textarea")?.focus();
+    }, 50);
+  };
+
+  useEffect(() => {
+    const hideTooltip = () => {
+      if (window.getSelection()?.toString().trim() === "") {
+        setQuoteTooltip((prev) => ({ ...prev, visible: false }));
+      }
+    };
+    document.addEventListener("mousedown", hideTooltip);
+    return () => document.removeEventListener("mousedown", hideTooltip);
+  }, []);
+
+  const handleAccept = useCallback(async () => {
+    if (!proposal) return;
+    setSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      let sigUrl = "";
+      let sigType: "draw" | "upload" = "draw";
+
+      if (signatureMode === "draw" && hasDrawn && canvasRef.current) {
+        const dataUrl = canvasRef.current.toDataURL("image/png");
+        const res = await uploadSignature(dataUrl, proposal.id);
+        sigUrl = res.url;
+        sigType = "draw";
+      } else if (signatureMode === "type" && typedName.trim()) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 600;
+        canvas.height = 160;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, 600, 160);
+          ctx.font = "italic 48px Georgia, serif";
+          ctx.fillStyle = "#0f172a";
+          ctx.textBaseline = "middle";
+          ctx.fillText(typedName.trim(), 30, 80);
+        }
+        const dataUrl = canvas.toDataURL("image/png");
+        const res = await uploadSignature(dataUrl, proposal.id);
+        sigUrl = res.url;
+        sigType = "draw";
+      } else if (signatureMode === "upload" && signatureFile) {
+        const res = await uploadSignatureImage(signatureFile, proposal.id);
+        sigUrl = res.url;
+        sigType = "upload";
+      } else {
+        setSubmitError("Please provide your signature before accepting.");
+        setSubmitting(false);
+        return;
+      }
+
+      await acceptProposal(proposal.id, sigType, sigUrl);
+
+      try {
+        await fetch("/api/send-copies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposalId: shareToken,
+            clientEmail: proposal.fieldValues?.email || proposal.clientEmail || "client@example.com",
+            clientName: proposal.clientName,
+            staffId: proposal.userId
+          }),
+        });
+      } catch (emailError) {
+        console.error("Failed to trigger email copies:", emailError);
+      }
+
+      setProposal({ ...proposal, status: "accepted" });
+
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to submit. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [proposal, signatureMode, typedName, signatureFile, hasDrawn, shareToken]);
+
+  const handleReject = useCallback(async () => {
+    if (!proposal) return;
+    setRejecting(true);
+    try {
+      await rejectProposal(proposal.id);
+      setViewState("rejected");
+    } catch {
+      setSubmitError("Failed to submit. Please try again.");
+    } finally {
+      setRejecting(false);
+    }
+  }, [proposal]);
+
+  const handleSigFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Please upload an image file (PNG, JPG, etc.)");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      alert("File too large. Maximum size is 5MB.");
-      return;
-    }
-
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 5 * 1024 * 1024) return;
+    setSignatureFile(file);
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setSignature(event.target?.result as string);
-      setShowSignature(false);
-    };
+    reader.onload = (ev) => setSignaturePreview(ev.target?.result as string);
     reader.readAsDataURL(file);
   };
 
-  if (loading) {
+  const formatDate = (ts: unknown) => {
+    if (!ts || typeof ts !== "object") return "";
+    const secs = (ts as { seconds: number }).seconds;
+    if (!secs) return "";
+    return new Date(secs * 1000).toLocaleDateString("en-US", {
+      month: "long", day: "numeric", year: "numeric",
+    });
+  };
+
+  const handleUnlock = useCallback(async () => {
+    if (!proposal) return;
+    if (accessCodeInput.trim() !== proposal.accessCode) {
+      setAccessCodeError(true);
+      return;
+    }
+    setAccessCodeError(false);
+
+    if (proposal.templateFileUrl) {
+      try {
+        const html = await renderProposalHtml(proposal.templateFileUrl, proposal.fieldValues);
+        setDocumentHtml(html);
+      } catch {
+        setRenderError(true);
+      }
+    }
+    setViewState("document");
+  }, [proposal, accessCodeInput]);
+
+  if (viewState === "loading") {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600"></div>
-          <p className="mt-4 font-sans text-sm text-slate-600">Loading proposal...</p>
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-400" />
+          <p className="mt-4 text-sm font-medium text-slate-500">Loading proposal…</p>
         </div>
       </div>
     );
   }
 
-  if (error || !proposal) {
+  if (viewState === "locked") {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-            <X className="h-6 w-6 text-red-600" />
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <div className="mx-4 w-full max-w-sm rounded-3xl border border-slate-200/60 bg-white/70 p-10 text-center shadow-xl shadow-slate-200/40 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50">
+            <LockKeyhole className="h-7 w-7 text-violet-600" />
           </div>
-          <h2 className="mt-4 font-sans text-xl font-semibold text-slate-900">
-            Proposal Not Found
-          </h2>
-          <p className="mt-2 font-sans text-sm text-slate-600">
-            {error || "This proposal link is invalid or has expired."}
+          <h2 className="mt-5 text-xl font-semibold text-slate-900">Protected Proposal</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">
+            This proposal is password-protected. Enter the access code to continue.
+          </p>
+          <form onSubmit={(e) => { e.preventDefault(); handleUnlock(); }} className="mt-6 space-y-3">
+            <input
+              type="password"
+              value={accessCodeInput}
+              onChange={(e) => { setAccessCodeInput(e.target.value); setAccessCodeError(false); }}
+              placeholder="Enter access code"
+              autoFocus
+              className={`w-full rounded-xl border px-4 py-3 text-center text-[14px] font-medium tracking-wider outline-none transition ${
+                accessCodeError
+                  ? "border-rose-300 bg-rose-50/50 text-rose-700 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                  : "border-slate-200 bg-slate-50/80 text-slate-900 focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+              }`}
+            />
+            {accessCodeError && (
+              <p className="text-[12px] font-medium text-rose-500">Incorrect access code. Please try again.</p>
+            )}
+            <button
+              type="submit"
+              disabled={!accessCodeInput.trim()}
+              className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-violet-600 px-4 py-3 text-[13px] font-semibold text-white shadow-lg shadow-violet-200/50 transition hover:from-violet-600 hover:to-violet-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+            >
+              Unlock Proposal
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (viewState === "not-found") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <div className="mx-4 max-w-sm rounded-3xl border border-slate-200/60 bg-white/70 p-10 text-center shadow-xl shadow-slate-200/40 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50">
+            <X className="h-7 w-7 text-rose-500" />
+          </div>
+          <h2 className="mt-5 text-xl font-semibold text-slate-900">Proposal Not Found</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">
+            This link may be invalid or the proposal may have been removed.
           </p>
         </div>
       </div>
     );
   }
 
-  if (proposal.status === "Accepted") {
+  if (viewState === "rejected") {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="max-w-md rounded-2xl border border-green-200 bg-green-50 p-8 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-            <Check className="h-6 w-6 text-green-600" />
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <div className="mx-4 max-w-sm rounded-3xl border border-slate-200/60 bg-white/70 p-10 text-center shadow-xl shadow-slate-200/40 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
+            <AlertCircle className="h-7 w-7 text-amber-500" />
           </div>
-          <h2 className="mt-4 font-sans text-xl font-semibold text-slate-900">
-            Proposal Accepted
-          </h2>
-          <p className="mt-2 font-sans text-sm text-slate-600">
-            Thank you! Your signature has been recorded.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (proposal.status === "Rejected") {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="max-w-md rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-            <AlertCircle className="h-6 w-6 text-red-600" />
-          </div>
-          <h2 className="mt-4 font-sans text-xl font-semibold text-slate-900">
-            Proposal Rejected
-          </h2>
-          <p className="mt-2 font-sans text-sm text-slate-600">
-            Your feedback has been received. We'll be in touch soon.
+          <h2 className="mt-5 text-xl font-semibold text-slate-900">Proposal Declined</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">
+            Your response has been recorded. The sender will be notified and may reach out to discuss next steps.
           </p>
         </div>
       </div>
@@ -226,230 +473,459 @@ export default function ProposalPortalPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100">
-                <FileText className="h-5 w-5 text-indigo-600" />
-              </div>
-              <div>
-                <h1 className="font-sans text-lg font-semibold text-slate-900">
-                  {proposal.templateName}
-                </h1>
-                <p className="text-xs text-slate-500">Sent on {proposal.createdAt}</p>
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
+      
+      {quoteTooltip.visible && (
+        <div 
+          className="fixed z-50 animate-in fade-in zoom-in duration-200"
+          style={{ top: quoteTooltip.y - 45, left: quoteTooltip.x, transform: 'translateX(-50%)' }}
+        >
+          <button
+            onMouseDown={handleQuoteClick}
+            className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg shadow-xl hover:bg-slate-800 transition"
+          >
+            <Quote className="w-3.5 h-3.5" />
+            <span className="text-[12px] font-medium whitespace-nowrap">Quote in Discussion</span>
+          </button>
+          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900 mx-auto -mt-px"></div>
+        </div>
+      )}
+
+      <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-lg sticky top-0 z-40">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-md shadow-indigo-200/60">
+              <FileText className="h-5 w-5 text-white" />
             </div>
+            <div>
+              <h1 className="text-[15px] font-semibold text-slate-900">
+                {proposal?.templateName ?? "Proposal"}
+              </h1>
+              <p className="text-[12px] text-slate-400">
+                {proposal ? `Prepared for ${proposal.clientName}` : ""}
+                {proposal?.createdAt ? ` · ${formatDate(proposal.createdAt)}` : ""}
+              </p>
+            </div>
+          </div>
+          <div className="hidden items-center gap-2 sm:flex">
             <button
               onClick={() => window.print()}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
             >
-              <Download className="h-4 w-4" />
-              Download
+              Print
             </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* PDF Viewer */}
-          <div className="lg:col-span-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 className="mb-4 font-sans text-lg font-semibold text-slate-900">
-                Proposal Document
-              </h2>
-              
-              {/* In production, embed actual PDF viewer */}
-              <div className="aspect-[8.5/11] rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-                <FileText className="mx-auto h-16 w-16 text-slate-400" />
-                <p className="mt-4 font-sans text-sm text-slate-600">
-                  PDF preview would appear here
-                </p>
-                <p className="mt-1 font-sans text-xs text-slate-500">
-                  In production, this will display the actual proposal PDF
-                </p>
-              </div>
-            </div>
-          </div>
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
+        <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
 
-          {/* Action Panel */}
-          <div className="space-y-6">
-            {/* Proposal Details */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h3 className="mb-4 font-sans text-base font-semibold text-slate-900">
-                Proposal Details
-              </h3>
-              <dl className="space-y-3">
-                {Object.entries(proposal.fieldValues).map(([key, value]) => (
-                  <div key={key}>
-                    <dt className="text-xs font-medium text-slate-500">{key}</dt>
-                    <dd className="mt-1 text-sm text-slate-900">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-
-            {/* Signature */}
-            {!showSignature && !signature ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                <h3 className="mb-4 font-sans text-base font-semibold text-slate-900">
-                  Your Response
-                </h3>
-                <div className="space-y-3">
-                  <button
-                    onClick={() => setShowSignature(true)}
-                    className="w-full rounded-xl bg-green-600 px-4 py-3 font-sans text-sm font-semibold text-white transition hover:bg-green-700"
-                  >
-                    Accept & Sign
-                  </button>
-                  <button
-                    onClick={() => setShowSignature(false)}
-                    className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm font-semibold text-red-700 transition hover:bg-red-100"
-                  >
-                    Request Changes
-                  </button>
+          <section>
+            <div ref={documentRef} className="rounded-3xl border border-slate-200/60 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl">
+              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-violet-500" />
+                  <h2 className="text-[13px] font-semibold text-slate-700">Proposal Document</h2>
                 </div>
+                {proposal?.status === "accepted" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+                      <ShieldCheck className="h-3 w-3" /> Legally Signed
+                    </span>
+                )}
               </div>
-            ) : showSignature ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                <h3 className="mb-4 font-sans text-base font-semibold text-slate-900">
-                  Provide Your Signature
-                </h3>
 
-                {/* Mode Selector */}
-                <div className="mb-4 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSignatureMode("draw")}
-                    className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${
-                      signatureMode === "draw"
-                        ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300"
-                        : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
+              {documentHtml ? (
+                <div
+                  className="proposal-content px-8 py-6 sm:px-10 sm:py-8"
+                  dangerouslySetInnerHTML={{ __html: documentHtml }}
+                  onMouseUp={handleTextSelection}
+                />
+              ) : renderError ? (
+                <div className="px-8 py-16 text-center">
+                  <AlertCircle className="mx-auto h-8 w-8 text-amber-400" />
+                  <p className="mt-3 text-sm text-slate-500">
+                    Could not render the document. Please contact the sender.
+                  </p>
+                </div>
+              ) : proposal?.templateGdocUrl ? (
+                <div className="px-8 py-10 text-center">
+                  <FileText className="mx-auto h-10 w-10 text-slate-300" />
+                  <p className="mt-3 text-sm font-medium text-slate-600">Google Docs Template</p>
+                  <a
+                    href={proposal.templateGdocUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-violet-600 hover:text-violet-700"
                   >
-                    <Pen className="h-3.5 w-3.5" />
-                    Draw
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSignatureMode("upload")}
-                    className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${
-                      signatureMode === "upload"
-                        ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300"
-                        : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    <Image className="h-3.5 w-3.5" />
-                    Upload Image
-                  </button>
+                    View original document →
+                  </a>
+                </div>
+              ) : (
+                <div className="px-8 py-16 text-center">
+                  <FileText className="mx-auto h-10 w-10 text-slate-300" />
+                  <p className="mt-3 text-sm text-slate-500">No document preview available.</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className="flex flex-col gap-5 h-full">
+            
+            <div className="flex p-1 bg-slate-200/50 rounded-xl">
+              <button 
+                onClick={() => setActiveTab('action')} 
+                className={`flex-1 py-2 text-[12px] font-semibold rounded-lg transition-all ${activeTab === 'action' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Sign & Details
+              </button>
+              <button 
+                onClick={() => setActiveTab('discuss')} 
+                className={`flex flex-1 items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition-all ${activeTab === 'discuss' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                Discuss {comments.length > 0 && <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full text-[9px]">{comments.length}</span>}
+              </button>
+            </div>
+
+            {activeTab === 'discuss' ? (
+              <div className="flex flex-col flex-1 border border-slate-200/60 bg-white/80 rounded-2xl shadow-lg backdrop-blur-xl overflow-hidden min-h-[500px] max-h-[700px] sticky top-24">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-[13px] font-bold text-slate-800">Discussion Thread</h3>
+                  <p className="text-[11px] text-slate-500">Highlight text in the document to quote it.</p>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {comments.length === 0 ? (
+                    <p className="text-center text-[12px] text-slate-400 mt-10">No messages yet. Send a message to start negotiating.</p>
+                  ) : (
+                    comments.map(c => (
+                      <div key={c.id} className={`flex flex-col ${c.authorRole === 'client' ? 'items-end' : 'items-start'}`}>
+                        <span className="text-[10px] text-slate-400 mb-1 px-1">{c.authorName || 'Client'}</span>
+                        <div className={`px-3 py-2.5 rounded-xl max-w-[85%] text-[13px] leading-relaxed shadow-sm ${c.authorRole === 'client' ? 'bg-violet-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none'}`}>
+                          
+                          {/* 🔥 Graceful Structured Quote Render */}
+                          {c.quote && (
+                            <div className={`mb-2 pl-2 border-l-2 text-[11px] italic opacity-90 ${c.authorRole === 'client' ? 'border-white/50' : 'border-slate-300 text-slate-500'}`}>
+                              "{c.quote}"
+                            </div>
+                          )}
+
+                          {c.text.split('\n').map((line: string, i: number) => (
+                            <span key={i}>{line}<br/></span>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
 
-                {signatureMode === "draw" ? (
-                  <>
-                    <canvas
-                      id="signature-canvas"
-                      width={280}
-                      height={140}
-                      className="mb-3 w-full rounded-lg border border-slate-200 bg-slate-50"
-                      onMouseDown={startDrawing}
-                      onMouseMove={draw}
-                      onMouseUp={stopDrawing}
-                      onMouseLeave={stopDrawing}
-                    />
-                    <div className="flex gap-2">
+                <form onSubmit={handleAddComment} className="p-3 border-t border-slate-100 bg-white flex flex-col relative">
+                  
+                  {/* 🔥 Active Quote Preview Above the Text Box */}
+                  {activeQuote && (
+                    <div className="mb-2 relative bg-violet-50 border-l-2 border-violet-500 p-2.5 rounded-r-lg">
                       <button
-                        onClick={clearSignature}
-                        className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                        type="button"
+                        onClick={() => setActiveQuote("")} // Lets them clear the quote if they change their mind
+                        className="absolute top-1 right-1 p-1 text-violet-400 hover:text-violet-600 rounded-md hover:bg-violet-100 transition"
                       >
-                        Clear
+                        <X className="h-3.5 w-3.5" />
                       </button>
-                      <button
-                        onClick={saveSignature}
-                        className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-indigo-700"
+                      <p className="text-[11px] font-medium text-violet-800 mb-1 flex items-center gap-1">
+                        <Quote className="w-3 h-3" /> Replying to quote
+                      </p>
+                      <p className="text-[11px] text-violet-600 italic pr-6 line-clamp-2">
+                        "{activeQuote}"
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    <textarea 
+                      id="chat-textarea"
+                      value={newComment} 
+                      onChange={e => setNewComment(e.target.value)} 
+                      placeholder="Type a message..." 
+                      rows={2}
+                      className="w-full text-[13px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-200 resize-none transition-all"
+                    />
+                    <div className="flex justify-end">
+                      <button 
+                        disabled={!newComment.trim() || submittingComment} 
+                        className="bg-violet-600 text-white rounded-lg px-4 py-1.5 disabled:opacity-50 hover:bg-violet-700 transition flex items-center gap-1.5"
                       >
-                        Save Signature
+                        <span className="text-[12px] font-medium">Send</span>
+                        <Send className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </>
-                ) : (
-                  <div>
-                    <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 transition hover:border-indigo-400 hover:bg-indigo-50/50">
-                      <Upload className="h-8 w-8 text-slate-400" />
-                      <span className="text-sm font-medium text-slate-700">
-                        Click to upload signature image
+                  </div>
+                </form>
+              </div>
+            ) : (
+              /* TAB CONTENT: Action (Sign & Details) */
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">
+                  <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                    Proposal Details
+                  </h3>
+                  <dl className="space-y-2.5">
+                    {proposal && Object.entries(proposal.fieldValues || {}).map(([key, value]) => (
+                      <div key={key}>
+                        <dt className="text-[11px] font-medium text-slate-400 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</dt>
+                        <dd className="text-[13px] font-medium text-slate-800">{String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+
+                {proposal?.status === "accepted" ? (
+                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/80 p-6 shadow-lg text-center backdrop-blur-xl">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 mb-4">
+                      <ShieldCheck className="h-7 w-7 text-emerald-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900">Document Locked</h3>
+                    <p className="mt-2 text-[13px] text-slate-600 mb-6">
+                      This document has been legally signed and is now locked for editing.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        if (!documentRef.current || !proposal) return;
+                        setPdfLoading(true);
+                        try {
+                          await exportProposalPdf(documentRef.current, `Signed-${proposal.clientName.replace(/\s+/g, "-")}.pdf`);
+                        } finally {
+                          setPdfLoading(false);
+                        }
+                      }}
+                      disabled={pdfLoading || !documentHtml}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-md transition hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Download Signed PDF
+                    </button>
+                  </div>
+                ) : !showReject ? (
+                  <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">
+                    <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                      Sign &amp; Accept
+                    </h3>
+
+                    <div className="mb-4 grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSignatureMode("draw")}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
+                          signatureMode === "draw"
+                            ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        <PenLine className="h-3.5 w-3.5" /> Draw
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSignatureMode("type")}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
+                          signatureMode === "type"
+                            ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Pen className="h-3.5 w-3.5" /> Type
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSignatureMode("upload")}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-medium transition ${
+                          signatureMode === "upload"
+                            ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        <ImageIcon className="h-3.5 w-3.5" /> Upload
+                      </button>
+                    </div>
+
+                    {signatureMode === "draw" ? (
+                      <div>
+                        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                          <canvas
+                            ref={canvasRef}
+                            width={560}
+                            height={160}
+                            className="w-full cursor-crosshair touch-none"
+                            onMouseDown={startDrawing}
+                            onMouseMove={draw}
+                            onMouseUp={stopDrawing}
+                            onMouseLeave={stopDrawing}
+                            onTouchStart={startDrawing}
+                            onTouchMove={draw}
+                            onTouchEnd={stopDrawing}
+                          />
+                        </div>
+                        <div className="mt-2 flex items-center justify-between">
+                          <p className="text-[11px] text-slate-400">
+                            {hasDrawn ? "Signature captured" : "Draw your signature above"}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={clearCanvas}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                          >
+                            <Eraser className="h-3 w-3" /> Clear
+                          </button>
+                        </div>
+                      </div>
+                    ) : signatureMode === "type" ? (
+                      <div>
+                        <input
+                          type="text"
+                          value={typedName}
+                          onChange={(e) => setTypedName(e.target.value)}
+                          placeholder="Type your full name"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-100"
+                        />
+                        {typedName.trim() && (
+                          <div className="mt-3 rounded-xl border border-slate-100 bg-white px-5 py-4">
+                            <p className="text-[11px] text-slate-400">Signature Preview</p>
+                            <p className="mt-1 font-serif text-2xl italic text-slate-800">
+                              {typedName}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        {signaturePreview ? (
+                          <div className="space-y-2">
+                            <div className="rounded-xl border border-slate-100 bg-white p-3">
+                              <img src={signaturePreview} alt="Signature" className="mx-auto max-h-24 object-contain" />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { setSignatureFile(null); setSignaturePreview(null); }}
+                              className="w-full rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-medium text-slate-500 hover:bg-slate-50"
+                            >
+                              Remove & re-upload
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 py-6 transition hover:border-violet-300 hover:bg-violet-50/30">
+                            <Upload className="h-6 w-6 text-slate-300" />
+                            <span className="text-[12px] font-medium text-slate-500">Upload signature image</span>
+                            <span className="text-[11px] text-slate-400">PNG, JPG — max 5 MB</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={handleSigFileChange} />
+                          </label>
+                        )}
+                      </div>
+                    )}
+
+                    {submitError && (
+                      <p className="mt-3 text-[12px] text-rose-600">{submitError}</p>
+                    )}
+
+                    <label className="mt-4 flex items-start gap-2.5 cursor-pointer group">
+                      <div className="relative mt-0.5 flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={consentChecked}
+                          onChange={(e) => setConsentChecked(e.target.checked)}
+                          className="peer h-4 w-4 appearance-none rounded border border-slate-300 bg-slate-50 checked:border-violet-600 checked:bg-violet-600 focus:ring-2 focus:ring-violet-200 focus:ring-offset-1 transition-all"
+                        />
+                        <svg className="absolute w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-700 transition-colors">
+                        I agree to the terms and conditions and understand this is a legally binding signature.
                       </span>
-                      <span className="text-xs text-slate-500">
-                        PNG, JPG or GIF (MAX. 5MB)
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleSignatureUpload}
-                      />
                     </label>
+
+                    <button
+                      onClick={handleAccept}
+                      disabled={
+                        submitting ||
+                        !consentChecked ||
+                        (signatureMode === "draw" ? !hasDrawn : signatureMode === "type" ? !typedName.trim() : !signatureFile)
+                      }
+                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-lg shadow-emerald-200/50 transition hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                    >
+                      {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                      {submitting ? "Submitting…" : "Accept & Sign"}
+                    </button>
+
+                    <div className="mt-3 text-center">
+                      <button
+                        onClick={() => setShowReject(true)}
+                        className="text-[12px] font-medium text-slate-400 underline underline-offset-2 transition hover:text-slate-600"
+                      >
+                        Decline this proposal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-lg shadow-rose-100/20 backdrop-blur-xl">
+                    <h3 className="mb-3 text-[11px] font-bold uppercase tracking-widest text-rose-400">
+                      Decline Proposal
+                    </h3>
+                    <p className="mb-3 text-[12px] text-rose-600/80">
+                      Are you sure? The sender will be notified of your decision.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowReject(false)}
+                        className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleReject}
+                        disabled={rejecting}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-rose-500 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-rose-600 disabled:opacity-50"
+                      >
+                        {rejecting && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {rejecting ? "Declining…" : "Confirm Decline"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                <h3 className="mb-4 font-sans text-base font-semibold text-slate-900">
-                  Signature Preview
-                </h3>
-                {signature && (
-                  <img
-                    src={signature}
-                    alt="Signature"
-                    className="mb-4 w-full rounded-lg border border-slate-200 bg-white p-2"
-                  />
-                )}
-                <button
-                  onClick={() => {
-                    setSignature(null);
-                    setShowSignature(true);
-                  }}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                >
-                  Change Signature
-                </button>
-              </div>
             )}
-
-            {/* Reject Reason */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h3 className="mb-4 font-sans text-base font-semibold text-slate-900">
-                Request Changes
-              </h3>
-              <textarea
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Please let us know what changes you'd like to see..."
-                rows={4}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
-              <button
-                onClick={handleReject}
-                disabled={!rejectReason.trim()}
-                className="mt-3 w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Send Feedback
-              </button>
-            </div>
-
-            {/* Submit Actions */}
-            {signature && (
-              <button
-                onClick={handleAccept}
-                className="w-full rounded-xl bg-green-600 px-4 py-3 font-sans text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition hover:bg-green-700"
-              >
-                Submit Acceptance
-              </button>
-            )}
-          </div>
+          </aside>
         </div>
       </main>
+
+      <style jsx global>{`
+        .proposal-content {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 14px;
+          line-height: 1.8;
+          color: #1e293b;
+        }
+        .proposal-content p { margin-bottom: 0.75em; }
+        .proposal-content h1, .proposal-content h2, .proposal-content h3 {
+          font-family: system-ui, -apple-system, sans-serif;
+          font-weight: 700; margin-top: 1.5em; margin-bottom: 0.5em; color: #0f172a;
+        }
+        .proposal-content h1 { font-size: 1.5em; }
+        .proposal-content h2 { font-size: 1.25em; }
+        .proposal-content h3 { font-size: 1.1em; }
+        .proposal-content ul, .proposal-content ol { padding-left: 1.5em; margin-bottom: 0.75em; }
+        .proposal-content table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
+        .proposal-content th, .proposal-content td { border: 1px solid #e2e8f0; padding: 0.5em 0.75em; text-align: left; font-size: 13px; }
+        .proposal-content th { background: #f8fafc; font-weight: 600; }
+        
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoom-in { from { transform: translateX(-50%) scale(0.95); } to { transform: translateX(-50%) scale(1); } }
+        .animate-in { animation: fade-in 0.2s ease-out forwards, zoom-in 0.2s ease-out forwards; }
+
+        @media print {
+          header, aside, .no-print { display: none !important; }
+          .proposal-content { font-size: 12px; }
+        }
+      `}</style>
     </div>
   );
 }

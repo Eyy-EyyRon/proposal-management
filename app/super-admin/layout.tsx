@@ -1,8 +1,9 @@
-import { SuperAdminSidebar } from "@/components/super-admin-sidebar";
-import { DashboardHeader } from "@/components/dashboard-header";
-import { DashboardFooter } from "@/components/dashboard-footer";
-import { AuthGuard } from "@/components/auth-guard";
+"use client";
+
 import { RoleGuard } from "@/components/role-guard";
+import { OnboardingGuard } from "@/components/onboarding-guard";
+import { Sidebar } from "@/components/sidebar";
+import { CommandPalette } from "@/components/command-palette";
 
 export default function SuperAdminLayout({
   children,
@@ -10,20 +11,16 @@ export default function SuperAdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthGuard>
-      <RoleGuard requiredRole="super-admin">
-        <div className="min-h-screen bg-slate-50">
-          <SuperAdminSidebar />
-          <div className="ml-64 flex min-h-screen flex-col">
-            <DashboardHeader
-              title="Super Admin Dashboard"
-              subtitle="Manage your team, templates, and proposals"
-            />
-            <main className="flex-1 p-6">{children}</main>
-            <DashboardFooter />
+    <RoleGuard minRole="admin">
+      <OnboardingGuard>
+        <div className="min-h-screen bg-[#faf8ff] text-slate-900">
+          <Sidebar />
+          <div className="pl-60">
+            {children}
           </div>
+          <CommandPalette />
         </div>
-      </RoleGuard>
-    </AuthGuard>
+      </OnboardingGuard>
+    </RoleGuard>
   );
 }
