@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen } from "lucide-react";
+import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen, Eye } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth, useRole } from "@/contexts/auth-context";
@@ -355,6 +355,13 @@ export default function ProposalsPage() {
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-0.5 opacity-0 transition-all group-hover:opacity-100">
+                            <Link
+                              href={`/dashboard/proposals/${proposal.id}`}
+                              title="View proposal details"
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Link>
                             <button
                               onClick={() => handleCopyLink(proposal.id)}
                               title="Copy shareable link"

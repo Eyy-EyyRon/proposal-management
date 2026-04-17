@@ -12,7 +12,7 @@ import {
   type Proposal,
   type FirestoreDepartment,
 } from "@/lib/firestore";
-import { FileText, Search, Loader2, ExternalLink } from "lucide-react";
+import { FileText, Search, Loader2, ExternalLink, Eye } from "lucide-react";
 
 function formatTs(ts: unknown): string {
   if (!ts || typeof ts !== "object") return "";
@@ -152,9 +152,23 @@ export default function CeoProposalsPage() {
                       <td className="px-5 py-3"><StatusBadge status={toBadge(p.status)} /></td>
                       <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-500">{formatTs(p.createdAt)}</td>
                       <td className="px-3 py-3">
-                        <Link href={`/p/${p.id}`} target="_blank" className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 transition hover:bg-slate-100 hover:text-slate-600" title="Open portal">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
+                        <div className="flex items-center gap-1">
+                          <Link 
+                            href={`/ceo-dashboard/proposals/${p.id}`} 
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 transition hover:bg-amber-50 hover:text-amber-600" 
+                            title="View proposal details"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Link>
+                          <Link 
+                            href={`/p/${p.id}`} 
+                            target="_blank" 
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 transition hover:bg-slate-100 hover:text-slate-600" 
+                            title="Open client portal"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}

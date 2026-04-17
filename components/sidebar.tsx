@@ -22,6 +22,7 @@ import {
   FolderOpen,
   Activity,
   Shield,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth, useRole, type UserRole } from "@/contexts/auth-context";
@@ -61,12 +62,13 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
     basePath: "/super-admin",
     sectionLabel: "Administration",
     items: [
-      { label: "Overview",    href: "/super-admin",            icon: Shield },
-      { label: "Activity",    href: "/super-admin/activity",   icon: Activity },
-      { label: "Proposals",   href: "/super-admin/proposals",  icon: FileText },
-      { label: "Team",        href: "/super-admin/team",       icon: Users },
-      { label: "Templates",   href: "/super-admin/templates",  icon: LayoutTemplate },
-      { label: "Settings",    href: "/super-admin/settings",   icon: Settings },
+      { label: "Overview",      href: "/super-admin",              icon: Shield },
+      { label: "Activity",      href: "/super-admin/activity",     icon: Activity },
+      { label: "Proposals",     href: "/super-admin/proposals",    icon: FileText },
+      { label: "Departments",   href: "/super-admin/departments",  icon: Building2 },
+      { label: "Team",          href: "/super-admin/team",         icon: Users },
+      { label: "Templates",     href: "/super-admin/templates",    icon: LayoutTemplate },
+      { label: "Settings",      href: "/super-admin/settings",     icon: Settings },
     ],
     switchTo: [
       { label: "Staff Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -207,6 +209,7 @@ export function Sidebar() {
   const initials = profile
     ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
     : "U";
+  const avatarUrl = profile?.avatarUrl;
 
   const handleSignOut = async () => {
     await signOut();
@@ -318,8 +321,12 @@ export function Sidebar() {
       {/* User + Role Badge */}
       <div className={`shrink-0 border-t px-3 py-3 ${theme.divider}`}>
         <div className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition ${theme.hoverUser}`}>
-          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${theme.avatar} ${theme.avatarShadow}`}>
-            {initials}
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full text-[10px] font-semibold text-white ${theme.avatar} ${theme.avatarShadow}`}>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+            ) : (
+              initials
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-medium text-slate-800">{displayName}</p>

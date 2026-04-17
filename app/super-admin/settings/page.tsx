@@ -1,31 +1,25 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Settings,
   Bell,
   Shield,
   Palette,
   Save,
-  Building2,
-  Plus,
-  Trash2,
   Loader2,
   User,
 } from "lucide-react";
 import {
-  subscribeToDepartmentsList,
-  createDepartment,
-  deleteDepartment,
   updateUserProfile,
-  type FirestoreDepartment,
   type UpdateProfileData,
 } from "@/lib/firestore";
+import { uploadAvatar } from "@/lib/storage";
 import { useAuth } from "@/contexts/auth-context";
 
 export default function SettingsPage() {
   const { user, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "general" | "departments" | "notifications" | "security" | "appearance">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "general" | "notifications" | "security" | "appearance">("profile");
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col space-y-8 px-8 pb-10 pt-12 lg:px-10">
@@ -63,17 +57,6 @@ export default function SettingsPage() {
           >
             <Settings className={`h-4 w-4 transition-opacity duration-150 ${activeTab === "general" ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`} />
             General
-          </button>
-          <button
-            onClick={() => setActiveTab("departments")}
-            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-300 ease-out ${
-              activeTab === "departments"
-                ? "bg-[#800020]/10 text-[#800020] shadow-[inset_0_0_0_1px_rgba(128,0,32,0.08)]"
-                : "text-slate-600 hover:bg-slate-50 hover:text-[#5f0018]"
-            }`}
-          >
-            <Building2 className={`h-4 w-4 transition-opacity duration-150 ${activeTab === "departments" ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`} />
-            Departments
           </button>
           <button
             onClick={() => setActiveTab("notifications")}
@@ -162,10 +145,6 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-          )}
-
-          {activeTab === "departments" && (
-            <DepartmentManager />
           )}
 
           {activeTab === "notifications" && (
@@ -309,15 +288,18 @@ export default function SettingsPage() {
 // ─── PROFILE SETTINGS COMPONENT ─────────────────────────────
 interface ProfileSettingsProps {
   userId: string | undefined;
-  profile: { firstName: string; lastName: string; email: string; jobTitle?: string; role: string } | null;
+  profile: { firstName: string; lastName: string; email: string; jobTitle?: string; role: string; avatarUrl?: string } | null;
 }
 
 function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
   const [firstName, setFirstName] = useState(profile?.firstName || "");
   const [lastName, setLastName] = useState(profile?.lastName || "");
   const [jobTitle, setJobTitle] = useState(profile?.jobTitle || "");
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatarUrl || "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Update local state when profile changes
   useEffect(() => {
@@ -325,6 +307,7 @@ function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
       setFirstName(profile.firstName || "");
       setLastName(profile.lastName || "");
       setJobTitle(profile.jobTitle || "");
+      setAvatarUrl(profile.avatarUrl || "");
     }
   }, [profile]);
 
@@ -336,6 +319,7 @@ function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         jobTitle: jobTitle.trim(),
+        avatarUrl,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -347,10 +331,43 @@ function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
     }
   };
 
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !userId) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File size must be less than 5MB");
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const result = await uploadAvatar(file, userId);
+      setAvatarUrl(result.url);
+    } catch (err) {
+      console.error("Failed to upload avatar:", err);
+      alert("Failed to upload avatar. Please try again.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const hasChanges =
     firstName.trim() !== (profile?.firstName || "") ||
     lastName.trim() !== (profile?.lastName || "") ||
-    jobTitle.trim() !== (profile?.jobTitle || "");
+    jobTitle.trim() !== (profile?.jobTitle || "") ||
+    avatarUrl !== (profile?.avatarUrl || "");
 
   return (
     <div className="space-y-6">
@@ -365,9 +382,35 @@ function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
 
       {/* Avatar Section */}
       <div className="flex items-center gap-4 rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#800020]/10 text-xl font-semibold text-[#800020]">
-          {firstName?.[0]}{lastName?.[0]}
+        <div 
+          onClick={handleAvatarClick}
+          className="relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-[#800020]/10 text-xl font-semibold text-[#800020] transition hover:opacity-80"
+        >
+          {avatarUrl ? (
+            <img 
+              src={avatarUrl} 
+              alt="Avatar" 
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <span>{firstName?.[0]}{lastName?.[0]}</span>
+          )}
+          {uploadingAvatar && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+              <Loader2 className="h-5 w-5 animate-spin text-white" />
+            </div>
+          )}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition hover:opacity-100">
+            <span className="text-[10px] font-medium text-white">Change</span>
+          </div>
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+        />
         <div>
           <p className="text-[15px] font-semibold text-slate-900">
             {firstName} {lastName}
@@ -376,6 +419,9 @@ function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
           <span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-medium text-amber-700">
             {profile?.role === "admin" ? "Administrator" : profile?.role}
           </span>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Click avatar to upload new photo
+          </p>
         </div>
       </div>
 
@@ -468,120 +514,3 @@ function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
   );
 }
 
-// ─── DEPARTMENT MANAGER ─────────────────────────────────────
-function DepartmentManager() {
-  const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [newName, setNewName] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-
-  useEffect(() => {
-    const unsub = subscribeToDepartmentsList((data) => {
-      setDepartments(data);
-      setLoading(false);
-    });
-    return unsub;
-  }, []);
-
-  const handleAdd = async () => {
-    const name = newName.trim();
-    if (!name) return;
-    setAdding(true);
-    try {
-      await createDepartment({ name, description: newDesc.trim() });
-      setNewName("");
-      setNewDesc("");
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this department? Users currently in it will need to re-select.")) return;
-    setDeleting(id);
-    try {
-      await deleteDepartment(id);
-    } finally {
-      setDeleting(null);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Department Manager</h3>
-        <p className="text-[13px] text-slate-500">Add or remove departments that users can join.</p>
-      </div>
-
-      {/* Add form */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 shadow-[inset_0_1px_3px_rgba(15,23,42,0.04)]">
-        <div className="flex gap-3">
-          <input
-            type="text"
-            placeholder="Department name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:ring-2 focus:ring-[#800020]/20"
-          />
-          <input
-            type="text"
-            placeholder="Description (optional)"
-            value={newDesc}
-            onChange={(e) => setNewDesc(e.target.value)}
-            className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:ring-2 focus:ring-[#800020]/20"
-          />
-        </div>
-        <button
-          onClick={handleAdd}
-          disabled={!newName.trim() || adding}
-          className="flex w-fit items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white shadow-lg shadow-[#800020]/20 transition-all duration-300 ease-out hover:bg-[#660018] disabled:opacity-50"
-        >
-          {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          Add Department
-        </button>
-      </div>
-
-      {/* List */}
-      {loading ? (
-        <div className="flex items-center justify-center py-10">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-        </div>
-      ) : departments.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-10 text-center shadow-sm">
-          <Building2 className="mx-auto h-6 w-6 text-slate-300" />
-          <p className="mt-2 text-[13px] text-slate-400">No departments yet. Add one above.</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {departments.map((dept) => (
-            <div
-              key={dept.id}
-              className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm transition-all duration-300 ease-out hover:border-slate-300 hover:bg-slate-50/80"
-            >
-              <div>
-                <p className="text-[13px] font-medium text-slate-800">{dept.name}</p>
-                {dept.description && (
-                  <p className="text-[12px] text-slate-400">{dept.description}</p>
-                )}
-              </div>
-              <button
-                onClick={() => handleDelete(dept.id)}
-                disabled={deleting === dept.id}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-all duration-300 ease-out hover:bg-rose-50 hover:text-rose-500 disabled:opacity-50"
-                title="Delete department"
-              >
-                {deleting === dept.id ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5" />
-                )}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}

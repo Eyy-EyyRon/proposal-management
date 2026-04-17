@@ -31,6 +31,8 @@ export interface UserProfile {
   companyName: string | null;
   role: UserRole;
   department: string | null;
+  avatarUrl?: string;
+  jobTitle?: string;
   createdAt: unknown;
   updatedAt: unknown;
 }

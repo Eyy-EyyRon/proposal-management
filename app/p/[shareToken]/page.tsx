@@ -319,19 +319,24 @@ export default function ProposalPortalPage() {
 
       await acceptProposal(proposal.id, sigType, sigUrl);
 
+      // Send signed document copies to all parties
       try {
-        await fetch("/api/send-copies", {
+        await fetch("/api/send-signed-document", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             proposalId: shareToken,
-            clientEmail: proposal.fieldValues?.email || proposal.clientEmail || "client@example.com",
+            proposalTitle: proposal.templateName || "Proposal",
             clientName: proposal.clientName,
-            staffId: proposal.userId
+            clientEmail: proposal.fieldValues?.email || proposal.clientEmail || "client@example.com",
+            signatureUrl: sigUrl,
+            staffEmails: proposal.sentById ? [proposal.sentById] : [],
+            ceoEmail: proposal.ownerId || proposal.userId,
+            version: proposal.version || 1,
           }),
         });
       } catch (emailError) {
-        console.error("Failed to trigger email copies:", emailError);
+        console.error("Failed to send signed document copies:", emailError);
       }
 
       setProposal({ ...proposal, status: "accepted" });
@@ -504,9 +509,16 @@ export default function ProposalPortalPage() {
               <FileText className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-[15px] font-semibold text-slate-900">
-                {proposal?.templateName ?? "Proposal"}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-[15px] font-semibold text-slate-900">
+                  {proposal?.templateName ?? "Proposal"}
+                </h1>
+                {proposal?.version && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                    v{proposal.version}
+                  </span>
+                )}
+              </div>
               <p className="text-[12px] text-slate-400">
                 {proposal ? `Prepared for ${proposal.clientName}` : ""}
                 {proposal?.createdAt ? ` · ${formatDate(proposal.createdAt)}` : ""}

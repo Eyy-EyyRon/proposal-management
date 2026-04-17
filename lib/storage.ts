@@ -49,3 +49,15 @@ export async function uploadSignatureImage(
   const path = `signatures/${proposalId}/${file.name}`;
   return uploadFile(file, path);
 }
+
+// Upload user avatar
+// Path: /avatars/{userId}/{filename}
+export async function uploadAvatar(
+  file: File,
+  userId: string
+): Promise<UploadResult> {
+  // Get file extension
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `avatars/${userId}/avatar.${ext}`;
+  return uploadFile(file, path);
+}

@@ -590,6 +590,7 @@ export interface TeamMember {
   department: string | null; // Legacy single department (for backward compatibility)
   departments?: string[]; // NEW: Multiple departments for staff
   jobTitle?: string; // NEW: Job title (e.g., "IT Specialist")
+  avatarUrl?: string; // NEW: User avatar/profile picture URL
   delegatedUserIds?: string[]; // For CEO: stores UIDs of authorized staff who can send on their behalf
   canSendOnBehalfOf?: string[]; // For staff: stores CEO UIDs they can send on behalf of
   createdAt: Timestamp;
@@ -885,6 +886,7 @@ export interface UpdateProfileData {
   firstName?: string;
   lastName?: string;
   jobTitle?: string;
+  avatarUrl?: string;
 }
 
 export async function updateUserProfile(
