@@ -11,7 +11,7 @@ import {
 import { Topbar } from "@/components/topbar";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { type Proposal, createProposalRevision, softDeleteComment, updateProposalSharing, updateProposalPrivacy, writeAuditLog } from "@/lib/firestore";
-import { renderProposalHtml } from "@/lib/proposal-renderer";
+// renderProposalHtml is lazy-loaded to keep mammoth out of the initial bundle
 import { exportProposalPdf } from "@/lib/export-utils";
 import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
 import { toast } from "@/components/providers/toast";
@@ -114,9 +114,10 @@ export default function ProposalDetailPage() {
 
         setProposal(data);
         
-        // Render document HTML if template URL exists
+        // Render document HTML if template URL exists (lazy import keeps mammoth out of initial bundle)
         if (data.templateFileUrl) {
           try {
+            const { renderProposalHtml } = await import("@/lib/proposal-renderer");
             const html = await renderProposalHtml(data.templateFileUrl, data.fieldValues);
             setDocumentHtml(html);
           } catch {

@@ -12,6 +12,10 @@ import {
   where,
   orderBy,
   limit as firestoreLimit,
+  startAfter,
+  type QueryDocumentSnapshot,
+  type DocumentData,
+  increment,
   serverTimestamp,
   type Timestamp,
 } from "firebase/firestore";
@@ -277,6 +281,8 @@ export async function createProposal(
     previousVersionId: data.previousVersionId ?? null,
     nextVersionId: null,
   });
+  incrementGlobalStats("totalProposals").catch(() => {});
+  incrementGlobalStats("totalSent").catch(() => {});
 }
 
 // Get proposal with full history (all versions)
@@ -458,6 +464,110 @@ export function subscribeToProposals(
   return () => { unsub1(); unsub2(); };
 }
 
+// ─── PAGINATED SUBSCRIPTIONS (15-item rule) ─────────────────
+// Returns the first PAGE_SIZE proposals. Use loadMoreProposals() to fetch the
+// next page. The cursor (lastDoc) is returned to the caller.
+export const PROPOSALS_PAGE_SIZE = 15;
+
+export function subscribeToPaginatedProposals(
+  userId: string,
+  callback: (proposals: Proposal[], hasMore: boolean) => void
+): () => void {
+  const q1 = query(
+    collection(db, "proposals"),
+    where("ownerId", "==", userId),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc"),
+    firestoreLimit(PROPOSALS_PAGE_SIZE)
+  );
+  const q2 = query(
+    collection(db, "proposals"),
+    where("sentById", "==", userId),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc"),
+    firestoreLimit(PROPOSALS_PAGE_SIZE)
+  );
+
+  let snap1: Proposal[] = [];
+  let snap2: Proposal[] = [];
+  let count1 = 0;
+  let count2 = 0;
+
+  const emit = () => {
+    const merged = [...snap1, ...snap2];
+    const deduped = merged.filter((p, i, a) => a.findIndex(t => t.id === p.id) === i);
+    deduped.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+    const hasMore = count1 >= PROPOSALS_PAGE_SIZE || count2 >= PROPOSALS_PAGE_SIZE;
+    callback(deduped, hasMore);
+  };
+
+  const u1 = onSnapshot(q1, (s) => {
+    snap1 = s.docs.map(d => ({ id: d.id, ...d.data() }) as Proposal);
+    count1 = s.docs.length;
+    emit();
+  }, (e) => { if (e.code !== "permission-denied") console.error(e); });
+
+  const u2 = onSnapshot(q2, (s) => {
+    snap2 = s.docs.map(d => ({ id: d.id, ...d.data() }) as Proposal);
+    count2 = s.docs.length;
+    emit();
+  }, (e) => { if (e.code !== "permission-denied") console.error(e); });
+
+  return () => { u1(); u2(); };
+}
+
+export function subscribeToPaginatedProposalsByDepartment(
+  department: string,
+  callback: (proposals: Proposal[], hasMore: boolean) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("department", "==", department),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc"),
+    firestoreLimit(PROPOSALS_PAGE_SIZE)
+  );
+  return onSnapshot(
+    q,
+    (s) => {
+      callback(
+        s.docs.map(d => ({ id: d.id, ...d.data() }) as Proposal),
+        s.docs.length >= PROPOSALS_PAGE_SIZE
+      );
+    },
+    (e) => { if (e.code !== "permission-denied") console.error(e); }
+  );
+}
+
+export async function loadMoreProposals(
+  userId: string,
+  lastDoc: QueryDocumentSnapshot<DocumentData>,
+  byDepartment?: string
+): Promise<{ proposals: Proposal[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null }> {
+  const base = byDepartment
+    ? query(
+        collection(db, "proposals"),
+        where("department", "==", byDepartment),
+        where("isDeleted", "==", false),
+        orderBy("createdAt", "desc"),
+        startAfter(lastDoc),
+        firestoreLimit(PROPOSALS_PAGE_SIZE)
+      )
+    : query(
+        collection(db, "proposals"),
+        where("ownerId", "==", userId),
+        where("isDeleted", "==", false),
+        orderBy("createdAt", "desc"),
+        startAfter(lastDoc),
+        firestoreLimit(PROPOSALS_PAGE_SIZE)
+      );
+  const snap = await getDocs(base);
+  return {
+    proposals: snap.docs.map(d => ({ id: d.id, ...d.data() }) as Proposal),
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
+}
+
 // Department-based subscription: fetches all proposals for a department
 // Used for staff to see all team proposals (not just their own), ensuring
 // orphaned proposals from departed employees remain visible (Scenario 15)
@@ -561,6 +671,35 @@ export async function acceptProposal(
     signedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  incrementGlobalStats("totalAccepted").catch(() => {});
+}
+
+// ─── STATS SHARDING (Summary Document) ──────────────────────
+// stats/global holds aggregated counters updated on every status change.
+// Use incrementGlobalStats() to update; CEO dashboard subscribes to this 1 doc.
+
+const STATS_REF = () => doc(db, "stats", "global");
+
+export type GlobalStatsField =
+  | "totalProposals"
+  | "totalSent"
+  | "totalViewed"
+  | "totalAccepted"
+  | "totalRejected";
+
+export async function incrementGlobalStats(
+  field: GlobalStatsField,
+  delta: 1 | -1 = 1
+): Promise<void> {
+  try {
+    await setDoc(
+      STATS_REF(),
+      { [field]: increment(delta), updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+  } catch {
+    // Non-critical — never block the main operation
+  }
 }
 
 // ─── ACTIVITY LOGS (Shadow Audit — CEO-eyes-only) ────────────
@@ -1267,7 +1406,7 @@ export interface GlobalStats {
   totalViewed: number;
   totalAccepted: number;
   totalRejected: number;
-  updatedAt: Timestamp | null;
+  updatedAt: unknown;
 }
 
 const DEFAULT_STATS: GlobalStats = {

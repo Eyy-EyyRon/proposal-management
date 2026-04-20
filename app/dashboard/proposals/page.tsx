@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen, Eye, AlertTriangle, Archive } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth, useRole } from "@/contexts/auth-context";
-import { subscribeToProposals, subscribeToProposalsByDepartment, moveToTrash, archiveProposal, type Proposal } from "@/lib/firestore";
+import {
+  subscribeToPaginatedProposals,
+  subscribeToPaginatedProposalsByDepartment,
+  moveToTrash, archiveProposal, type Proposal,
+  PROPOSALS_PAGE_SIZE,
+} from "@/lib/firestore";
+import { ProposalTableSkeleton, StatCardSkeleton } from "@/components/proposal-skeleton";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DepartmentBadge } from "@/components/department-badge";
@@ -133,18 +139,22 @@ export default function ProposalsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
 
   useEffect(() => {
     if (!user) return;
     const dept = profile?.department;
-    const cb = (data: Proposal[]) => { setProposals(data); setLoading(false); };
-    // Staff/Admin: see only their department (Scenario 3 & 15); CEO sees own proposals
-    const unsub = (!isCeo && dept)
-      ? subscribeToProposalsByDepartment(dept, cb)
-      : subscribeToProposals(user.uid, cb);
-    return unsub;
+    if (!isCeo && dept) {
+      return subscribeToPaginatedProposalsByDepartment(dept, (data, more) => {
+        setProposals(data); setHasMore(more); setLoading(false);
+      });
+    }
+    return subscribeToPaginatedProposals(user.uid, (data, more) => {
+      setProposals(data); setHasMore(more); setLoading(false);
+    });
   }, [user, profile?.department, isCeo]);
 
   // Cross-dept access guard: redirect if user navigates to a proposal not in their dept
@@ -187,7 +197,7 @@ export default function ProposalsPage() {
     return matchesSearch && proposal.status === statusFilter;
   });
 
-  const handleTrash = async (proposal: Proposal) => {
+  const handleTrash = useCallback(async (proposal: Proposal) => {
     if (proposal.status === "accepted") {
       toast.error("Cannot trash a signed proposal.", {
         description: "This document is legally signed. Use \"Archive\" instead.",
@@ -195,16 +205,30 @@ export default function ProposalsPage() {
       return;
     }
     if (!confirm("Move this proposal to trash?")) return;
-    await moveToTrash("proposals", proposal.id);
+    // Optimistic remove
     setProposals((prev) => prev.filter((p) => p.id !== proposal.id));
     toast.success("Proposal moved to trash.");
-  };
+    try {
+      await moveToTrash("proposals", proposal.id);
+    } catch {
+      // Rollback on failure
+      setProposals((prev) => [proposal, ...prev]);
+      toast.error("Failed to trash proposal. It has been restored.");
+    }
+  }, []);
 
-  const handleArchiveAccepted = async (proposalId: string) => {
-    await archiveProposal(proposalId);
+  const handleArchiveAccepted = useCallback(async (proposalId: string) => {
+    // Optimistic update
     setProposals((prev) => prev.map((p) => p.id === proposalId ? { ...p, status: "archived" } : p));
     toast.success("Proposal archived.");
-  };
+    try {
+      await archiveProposal(proposalId);
+    } catch {
+      // Rollback
+      setProposals((prev) => prev.map((p) => p.id === proposalId ? { ...p, status: "accepted" } : p));
+      toast.error("Failed to archive. Please try again.");
+    }
+  }, []);
 
   const handleCopyLink = async (proposalId: string) => {
     const url = `${window.location.origin}/p/${proposalId}`;
@@ -270,17 +294,23 @@ export default function ProposalsPage() {
           </div>
         </div>
 
-        {/* Stats */}
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total"    value={counts.total}                  icon={FileText}    accent="indigo" />
-          <StatCard label="Pending"  value={counts.sent + counts.viewed}   icon={Clock}       accent="blue" />
-          <StatCard label="Accepted" value={counts.accepted}               icon={CheckCircle} accent="green" />
-          <StatCard label="Rejected" value={counts.rejected}               icon={XCircle}     accent="red" />
-        </section>
+        {/* Stats — show skeletons during initial load, real values after */}
+        {loading ? (
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
+          </section>
+        ) : (
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Total"    value={counts.total}                  icon={FileText}    accent="indigo" />
+            <StatCard label="Pending"  value={counts.sent + counts.viewed}   icon={Clock}       accent="blue" />
+            <StatCard label="Accepted" value={counts.accepted}               icon={CheckCircle} accent="green" />
+            <StatCard label="Rejected" value={counts.rejected}               icon={XCircle}     accent="red" />
+          </section>
+        )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          <div className="rounded-xl border border-slate-200/80 bg-white">
+            <ProposalTableSkeleton rows={8} />
           </div>
         ) : (
           /* Table Container */
@@ -452,12 +482,43 @@ export default function ProposalsPage() {
               </div>
             )}
 
-            {/* Footer */}
+            {/* Footer + Load More */}
             {filteredProposals.length > 0 && (
               <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
                 <p className="text-[12px] text-slate-400">
-                  Showing {filteredProposals.length} of {counts.total} proposals
+                  Showing {filteredProposals.length} proposal{filteredProposals.length !== 1 ? "s" : ""}
+                  {hasMore ? " — more available" : ""}
                 </p>
+                {hasMore && (
+                  <button
+                    onClick={async () => {
+                      setLoadingMore(true);
+                      try {
+                        const { getDocs, query, collection, where, orderBy, startAfter, limit } = await import("firebase/firestore");
+                        const { db } = await import("@/lib/firebase");
+                        const dept = profile?.department;
+                        const last = proposals[proposals.length - 1];
+                        if (!last || !user) return;
+                        const lastSnap = await getDocs(
+                          query(collection(db, "proposals"), where(dept && !isCeo ? "department" : "ownerId", "==", dept && !isCeo ? dept : user.uid), where("isDeleted", "==", false), orderBy("createdAt", "desc"), startAfter({ seconds: (last.createdAt as {seconds:number}).seconds, nanoseconds: 0 }), limit(PROPOSALS_PAGE_SIZE))
+                        );
+                        const more = lastSnap.docs.map(d => ({ id: d.id, ...d.data() }) as Proposal);
+                        setProposals(prev => {
+                          const ids = new Set(prev.map(p => p.id));
+                          return [...prev, ...more.filter(p => !ids.has(p.id))];
+                        });
+                        setHasMore(lastSnap.docs.length >= PROPOSALS_PAGE_SIZE);
+                      } finally {
+                        setLoadingMore(false);
+                      }
+                    }}
+                    disabled={loadingMore}
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 active:scale-95 disabled:opacity-50"
+                  >
+                    {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    Load more
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -12,7 +12,7 @@ import {
   getProposal, markProposalViewed, acceptProposal, rejectProposal,
   type Proposal,
 } from "@/lib/firestore";
-import { renderProposalHtml } from "@/lib/proposal-renderer";
+// renderProposalHtml is lazy-loaded below to keep mammoth out of the initial bundle
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
@@ -193,6 +193,7 @@ export default function ProposalPortalPage() {
 
         if (p.templateFileUrl) {
           try {
+            const { renderProposalHtml } = await import("@/lib/proposal-renderer");
             const html = await renderProposalHtml(p.templateFileUrl, p.fieldValues);
             if (!cancelled) setDocumentHtml(html);
           } catch {
@@ -313,7 +314,7 @@ export default function ProposalPortalPage() {
     try {
       await addDoc(collection(db, "proposals", proposal.id, "comments"), {
         text: newComment.trim(),
-        quote: activeQuote || null, // 🔥 NEW: Saves quote as structured data
+        quote: activeQuote || null, // 
         authorRole: "client",
         authorName: proposal.clientName || "Client",
         createdAt: serverTimestamp(),
@@ -375,7 +376,7 @@ export default function ProposalPortalPage() {
     e.stopPropagation(); 
 
     setActiveTab('discuss');
-    setActiveQuote(quoteTooltip.text); // 🔥 Set as a clean state variable
+    setActiveQuote(quoteTooltip.text); // 
     setQuoteTooltip({ visible: false, x: 0, y: 0, text: "" });
     window.getSelection()?.removeAllRanges();
 
@@ -523,6 +524,7 @@ export default function ProposalPortalPage() {
 
     if (proposal.templateFileUrl) {
       try {
+        const { renderProposalHtml } = await import("@/lib/proposal-renderer");
         const html = await renderProposalHtml(proposal.templateFileUrl, proposal.fieldValues);
         setDocumentHtml(html);
       } catch {

@@ -9,14 +9,17 @@ import {
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
+import { StatCardSkeleton } from "@/components/proposal-skeleton";
 import { StatusBadge } from "@/components/status-badge";
 import { DepartmentBadge } from "@/components/department-badge";
 import { useAuth } from "@/contexts/auth-context";
 import {
   subscribeToAllProposals,
   subscribeToRecentActivity,
+  subscribeToGlobalStats,
   batchGetUserNames,
   type Proposal,
+  type GlobalStats,
 } from "@/lib/firestore";
 
 function formatTs(ts: unknown): string {
@@ -67,7 +70,18 @@ export default function CeoDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [pulseLoading, setPulseLoading] = useState(true);
   const [health, setHealth] = useState<HealthStatus>({ status: "loading" });
+  const [globalStats, setGlobalStats] = useState<Partial<GlobalStats>>({});
+  const [statsLoading, setStatsLoading] = useState(true);
 
+  // Subscribe to the 1-doc stats summary (replaces full proposals aggregate)
+  useEffect(() => {
+    return subscribeToGlobalStats((stats) => {
+      setGlobalStats(stats);
+      setStatsLoading(false);
+    });
+  }, []);
+
+  // Keep subscribeToAllProposals only for the Recent Proposals table (limited to 8)
   useEffect(() => {
     const unsub = subscribeToAllProposals((data) => {
       setProposals(data);
@@ -89,19 +103,20 @@ export default function CeoDashboardPage() {
     return unsub;
   }, []);
 
-  const active = proposals.filter((p) => p.status !== "archived");
+  // Headline numbers come from the stats/global doc (1 read)
   const counts = {
-    total: active.length,
-    pipeline: active.filter((p) => p.status === "sent" || p.status === "viewed").length,
-    viewed: active.filter((p) => p.status === "viewed").length,
-    accepted: active.filter((p) => p.status === "accepted").length,
-    rejected: active.filter((p) => p.status === "rejected").length,
+    total:    globalStats.totalProposals ?? 0,
+    pipeline: (globalStats.totalSent ?? 0),
+    viewed:   globalStats.totalViewed ?? 0,
+    accepted: globalStats.totalAccepted ?? 0,
+    rejected: globalStats.totalRejected ?? 0,
   };
 
   const closeRate = counts.total > 0
     ? ((counts.accepted / counts.total) * 100).toFixed(1)
     : "0.0";
 
+  const active = proposals.filter((p) => p.status !== "archived");
   const recentProposals = active.slice(0, 8);
   // Integration health polling — every 60s
   useEffect(() => {
@@ -149,14 +164,20 @@ export default function CeoDashboardPage() {
           </p>
         </div>
 
-        {/* Global Metrics */}
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard label="Total Proposals"     value={counts.total}       icon={FileText}    accent="indigo" />
-          <StatCard label="Total Pipeline"      value={counts.pipeline}    icon={DollarSign}  accent="blue" />
-          <StatCard label="Viewed"              value={counts.viewed}      icon={Eye}         accent="blue" />
-          <StatCard label="Global Close Rate"   value={`${closeRate}%`}    icon={TrendingUp}  accent="green" />
-          <StatCard label="Rejected"            value={counts.rejected}    icon={XCircle}     accent="red" />
-        </section>
+        {/* Global Metrics — reads from stats/global (1 doc, not 1000 proposals) */}
+        {statsLoading ? (
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => <StatCardSkeleton key={i} />)}
+          </section>
+        ) : (
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <StatCard label="Total Proposals"     value={counts.total}       icon={FileText}    accent="indigo" />
+            <StatCard label="Total Pipeline"      value={counts.pipeline}    icon={DollarSign}  accent="blue" />
+            <StatCard label="Viewed"              value={counts.viewed}      icon={Eye}         accent="blue" />
+            <StatCard label="Global Close Rate"   value={`${closeRate}%`}    icon={TrendingUp}  accent="green" />
+            <StatCard label="Rejected"            value={counts.rejected}    icon={XCircle}     accent="red" />
+          </section>
+        )}
 
         {/* Integration Health Monitor */}
         <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${
