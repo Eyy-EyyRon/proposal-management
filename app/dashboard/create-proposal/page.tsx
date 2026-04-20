@@ -9,8 +9,10 @@ import {
   Crown, User, Shield
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/auth-context";
+import { toast } from "sonner";
 import { 
   getUserTemplates, getAllTemplates, createProposal, getOrgSettings, getAvailableIdentities,
+  checkDelegationActive,
   type Template, type OrgSettings, type TeamMember 
 } from "@/lib/firestore";
 
@@ -89,12 +91,23 @@ export default function CreateProposalPage() {
       const isSendingOnBehalf = selectedIdentity !== "self" && availableIdentities.length > 0;
       const ownerId = isSendingOnBehalf ? selectedIdentity : user.uid;
       const sentById = user.uid;
+
+      // Delegation revocation check (Scenario 2)
+      if (isSendingOnBehalf) {
+        const stillActive = await checkDelegationActive(user.uid, ownerId);
+        if (!stillActive) {
+          toast.error("Action Denied: Your delegation privilege has been revoked. Draft saved locally.");
+          setSubmitting(false);
+          return;
+        }
+      }
       
       // Get the appropriate org settings (CEO's settings if delegated)
       let senderOrgSettings = orgSettings;
       if (isSendingOnBehalf) {
         senderOrgSettings = await getOrgSettings(ownerId);
       }
+      void senderOrgSettings;
 
       await createProposal(proposalId, {
         ownerId,
@@ -105,6 +118,11 @@ export default function CreateProposalPage() {
         templateName: template?.name ?? "Unknown",
         templateFileUrl: template?.fileUrl ?? null,
         templateGdocUrl: template?.gdocUrl ?? null,
+        // Template snapshotting: deep-copy field schema at creation time (Scenario 13)
+        templateSnapshot: template ? {
+          fields: template.fields.map((f) => ({ id: f.id, name: f.name, type: f.type, required: f.required })),
+          description: template.description ?? undefined,
+        } : null,
         clientName,
         clientEmail,
         fieldValues: data.fieldValues,

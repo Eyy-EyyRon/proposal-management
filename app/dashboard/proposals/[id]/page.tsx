@@ -20,10 +20,11 @@ import {
   RefreshCw,
   PenTool,
   History,
+  AlertTriangle, Trash2,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
-import { type Proposal, createProposalRevision } from "@/lib/firestore";
+import { type Proposal, createProposalRevision, softDeleteComment } from "@/lib/firestore";
 import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { exportProposalPdf } from "@/lib/export-utils";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
@@ -33,9 +34,11 @@ interface Comment {
   id: string;
   text: string;
   quote?: string;
-  authorRole: "client" | "ceo" | "staff" | "admin";
+  authorRole: "client" | "ceo" | "staff" | "admin" | "system";
   authorName: string;
   authorId?: string;
+  isDeleted?: boolean;
+  deletedText?: string;
   createdAt: { seconds: number; nanoseconds: number };
 }
 
@@ -60,6 +63,9 @@ export default function ProposalDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedFieldValues, setEditedFieldValues] = useState<Record<string, string>>({});
   const [resending, setResending] = useState(false);
+  // Void & Revise confirm modal
+  const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [voiding, setVoiding] = useState(false);
 
   // Fetch proposal using real-time subscription
   useEffect(() => {
@@ -133,8 +139,8 @@ export default function ProposalDetailPage() {
 
       await addDoc(collection(db, "proposals", proposal.id, "comments"), commentData);
 
-      // Send notification to client
-      await fetch("/api/send-ceo-reply-notification", {
+      // Notify client about the reply
+      fetch("/api/send-ceo-reply-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -147,6 +153,22 @@ export default function ProposalDetailPage() {
           ceoName: `${profile.firstName} ${profile.lastName}`,
         }),
       }).catch(console.error);
+
+      // Also notify the staff member if the current user is the CEO (Scenario 9)
+      if (proposal.sentById && proposal.sentById !== user.uid) {
+        fetch("/api/send-proposal/send-comment-notification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposalId: proposal.id,
+            clientName: `${profile.firstName} ${profile.lastName}` + " (via dashboard reply)",
+            comment: newComment.trim(),
+            quote: activeQuote || null,
+            staffId: proposal.sentById,
+            ownerId: proposal.ownerId,
+          }),
+        }).catch(console.error);
+      }
 
       setNewComment("");
       setActiveQuote("");
@@ -189,8 +211,38 @@ export default function ProposalDetailPage() {
       viewed: "Viewed",
       accepted: "Accepted",
       rejected: "Rejected",
+      superseded: "Superseded",
+      void: "Void",
     };
     return labels[status] || status;
+  };
+
+  const handleVoidAndRevise = async () => {
+    if (!proposal || !user || !profile) return;
+    setVoiding(true);
+    try {
+      const newProposalId = `${proposal.id.split("_v")[0]}_v${(proposal.version || 1) + 1}`;
+      await createProposalRevision(newProposalId, proposal, {
+        fieldValues: proposal.fieldValues,
+      });
+      toast.success("Signature voided. New revision created.");
+      setShowVoidConfirm(false);
+      router.push(`/dashboard/proposals/${newProposalId}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create revision.");
+    } finally {
+      setVoiding(false);
+    }
+  };
+
+  const handleSoftDeleteComment = async (commentId: string) => {
+    if (!proposal) return;
+    try {
+      await softDeleteComment(proposal.id, commentId);
+      toast.success("Comment deleted.");
+    } catch {
+      toast.error("Failed to delete comment.");
+    }
   };
 
   if (loading) {
@@ -263,8 +315,18 @@ export default function ProposalDetailPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Void & Revise — only for accepted proposals */}
+            {proposal.status === "accepted" && (
+              <button
+                onClick={() => setShowVoidConfirm(true)}
+                className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-[13px] font-medium text-rose-700 transition hover:bg-rose-100"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Void Signature & Revise
+              </button>
+            )}
             {/* Edit/Resend Button - only show for non-accepted proposals */}
-            {proposal.status !== "accepted" && proposal.status !== "rejected" && (
+            {proposal.status !== "accepted" && proposal.status !== "rejected" && proposal.status !== "superseded" && proposal.status !== "void" && (
               <>
                 {!isEditing ? (
                   <button
@@ -587,29 +649,51 @@ export default function ProposalDetailPage() {
                       c.authorRole === "client" ? "items-start" : "items-end"
                     }`}
                   >
-                    <span className="mb-1 text-[10px] text-slate-400">
-                      {c.authorName} • {c.authorRole === "client" ? "Client" : c.authorRole === "ceo" ? "CEO" : "Staff"}
-                    </span>
+                    <div className={`flex items-center gap-2 mb-1 ${
+                      c.authorRole === "client" ? "" : "flex-row-reverse"
+                    }`}>
+                      <span className="text-[10px] text-slate-400">
+                        {c.authorName} • {c.authorRole === "client" ? "Client" : c.authorRole === "ceo" ? "CEO" : c.authorRole === "system" ? "System" : "Staff"}
+                      </span>
+                      {!c.isDeleted && c.authorRole !== "client" && c.authorRole !== "system" && (
+                        <button
+                          onClick={() => handleSoftDeleteComment(c.id)}
+                          className="text-slate-300 hover:text-rose-400 transition"
+                          title="Delete message"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                     <div
                       className={`max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed ${
-                        c.authorRole === "client"
+                        c.isDeleted
+                          ? "bg-slate-50 text-slate-400 italic border border-slate-200"
+                          : c.authorRole === "client"
                           ? "rounded-tl-none bg-slate-100 text-slate-800"
+                          : c.authorRole === "system"
+                          ? "bg-amber-50 text-amber-700 text-[11px] border border-amber-100"
                           : "rounded-tr-none bg-[#800020] text-white"
                       }`}
                     >
-                      {/* Quote */}
-                      {c.quote && (
-                        <div
-                          className={`mb-2 border-l-2 pl-2 text-[11px] italic ${
-                            c.authorRole === "client"
-                              ? "border-slate-300 text-slate-500"
-                              : "border-white/50 text-white/80"
-                          }`}
-                        >
-                          "{c.quote}"
-                        </div>
+                      {c.isDeleted ? (
+                        <span>[Message deleted]</span>
+                      ) : (
+                        <>
+                          {c.quote && (
+                            <div
+                              className={`mb-2 border-l-2 pl-2 text-[11px] italic ${
+                                c.authorRole === "client"
+                                  ? "border-slate-300 text-slate-500"
+                                  : "border-white/50 text-white/80"
+                              }`}
+                            >
+                              &ldquo;{c.quote}&rdquo;
+                            </div>
+                          )}
+                          {c.text}
+                        </>
                       )}
-                      {c.text}
                     </div>
                     <span className="mt-1 text-[9px] text-slate-400">
                       {c.createdAt?.seconds
@@ -685,6 +769,47 @@ export default function ProposalDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Void Signature & Revise — Confirmation Modal */}
+      {showVoidConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-2xl border border-rose-200 bg-white p-8 shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50">
+              <AlertTriangle className="h-6 w-6 text-rose-600" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-slate-900">
+              Void Signature & Create Revision?
+            </h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
+              This will <strong>permanently void</strong> the client&apos;s accepted signature and create a new version (v{(proposal.version || 1) + 1}) of this proposal. The client will need to review and sign again.
+            </p>
+            <p className="mt-2 text-[12px] font-medium text-rose-600">
+              This action cannot be undone.
+            </p>
+            <div className="mt-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowVoidConfirm(false)}
+                disabled={voiding}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleVoidAndRevise}
+                disabled={voiding}
+                className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
+              >
+                {voiding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4" />
+                )}
+                {voiding ? "Voiding..." : "Void & Create Revision"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

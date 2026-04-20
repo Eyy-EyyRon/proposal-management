@@ -28,6 +28,7 @@ export default function ProposalPortalPage() {
 
   const [viewState, setViewState] = useState<ViewState>("loading");
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [newerVersionId, setNewerVersionId] = useState<string | null>(null);
   const [documentHtml, setDocumentHtml] = useState<string>("");
   const [renderError, setRenderError] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -47,7 +48,7 @@ export default function ProposalPortalPage() {
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
   
-  // 🔥 NEW: Dedicated quote state instead of pasting text
+  // NEW: Dedicated quote state instead of pasting text
   const [activeQuote, setActiveQuote] = useState(""); 
   
   const [submittingComment, setSubmittingComment] = useState(false);
@@ -146,6 +147,11 @@ export default function ProposalPortalPage() {
 
         if (p.status === "archived") { if (!cancelled) setViewState("not-found"); return; }
         if (p.status === "rejected") { setViewState("rejected"); return; }
+
+        // Version detection: if this proposal has been superseded, surface the newer version
+        if ((p.status === "superseded" || p.status === "void") && p.nextVersionId) {
+          if (!cancelled) setNewerVersionId(p.nextVersionId);
+        }
 
         if (p.accessCode) {
           if (!cancelled) setViewState("locked");
@@ -446,6 +452,29 @@ export default function ProposalPortalPage() {
               Unlock Proposal
             </button>
           </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Version detection overlay — shown for superseded/voided proposals
+  if (newerVersionId && (proposal?.status === "superseded" || proposal?.status === "void")) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <div className="mx-4 w-full max-w-md rounded-3xl border border-amber-200/60 bg-white/80 p-10 text-center shadow-xl shadow-slate-200/40 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
+            <AlertCircle className="h-7 w-7 text-amber-500" />
+          </div>
+          <h2 className="mt-5 text-xl font-semibold text-slate-900">A newer version exists</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">
+            This proposal has been revised. Please view the latest version below.
+          </p>
+          <a
+            href={`/p/${newerVersionId}`}
+            className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-6 py-3 text-[13px] font-semibold text-white shadow-lg shadow-indigo-200/50 transition hover:from-violet-600 hover:to-indigo-700"
+          >
+            View Latest Version →
+          </a>
         </div>
       </div>
     );

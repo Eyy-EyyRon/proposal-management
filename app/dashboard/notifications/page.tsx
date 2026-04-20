@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Bell, Eye, CheckCircle, XCircle, Check, Loader2,
-  Users, LayoutTemplate, Trophy, Info,
+  Users, LayoutTemplate, Trophy, Info, MessageCircle, Crown, UserCheck,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Topbar } from "@/components/topbar";
@@ -19,13 +19,17 @@ import {
 } from "@/lib/notifications";
 
 const iconConfig: Record<NotificationType, { icon: typeof Eye; color: string; bg: string }> = {
-  viewed:           { icon: Eye,            color: "text-sky-500",     bg: "bg-sky-50" },
-  signed:           { icon: CheckCircle,    color: "text-emerald-500", bg: "bg-emerald-50" },
-  rejected:         { icon: XCircle,        color: "text-rose-500",    bg: "bg-rose-50" },
-  team_joined:      { icon: Users,          color: "text-violet-500",  bg: "bg-violet-50" },
-  template_updated: { icon: LayoutTemplate, color: "text-amber-500",   bg: "bg-amber-50" },
-  major_deal:       { icon: Trophy,         color: "text-amber-600",   bg: "bg-amber-50" },
-  system:           { icon: Info,           color: "text-slate-500",   bg: "bg-slate-50" },
+  viewed:             { icon: Eye,            color: "text-sky-500",     bg: "bg-sky-50" },
+  signed:             { icon: CheckCircle,    color: "text-emerald-500", bg: "bg-emerald-50" },
+  rejected:           { icon: XCircle,        color: "text-rose-500",    bg: "bg-rose-50" },
+  commented:          { icon: MessageCircle,  color: "text-violet-500",  bg: "bg-violet-50" },
+  ceo_comment:        { icon: Crown,          color: "text-amber-600",   bg: "bg-amber-50" },
+  staff_action:       { icon: UserCheck,      color: "text-indigo-500",  bg: "bg-indigo-50" },
+  delegated_proposal: { icon: UserCheck,      color: "text-rose-700",    bg: "bg-rose-50" },
+  team_joined:        { icon: Users,          color: "text-violet-500",  bg: "bg-violet-50" },
+  template_updated:   { icon: LayoutTemplate, color: "text-amber-500",   bg: "bg-amber-50" },
+  major_deal:         { icon: Trophy,         color: "text-amber-600",   bg: "bg-amber-50" },
+  system:             { icon: Info,           color: "text-slate-500",   bg: "bg-slate-50" },
 };
 
 function timeAgo(ts: { seconds: number } | null | undefined): string {

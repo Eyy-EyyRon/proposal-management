@@ -6,7 +6,9 @@ import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, L
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth, useRole } from "@/contexts/auth-context";
-import { subscribeToProposals, subscribeToDepartmentProposals, moveToTrash, type Proposal } from "@/lib/firestore";
+import { subscribeToProposals, subscribeToProposalsByDepartment, moveToTrash, type Proposal } from "@/lib/firestore";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { DepartmentBadge } from "@/components/department-badge";
 import { exportProposalsCsv, exportProposalsJson } from "@/lib/export-utils";
 
@@ -123,6 +125,7 @@ function EmptyScanState({ onCreate }: { onCreate: string }) {
 export default function ProposalsPage() {
   const { user, profile } = useAuth();
   const { isCeo } = useRole();
+  const router = useRouter();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -136,14 +139,24 @@ export default function ProposalsPage() {
     if (!user) return;
     const dept = profile?.department;
     const cb = (data: Proposal[]) => { setProposals(data); setLoading(false); };
-    // Staff/Admin: see only their department; CEO sees own proposals here
+    // Staff/Admin: see only their department (Scenario 3 & 15); CEO sees own proposals
     const unsub = (!isCeo && dept)
-      ? subscribeToDepartmentProposals(dept, cb)
+      ? subscribeToProposalsByDepartment(dept, cb)
       : subscribeToProposals(user.uid, cb);
     return unsub;
   }, [user, profile?.department, isCeo]);
 
-  const active = proposals.filter(p => p.status !== "archived");
+  // Cross-dept access guard: redirect if user navigates to a proposal not in their dept
+  const handleProposalClick = (proposal: Proposal) => {
+    if (!isCeo && profile?.department && proposal.department && proposal.department !== profile.department) {
+      toast.error("Access Denied: This proposal belongs to a different department.");
+      router.push("/dashboard/proposals");
+      return false;
+    }
+    return true;
+  };
+
+  const active = proposals.filter(p => p.status !== "archived" && p.status !== "superseded" && p.status !== "void");
   const counts = {
     total: active.length,
     sent: active.filter(p => p.status === "sent").length,

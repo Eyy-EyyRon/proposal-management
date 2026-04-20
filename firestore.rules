@@ -115,44 +115,56 @@ service cloud.firestore {
 
       // Update: Allow if owner, sender, or Admin/CEO
       allow update: if
-        // Path 1: Authenticated owner (identity owner) — unrestricted
-        (isSignedIn() && resource.data.ownerId == request.auth.uid)
-        ||
-        // Path 2: Authenticated sender (actual sender) — unrestricted
-        (isSignedIn() && resource.data.sentById == request.auth.uid)
-        ||
-        // Path 3: Admin/CEO — unrestricted (trash, restore, etc.)
-        isAdminOrCeo()
-        ||
-        // Path 4: Public (unauthenticated) — restricted fields only
-        (
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
-          && (
-            (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
-            || (resource.data.status == "viewed" && request.resource.data.status in ["accepted", "rejected"])
+        // Immutability: ownerId and sentById can never change after creation
+        request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.sentById == resource.data.sentById
+        && (
+          // Path 1: Authenticated owner (identity owner) — unrestricted
+          (isSignedIn() && resource.data.ownerId == request.auth.uid)
+          ||
+          // Path 2: Authenticated sender (actual sender) — unrestricted
+          (isSignedIn() && resource.data.sentById == request.auth.uid)
+          ||
+          // Path 3: Admin/CEO — unrestricted (trash, restore, etc.)
+          isAdminOrCeo()
+          ||
+          // Path 4: Public (unauthenticated) client actions only
+          // Self-sign block: only unauthenticated sessions can accept/reject
+          (
+            request.auth == null
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
+            && (
+              // Signature zombie guard: only sent/viewed proposals can be signed
+              (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
+              || (resource.data.status == "viewed" && request.resource.data.status in ["accepted", "rejected"])
+            )
+            && request.resource.data.templateId == resource.data.templateId
+            && request.resource.data.templateName == resource.data.templateName
+            && request.resource.data.templateFileUrl == resource.data.templateFileUrl
+            && request.resource.data.templateGdocUrl == resource.data.templateGdocUrl
+            && request.resource.data.clientName == resource.data.clientName
+            && request.resource.data.clientEmail == resource.data.clientEmail
+            && request.resource.data.fieldValues == resource.data.fieldValues
+            && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.get('version', 1) == resource.data.get('version', 1)
+            && request.resource.data.get('previousVersionId', null) == resource.data.get('previousVersionId', null)
           )
-          && request.resource.data.ownerId == resource.data.ownerId
-          && request.resource.data.sentById == resource.data.sentById
-          && request.resource.data.templateId == resource.data.templateId
-          && request.resource.data.templateName == resource.data.templateName
-          && request.resource.data.templateFileUrl == resource.data.templateFileUrl
-          && request.resource.data.templateGdocUrl == resource.data.templateGdocUrl
-          && request.resource.data.clientName == resource.data.clientName
-          && request.resource.data.clientEmail == resource.data.clientEmail
-          && request.resource.data.fieldValues == resource.data.fieldValues
-          && request.resource.data.createdAt == resource.data.createdAt
-          // Protect versioning fields from public modification
-          && request.resource.data.get('version', 1) == resource.data.get('version', 1)
-          && request.resource.data.get('previousVersionId', null) == resource.data.get('previousVersionId', null)
         );
 
-      // Comments subcollection - accessible to all for client portal
+      // Comments subcollection - soft-delete only, no hard deletes
       match /comments/{commentId} {
         allow read: if true;
         allow create: if true; // Allows client portal and staff to post
-        // Only Admin/CEO can edit/delete for audit trail integrity
-        allow update, delete: if isSignedIn() && isAdminOrCeo(); 
+        // Soft-delete only: allow update only to set isDeleted=true + deletedText
+        // Hard delete is never permitted — audit trail must be preserved
+        allow update: if (
+          isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["isDeleted", "deletedText", "deletedAt"])
+          && request.resource.data.isDeleted == true
+        );
+        allow delete: if false;
       }
     }
 

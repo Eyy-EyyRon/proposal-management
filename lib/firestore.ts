@@ -137,7 +137,7 @@ export async function saveOrgSettings(
 
 // ─── PROPOSAL TYPES ─────────────────────────────────────────
 
-export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "archived";
+export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "archived" | "superseded" | "void";
 
 export interface Proposal {
   id: string;
@@ -152,6 +152,11 @@ export interface Proposal {
   templateName: string;
   templateFileUrl: string | null;
   templateGdocUrl: string | null;
+  // Template snapshot — deep copy stored at creation time (Scenario 13)
+  templateSnapshot?: {
+    fields: Array<{ id: string; name: string; type: string; required: boolean }>;
+    description?: string;
+  } | null;
   clientName: string;
   clientEmail: string;
   fieldValues: Record<string, string>;
@@ -168,6 +173,7 @@ export interface Proposal {
   // Versioning fields
   version: number; // Defaults to 1, increments on every revision
   previousVersionId: string | null; // Reference to the ID of the previous version
+  nextVersionId?: string | null; // Forward link set when a revision is created
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────
@@ -183,6 +189,7 @@ export async function createProposal(
     templateName: string;
     templateFileUrl?: string | null;
     templateGdocUrl?: string | null;
+    templateSnapshot?: { fields: Array<{ id: string; name: string; type: string; required: boolean }>; description?: string } | null;
     clientName: string;
     clientEmail: string;
     fieldValues: Record<string, string>;
@@ -203,6 +210,7 @@ export async function createProposal(
     templateName: data.templateName,
     templateFileUrl: data.templateFileUrl ?? null,
     templateGdocUrl: data.templateGdocUrl ?? null,
+    templateSnapshot: data.templateSnapshot ?? null,
     clientName: data.clientName,
     clientEmail: data.clientEmail,
     fieldValues: data.fieldValues,
@@ -219,6 +227,7 @@ export async function createProposal(
     // Versioning fields
     version: data.version ?? 1,
     previousVersionId: data.previousVersionId ?? null,
+    nextVersionId: null,
   });
 }
 
@@ -240,6 +249,7 @@ export async function getProposalHistory(proposalId: string): Promise<Proposal[]
 }
 
 // Create a new version of an existing proposal
+// Marks the old version as "superseded" and links the versions bidirectionally
 export async function createProposalRevision(
   newProposalId: string,
   currentProposal: Proposal,
@@ -249,32 +259,29 @@ export async function createProposalRevision(
     templateGdocUrl?: string | null;
     templateId?: string;
     templateName?: string;
+    templateSnapshot?: { fields: Array<{ id: string; name: string; type: string; required: boolean }>; description?: string } | null;
   }
 ): Promise<void> {
   const newVersionNum = (currentProposal.version || 1) + 1;
 
+  // Create the new version document
   await setDoc(doc(db, "proposals", newProposalId), {
-    // Delegated Authority fields (preserve from original)
     ownerId: currentProposal.ownerId,
     sentById: currentProposal.sentById,
     isDelegated: currentProposal.isDelegated,
-    // Legacy field
     userId: currentProposal.ownerId,
     department: currentProposal.department,
-    // Template info (use updated values or preserve original)
     templateId: updates.templateId ?? currentProposal.templateId,
     templateName: updates.templateName ?? currentProposal.templateName,
     templateFileUrl: updates.templateFileUrl ?? currentProposal.templateFileUrl,
     templateGdocUrl: updates.templateGdocUrl ?? currentProposal.templateGdocUrl,
-    // Client info (preserve)
+    // Always carry forward the template snapshot (deep copy protection)
+    templateSnapshot: updates.templateSnapshot ?? currentProposal.templateSnapshot ?? null,
     clientName: currentProposal.clientName,
     clientEmail: currentProposal.clientEmail,
-    // Field values (use updated or preserve original)
     fieldValues: updates.fieldValues ?? currentProposal.fieldValues,
-    // Reset status for new version
     accessCode: null,
     status: "sent",
-    // Clear signature for new version
     signatureType: null,
     signatureUrl: null,
     signedAt: null,
@@ -283,16 +290,24 @@ export async function createProposalRevision(
     deletedAt: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    // Versioning
     version: newVersionNum,
     previousVersionId: currentProposal.id,
+    nextVersionId: null,
+  });
+
+  // Mark the old version as superseded and store forward link
+  await updateDoc(doc(db, "proposals", currentProposal.id), {
+    status: "superseded",
+    nextVersionId: newProposalId,
+    updatedAt: serverTimestamp(),
   });
 
   // Add system comment about the revision
   await addDoc(collection(db, "proposals", newProposalId, "comments"), {
-    text: `Document revised to Version ${newVersionNum}. Previous signature has been voided.`,
+    text: `Document revised to Version ${newVersionNum}. Previous version has been superseded.`,
     authorRole: "system",
     authorName: "System",
+    isDeleted: false,
     createdAt: serverTimestamp(),
   });
 }
@@ -367,6 +382,26 @@ export function subscribeToProposals(
   return () => { unsub1(); unsub2(); };
 }
 
+// Department-based subscription: fetches all proposals for a department
+// Used for staff to see all team proposals (not just their own), ensuring
+// orphaned proposals from departed employees remain visible (Scenario 15)
+export function subscribeToProposalsByDepartment(
+  department: string,
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("department", "==", department),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal)),
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
+}
+
 // Get proposals by owner (for CEO to see all proposals sent using their identity)
 export async function getProposalsByOwner(ownerId: string): Promise<Proposal[]> {
   const q = query(
@@ -436,6 +471,13 @@ export async function acceptProposal(
   signatureType: "draw" | "upload",
   signatureUrl: string
 ): Promise<void> {
+  // Guard: only sent/viewed proposals can be accepted (signature zombie prevention)
+  const snap = await getDoc(doc(db, "proposals", proposalId));
+  if (!snap.exists()) throw new Error("Proposal not found");
+  const current = snap.data();
+  if (current.status !== "sent" && current.status !== "viewed") {
+    throw new Error(`Cannot sign a proposal with status "${current.status}". Only sent or viewed proposals can be signed.`);
+  }
   await updateDoc(doc(db, "proposals", proposalId), {
     status: "accepted",
     signatureType,
@@ -443,6 +485,29 @@ export async function acceptProposal(
     signedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+}
+
+// Soft-delete a comment (audit-safe, preserves thread integrity)
+export async function softDeleteComment(
+  proposalId: string,
+  commentId: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId, "comments", commentId), {
+    isDeleted: true,
+    deletedText: "[Message deleted]",
+    deletedAt: serverTimestamp(),
+  });
+}
+
+// Check if a staff user still has active delegation from a CEO
+export async function checkDelegationActive(
+  staffUserId: string,
+  ceoId: string
+): Promise<boolean> {
+  const snap = await getDoc(doc(db, "users", ceoId));
+  if (!snap.exists()) return false;
+  const delegatedIds: string[] = snap.data().delegatedUserIds || [];
+  return delegatedIds.includes(staffUserId);
 }
 
 export async function rejectProposal(proposalId: string): Promise<void> {
@@ -706,7 +771,7 @@ export async function canSendOnBehalfOf(
 }
 
 // Get all users this person can send on behalf of
-export async function getAvailableIdentities(userId: string): Promise<TeamMember[]> {
+export async function getAvailableIdentities(userId: string, forceRefresh?: boolean): Promise<TeamMember[]> {
   const snap = await getDoc(doc(db, "users", userId));
   if (!snap.exists()) return [];
   
