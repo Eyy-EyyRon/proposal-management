@@ -59,9 +59,6 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Trash",             href: "/ceo-dashboard/trash",      icon: Trash2 },
       { label: "Settings",          href: "/ceo-dashboard/settings", icon: Settings },
     ],
-    switchTo: [
-      { label: "Staff Dashboard", href: "/dashboard",    icon: LayoutDashboard },
-    ],
   },
   admin: {
     basePath: "/super-admin",
@@ -76,9 +73,6 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Templates",     href: "/super-admin/templates",    icon: LayoutTemplate },
       { label: "Audit Log",     href: "/dashboard/audit-log",      icon: ClipboardList },
       { label: "Settings",      href: "/super-admin/settings",     icon: Settings },
-    ],
-    switchTo: [
-      { label: "Staff Dashboard", href: "/dashboard", icon: LayoutDashboard },
     ],
   },
   staff: {
