@@ -102,6 +102,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 companyName: data.companyName ?? null,
                 role: (data.role as UserRole) ?? "staff",
                 department: data.department ?? null,
+                avatarUrl: data.avatarUrl ?? undefined,
+                jobTitle: data.jobTitle ?? undefined,
                 createdAt: data.createdAt,
                 updatedAt: data.updatedAt,
               });

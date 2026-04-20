@@ -315,23 +315,56 @@ export function subscribeToProposals(
   userId: string,
   callback: (proposals: Proposal[]) => void
 ): () => void {
-  const q = query(
+  // Query 1: proposals where user is owner
+  const q1 = query(
     collection(db, "proposals"),
+    where("ownerId", "==", userId),
     where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
-  return onSnapshot(
-    q, 
-    (snapshot) => {
-      const proposals = snapshot.docs
-        .map((d) => ({ id: d.id, ...d.data() }) as Proposal)
-        .filter((p) => p.ownerId === userId || p.sentById === userId);
-      callback(proposals);
-    },
-    (error) => {
-      if (error.code !== "permission-denied") console.error(error);
-    }
+  
+  // Query 2: proposals where user is sender (and not owner to avoid duplicates)
+  const q2 = query(
+    collection(db, "proposals"),
+    where("sentById", "==", userId),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
   );
+  
+  let proposals1: Proposal[] = [];
+  let proposals2: Proposal[] = [];
+  
+  const mergeAndDedupe = () => {
+    const merged = [...proposals1, ...proposals2];
+    const deduped = merged.filter((p, i, arr) => 
+      arr.findIndex(t => t.id === p.id) === i
+    );
+    callback(deduped.sort((a, b) => {
+      const aTime = (a.createdAt?.seconds ?? 0) * 1000;
+      const bTime = (b.createdAt?.seconds ?? 0) * 1000;
+      return bTime - aTime;
+    }));
+  };
+  
+  const unsub1 = onSnapshot(
+    q1, 
+    (snapshot) => {
+      proposals1 = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal);
+      mergeAndDedupe();
+    },
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
+  
+  const unsub2 = onSnapshot(
+    q2, 
+    (snapshot) => {
+      proposals2 = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal);
+      mergeAndDedupe();
+    },
+    (error) => { if (error.code !== "permission-denied") console.error(error); }
+  );
+  
+  return () => { unsub1(); unsub2(); };
 }
 
 // Get proposals by owner (for CEO to see all proposals sent using their identity)
@@ -704,17 +737,22 @@ export async function getAllUsers(): Promise<TeamMember[]> {
 // ─── DEPARTMENT-SCOPED QUERIES ──────────────────────────────
 
 export async function getAllProposals(): Promise<Proposal[]> {
-  const q = query(
-    collection(db, "proposals"),
-    where("isDeleted", "==", false),
-    orderBy("createdAt", "desc")
-  );
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[];
+  try {
+    const q = query(
+      collection(db, "proposals"),
+      where("isDeleted", "==", false),
+      orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[];
+  } catch (error) {
+    console.error("getAllProposals error:", error);
+    throw error;
+  }
 }
 
 export function subscribeToAllProposals(
-  callback: (proposals: Proposal[]) => void
+  callback: (proposals: Proposal[], error?: Error) => void
 ): () => void {
   const q = query(
     collection(db, "proposals"),
@@ -723,8 +761,11 @@ export function subscribeToAllProposals(
   );
   return onSnapshot(
     q, 
-    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[]),
-    (error) => { if (error.code !== "permission-denied") console.error(error); }
+    (snapshot) => callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Proposal[], undefined),
+    (error) => {
+      console.error("subscribeToAllProposals error:", error);
+      callback([], error as Error);
+    }
   );
 }
 

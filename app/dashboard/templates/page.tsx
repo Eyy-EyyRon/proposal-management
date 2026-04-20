@@ -5,10 +5,10 @@ import Link from "next/link";
 import { FileCode2, FileDown, Plus, Upload, Link as LinkIcon, Search, Trash2, Loader2, LayoutTemplate, AlertTriangle } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Topbar } from "@/components/topbar";
-import { useAuth } from "@/contexts/auth-context";
-import { getUserTemplates, moveToTrash, type Template } from "@/lib/firestore";
+import { useAuth, useRole } from "@/contexts/auth-context";
+import { getUserTemplates, getAllTemplates, moveToTrash, type Template } from "@/lib/firestore";
 import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
-import { toast } from "@/components/providers/goey-toast-provider";
+import { toast } from "@/components/providers/toast-provider";
 
 function formatDate(ts: { seconds: number } | null) {
   if (!ts) return "—";
@@ -50,6 +50,7 @@ function VariablePill({ label }: { label: string }) {
 
 export default function TemplatesPage() {
   const { user } = useAuth();
+  const { isStaff } = useRole();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -64,7 +65,7 @@ export default function TemplatesPage() {
 
     (async () => {
       try {
-        const data = await getUserTemplates(user.uid);
+        const data = isStaff ? await getAllTemplates() : await getUserTemplates(user.uid);
         if (!cancelled) setTemplates(data);
       } catch (err) {
         if (!cancelled) {

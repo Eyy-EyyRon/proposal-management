@@ -1,113 +1,108 @@
 "use client";
 
-import { Clock, Filter, Download } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Clock, Filter, Download, Loader2 } from "lucide-react";
 import { ActivityTable, type Activity } from "@/components/activity-table";
+import {
+  subscribeToAllProposals,
+  batchGetUserNames,
+  type Proposal,
+} from "@/lib/firestore";
 
-// Extended mock activity data
-const allActivities: Activity[] = [
-  {
-    id: "1",
-    type: "proposal_created",
-    userName: "Sarah Johnson",
+function proposalToActivity(p: Proposal, userNames: Record<string, string>): Activity {
+  const actorId = p.sentById || p.userId;
+  const userName = userNames[actorId] || "Unknown";
+  const ts = p.updatedAt ?? p.createdAt;
+  const timestamp = ts ? new Date(ts.seconds * 1000).toISOString() : new Date().toISOString();
+
+  const typeMap: Record<string, Activity["type"]> = {
+    sent: "proposal_sent",
+    viewed: "proposal_viewed",
+    accepted: "proposal_accepted",
+    rejected: "proposal_rejected",
+    archived: "proposal_rejected",
+  };
+
+  const descMap: Record<string, string> = {
+    sent: "Sent proposal to client",
+    viewed: "Client viewed proposal",
+    accepted: "Proposal accepted by client",
+    rejected: "Proposal declined by client",
+    archived: "Proposal archived",
+  };
+
+  const type = typeMap[p.status] ?? "proposal_created";
+  const description = descMap[p.status] ?? "Created new proposal";
+
+  return {
+    id: p.id,
+    type,
+    userName,
     userRole: "admin",
-    description: "Created new proposal",
-    target: "Northstar Inc. - Website Redesign",
-    timestamp: "2026-04-15T14:30:00Z",
-    timeAgo: "5 mins ago",
-  },
-  {
-    id: "2",
-    type: "proposal_accepted",
-    userName: "Mike Chen",
-    userRole: "admin",
-    description: "Proposal accepted by client",
-    target: "Dana Liu - Consulting Agreement",
-    timestamp: "2026-04-15T13:15:00Z",
-    timeAgo: "2 hours ago",
-  },
-  {
-    id: "3",
-    type: "team_member_added",
-    userName: "Super Admin",
-    userRole: "super-admin",
-    description: "Added new team member",
-    target: "Jessica Williams",
-    timestamp: "2026-04-15T11:00:00Z",
-    timeAgo: "4 hours ago",
-  },
-  {
-    id: "4",
-    type: "proposal_viewed",
-    userName: "Emily Davis",
-    userRole: "admin",
-    description: "Client viewed proposal",
-    target: "Robert Hayes - Marketing Strategy",
-    timestamp: "2026-04-15T09:30:00Z",
-    timeAgo: "6 hours ago",
-  },
-  {
-    id: "5",
-    type: "template_updated",
-    userName: "Super Admin",
-    userRole: "super-admin",
-    description: "Updated template",
-    target: "Standard Consulting Agreement",
-    timestamp: "2026-04-14T16:45:00Z",
-    timeAgo: "1 day ago",
-  },
-  {
-    id: "6",
-    type: "proposal_sent",
-    userName: "Sarah Johnson",
-    userRole: "admin",
-    description: "Sent proposal to client",
-    target: "Ariana Cole - Design Services",
-    timestamp: "2026-04-14T14:20:00Z",
-    timeAgo: "1 day ago",
-  },
-  {
-    id: "7",
-    type: "proposal_rejected",
-    userName: "Mike Chen",
-    userRole: "admin",
-    description: "Proposal was declined",
-    target: "Lena Whitmore - Development Contract",
-    timestamp: "2026-04-13T10:15:00Z",
-    timeAgo: "2 days ago",
-  },
-  {
-    id: "8",
-    type: "settings_changed",
-    userName: "Super Admin",
-    userRole: "super-admin",
-    description: "Updated workspace settings",
-    target: "Notification preferences",
-    timestamp: "2026-04-12T09:00:00Z",
-    timeAgo: "3 days ago",
-  },
-  {
-    id: "9",
-    type: "template_created",
-    userName: "Super Admin",
-    userRole: "super-admin",
-    description: "Created new template",
-    target: "Software Development Contract",
-    timestamp: "2026-04-11T15:30:00Z",
-    timeAgo: "4 days ago",
-  },
-  {
-    id: "10",
-    type: "proposal_created",
-    userName: "Emily Davis",
-    userRole: "admin",
-    description: "Created new proposal",
-    target: "Venture Capital Partners",
-    timestamp: "2026-04-10T11:20:00Z",
-    timeAgo: "5 days ago",
-  },
-];
+    description,
+    target: `${p.clientName} — ${p.templateName}`,
+    timestamp,
+    timeAgo: timeAgo(ts),
+  };
+}
+
+function timeAgo(ts: { seconds: number } | null | undefined): string {
+  if (!ts) return "";
+  const diff = Math.floor(Date.now() / 1000 - ts.seconds);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(ts.seconds * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+type TypeFilter = "all" | "proposals" | "team" | "templates";
+type DateRange = "7d" | "30d" | "90d" | "all";
 
 export default function ActivityPage() {
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [dateRange, setDateRange] = useState<DateRange>("30d");
+
+  useEffect(() => {
+    const unsub = subscribeToAllProposals((data, err) => {
+      if (err) { setLoading(false); return; }
+      setProposals(data);
+      setLoading(false);
+
+      const ids = [...new Set(data.map((p) => p.sentById || p.userId).filter(Boolean))];
+      if (ids.length > 0) {
+        batchGetUserNames(ids).then(setUserNames).catch(() => {});
+      }
+    });
+    return unsub;
+  }, []);
+
+  const allActivities = useMemo<Activity[]>(() => {
+    return proposals.map((p) => proposalToActivity(p, userNames));
+  }, [proposals, userNames]);
+
+  const filtered = useMemo(() => {
+    const now = Date.now() / 1000;
+    const cutoff: Record<DateRange, number> = {
+      "7d": now - 7 * 86400,
+      "30d": now - 30 * 86400,
+      "90d": now - 90 * 86400,
+      "all": 0,
+    };
+
+    return allActivities.filter((a) => {
+      const secs = new Date(a.timestamp).getTime() / 1000;
+      if (secs < cutoff[dateRange]) return false;
+      if (typeFilter === "proposals") return a.type.startsWith("proposal_");
+      if (typeFilter === "team") return a.type.startsWith("team_");
+      if (typeFilter === "templates") return a.type.startsWith("template_");
+      return true;
+    });
+  }, [allActivities, typeFilter, dateRange]);
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col space-y-8 px-8 pb-10 pt-12 lg:px-10">
       {/* Header */}
@@ -130,15 +125,16 @@ export default function ActivityPage() {
               </span>
               <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] transition-colors duration-300 ease-out focus-within:border-[#800020]/30 focus-within:bg-white">
                 <Filter className="h-4 w-4 text-slate-400" />
-                <select className="w-full appearance-none border-none bg-transparent text-[13px] text-slate-700 outline-none">
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+                  className="w-full appearance-none border-none bg-transparent text-[13px] text-slate-700 outline-none"
+                >
                   <option value="all">All Activity</option>
                   <option value="proposals">Proposals</option>
                   <option value="team">Team</option>
                   <option value="templates">Templates</option>
                 </select>
-                <kbd className="hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:inline-flex">
-                  ⌘K
-                </kbd>
               </div>
             </label>
 
@@ -148,15 +144,16 @@ export default function ActivityPage() {
               </span>
               <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] transition-colors duration-300 ease-out focus-within:border-[#800020]/30 focus-within:bg-white">
                 <Clock className="h-4 w-4 text-slate-400" />
-                <select className="w-full appearance-none border-none bg-transparent text-[13px] text-slate-700 outline-none">
+                <select
+                  value={dateRange}
+                  onChange={(e) => setDateRange(e.target.value as DateRange)}
+                  className="w-full appearance-none border-none bg-transparent text-[13px] text-slate-700 outline-none"
+                >
                   <option value="7d">Last 7 days</option>
                   <option value="30d">Last 30 days</option>
                   <option value="90d">Last 90 days</option>
                   <option value="all">All time</option>
                 </select>
-                <kbd className="hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:inline-flex">
-                  ⌘K
-                </kbd>
               </div>
             </label>
           </div>
@@ -169,35 +166,26 @@ export default function ActivityPage() {
       </div>
 
       {/* Activity Table */}
-      <ActivityTable
-        activities={allActivities}
-        maxItems={10}
-        showViewAll={false}
-      />
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.1),0_10px_20px_rgba(0,0,0,0.02)]">
-        <p className="text-[13px] text-slate-500">
-          Showing 1-{allActivities.length} of {allActivities.length} activities
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            disabled
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-400 transition disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <button className="rounded-full bg-[#800020] px-3 py-1.5 text-[13px] text-white shadow-sm shadow-[#800020]/20">
-            1
-          </button>
-          <button
-            disabled
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-400 transition disabled:opacity-50"
-          >
-            Next
-          </button>
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
         </div>
-      </div>
+      ) : (
+        <ActivityTable
+          activities={filtered}
+          maxItems={filtered.length}
+          showViewAll={false}
+        />
+      )}
+
+      {/* Footer count */}
+      {!loading && (
+        <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.1),0_10px_20px_rgba(0,0,0,0.02)]">
+          <p className="text-[13px] text-slate-500">
+            Showing {filtered.length} of {allActivities.length} activities
+          </p>
+        </div>
+      )}
     </div>
   );
 }

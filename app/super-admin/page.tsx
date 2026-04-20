@@ -15,27 +15,35 @@ import {
 import { AdminStatCard } from "@/components/admin-stat-card";
 import { cn } from "@/lib/utils";
 import {
-  subscribeToGlobalStats,
+  subscribeToAllProposals,
   getAllUsers,
-  type GlobalStats,
+  type Proposal,
 } from "@/lib/firestore";
 
 export default function SuperAdminDashboardPage() {
-  const [stats, setStats] = useState<GlobalStats | null>(null);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [teamSize, setTeamSize] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = subscribeToGlobalStats((s) => {
-      setStats(s);
+    const unsub = subscribeToAllProposals((data) => {
+      setProposals(data);
       setLoading(false);
     });
     getAllUsers().then((u) => setTeamSize(u.length)).catch(() => {});
     return unsub;
   }, []);
 
+  const stats = {
+    totalProposals: proposals.length,
+    totalSent: proposals.filter((p) => p.status === "sent").length,
+    totalViewed: proposals.filter((p) => p.status === "viewed").length,
+    totalAccepted: proposals.filter((p) => p.status === "accepted").length,
+    totalRejected: proposals.filter((p) => p.status === "rejected").length,
+  };
+
   const acceptanceRate =
-    stats && stats.totalAccepted + stats.totalRejected > 0
+    stats.totalAccepted + stats.totalRejected > 0
       ? Math.round(
           (stats.totalAccepted / (stats.totalAccepted + stats.totalRejected)) * 100
         )
@@ -138,9 +146,9 @@ export default function SuperAdminDashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <AdminStatCard
               label="Active Proposals"
-              value={(stats?.totalSent ?? 0) + (stats?.totalViewed ?? 0)}
+              value={stats.totalSent + stats.totalViewed}
               icon={FileText}
-              trend={`${stats?.totalProposals ?? 0} total`}
+              trend={`${stats.totalProposals} total`}
               trendUp={true}
               description="Sent + Viewed"
               variant="highlight"
@@ -149,7 +157,7 @@ export default function SuperAdminDashboardPage() {
               label="Acceptance Rate"
               value={`${acceptanceRate}%`}
               icon={TrendingUp}
-              trend={`${stats?.totalAccepted ?? 0} signed`}
+              trend={`${stats.totalAccepted} signed`}
               trendUp={acceptanceRate >= 50}
               description="Client acceptance rate"
               variant="success"

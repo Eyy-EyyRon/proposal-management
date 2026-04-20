@@ -271,15 +271,17 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <div className="mt-8 flex items-center justify-end gap-3 border-t border-slate-100 pt-6">
-            <button className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition-all duration-300 ease-out hover:bg-slate-50">
-              Cancel
-            </button>
-            <button className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition-all duration-300 ease-out hover:bg-[#660018]">
-              <Save className="h-4 w-4" />
-              Save Changes
-            </button>
-          </div>
+          {activeTab !== "profile" && (
+            <div className="mt-8 flex items-center justify-end gap-3 border-t border-slate-100 pt-6">
+              <button className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition-all duration-300 ease-out hover:bg-slate-50">
+                Cancel
+              </button>
+              <button className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition-all duration-300 ease-out hover:bg-[#660018]">
+                <Save className="h-4 w-4" />
+                Save Changes
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

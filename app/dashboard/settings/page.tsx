@@ -8,7 +8,7 @@ import { getOrgSettings, saveOrgSettings, updateUserProfile } from "@/lib/firest
 import { uploadAvatar } from "@/lib/storage";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
-import { toast } from "@/components/providers/goey-toast-provider";
+import { toast } from "@/components/providers/toast-provider";
 import {
   Building2, Upload, Save, Loader2, Check, ImageIcon, Type, Mail, User, Briefcase,
 } from "lucide-react";
@@ -50,11 +50,18 @@ export default function SettingsPage() {
   const [companyName, setCompanyName] = useState("");
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
   const [emailSignature, setEmailSignature] = useState("");
+  // Profile state - now managed at page level for unified save
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const avatarRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -67,6 +74,13 @@ export default function SettingsPage() {
           setEmailSignature(settings.emailSignature);
         } else if (profile?.companyName) {
           setCompanyName(profile.companyName);
+        }
+        // Load profile data
+        if (profile) {
+          setFirstName(profile.firstName || "");
+          setLastName(profile.lastName || "");
+          setJobTitle(profile.jobTitle || "");
+          setAvatarUrl(profile.avatarUrl || null);
         }
       } finally {
         setLoading(false);
@@ -93,21 +107,55 @@ export default function SettingsPage() {
     }
   };
 
+  const hasChanges = companyName !== (profile?.companyName || "") ||
+    firstName.trim() !== (profile?.firstName || "") ||
+    lastName.trim() !== (profile?.lastName || "") ||
+    jobTitle.trim() !== (profile?.jobTitle || "") ||
+    (avatarUrl ?? "") !== (profile?.avatarUrl || "");
+
   const handleSave = async () => {
     if (!user) return;
+    if (!hasChanges) return;
     setSaving(true);
     try {
+      // Save org settings
       await saveOrgSettings(user.uid, {
         companyName,
         companyLogoUrl,
         emailSignature,
       });
-      toast.success("Organization settings saved!");
+      // Save profile settings (including job title)
+      await updateUserProfile(user.uid, {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        jobTitle: jobTitle.trim(),
+        avatarUrl: avatarUrl ?? undefined,
+      });
+      toast.success("All settings saved successfully!");
     } catch (err) {
       console.error("Failed to save settings:", err);
       toast.error("Failed to save settings. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+    setProfileLoading(true);
+    try {
+      const result = await uploadAvatar(file, user.uid);
+      setAvatarUrl(result.url);
+      toast.success("Avatar uploaded!");
+    } catch (err) {
+      toast.error("Failed to upload avatar");
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -134,7 +182,19 @@ export default function SettingsPage() {
             {/* Left Column — Profile & Settings */}
             <div className="space-y-5">
               {/* Profile Section */}
-              <ProfileSection />
+              <ProfileSection 
+                firstName={firstName}
+                setFirstName={setFirstName}
+                lastName={lastName}
+                setLastName={setLastName}
+                jobTitle={jobTitle}
+                setJobTitle={setJobTitle}
+                avatarUrl={avatarUrl}
+                onAvatarChange={setAvatarUrl}
+                profile={profile}
+                uploading={profileLoading}
+                onAvatarUpload={handleAvatarUpload}
+              />
 
               {/* Company Name */}
               <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
@@ -227,7 +287,7 @@ export default function SettingsPage() {
               <motion.button
                 whileTap={{ scale: 0.98 }}
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || !hasChanges}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-5 text-[13px] font-medium text-white shadow-lg shadow-slate-900/10 transition-all hover:bg-slate-800 disabled:opacity-50"
               >
                 <AnimatePresence mode="wait" initial={false}>
@@ -357,81 +417,32 @@ export default function SettingsPage() {
 }
 
 // ─── PROFILE SETTINGS COMPONENT ─────────────────────────────
-function ProfileSection() {
-  const { user, profile } = useAuth();
-  const [firstName, setFirstName] = useState(profile?.firstName || "");
-  const [lastName, setLastName] = useState(profile?.lastName || "");
-  const [jobTitle, setJobTitle] = useState(profile?.jobTitle || "");
-  const [avatarUrl, setAvatarUrl] = useState(profile?.avatarUrl || "");
-  const [saving, setSaving] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+interface ProfileSectionProps {
+  firstName: string;
+  setFirstName: (v: string) => void;
+  lastName: string;
+  setLastName: (v: string) => void;
+  jobTitle: string;
+  setJobTitle: (v: string) => void;
+  avatarUrl: string | null;
+  onAvatarChange: (url: string | null) => void;
+  profile: { firstName?: string; lastName?: string; jobTitle?: string; avatarUrl?: string } | null;
+  uploading: boolean;
+  onAvatarUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
 
-  // Update local state when profile changes
-  useEffect(() => {
-    if (profile) {
-      setFirstName(profile.firstName || "");
-      setLastName(profile.lastName || "");
-      setJobTitle(profile.jobTitle || "");
-      setAvatarUrl(profile.avatarUrl || "");
-    }
-  }, [profile]);
-
-  const handleSave = async () => {
-    if (!user?.uid) return;
-    setSaving(true);
-    try {
-      await updateUserProfile(user?.uid, {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        jobTitle: jobTitle.trim(),
-        avatarUrl,
-      });
-      toast.success("Profile saved successfully!");
-    } catch (err) {
-      console.error("Failed to update profile:", err);
-      toast.error("Failed to update profile. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user?.uid) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("File size must be less than 5MB");
-      return;
-    }
-
-    setUploadingAvatar(true);
-    try {
-      const result = await uploadAvatar(file, user.uid);
-      setAvatarUrl(result.url);
-      toast.success("Avatar uploaded successfully!");
-    } catch (err) {
-      console.error("Failed to upload avatar:", err);
-      toast.error("Failed to upload avatar. Please try again.");
-    } finally {
-      setUploadingAvatar(false);
-    }
-  };
-
-  const hasChanges =
-    firstName.trim() !== (profile?.firstName || "") ||
-    lastName.trim() !== (profile?.lastName || "") ||
-    jobTitle.trim() !== (profile?.jobTitle || "") ||
-    avatarUrl !== (profile?.avatarUrl || "");
+function ProfileSection({
+  firstName,
+  setFirstName,
+  lastName,
+  setLastName,
+  jobTitle,
+  setJobTitle,
+  avatarUrl,
+  uploading,
+  onAvatarUpload,
+}: ProfileSectionProps) {
+  const avatarRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
@@ -442,7 +453,7 @@ function ProfileSection() {
 
       <div className="mb-4 flex items-center gap-4">
         <div
-          onClick={handleAvatarClick}
+          onClick={() => avatarRef.current?.click()}
           className="relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-slate-100 text-lg font-semibold text-slate-600 transition hover:opacity-80"
         >
           {avatarUrl ? (
@@ -450,7 +461,7 @@ function ProfileSection() {
           ) : (
             <span>{firstName?.[0]}{lastName?.[0]}</span>
           )}
-          {uploadingAvatar && (
+          {uploading && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <Loader2 className="h-4 w-4 animate-spin text-white" />
             </div>
@@ -460,10 +471,10 @@ function ProfileSection() {
           </div>
         </div>
         <input
-          ref={fileInputRef}
+          ref={avatarRef}
           type="file"
           accept="image/*"
-          onChange={handleFileChange}
+          onChange={onAvatarUpload}
           className="hidden"
         />
         <div>
@@ -508,35 +519,6 @@ function ProfileSection() {
           />
         </div>
 
-        <div>
-          <label className="mb-1 block text-[12px] font-medium text-slate-500">Email</label>
-          <input
-            type="email"
-            value={profile?.email || ""}
-            disabled
-            className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-[13px] text-slate-500 outline-none cursor-not-allowed"
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center justify-end">
-        <button
-          onClick={handleSave}
-          disabled={!hasChanges || saving}
-          className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] disabled:opacity-50"
-        >
-          {saving ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4" />
-              Save
-            </>
-          )}
-        </button>
       </div>
     </div>
   );

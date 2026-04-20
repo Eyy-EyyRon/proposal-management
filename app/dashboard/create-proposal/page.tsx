@@ -6,11 +6,11 @@ import { ProposalForm } from "@/components/proposal-form";
 import { Topbar } from "@/components/topbar";
 import { 
   ArrowLeft, Check, Copy, ExternalLink, Loader2, Mail, 
-  Crown, User, Shield, AlertCircle 
+  Crown, User, Shield
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { 
-  getUserTemplates, createProposal, getOrgSettings, getAvailableIdentities,
+  getUserTemplates, getAllTemplates, createProposal, getOrgSettings, getAvailableIdentities,
   type Template, type OrgSettings, type TeamMember 
 } from "@/lib/firestore";
 
@@ -34,7 +34,6 @@ export default function CreateProposalPage() {
   // Delegated Authority state
   const [availableIdentities, setAvailableIdentities] = useState<TeamMember[]>([]);
   const [selectedIdentity, setSelectedIdentity] = useState<string>("self"); // "self" or userId of CEO
-  const [loadingIdentities, setLoadingIdentities] = useState(false);
   const [isDelegated, setIsDelegated] = useState(false);
 
   // Fetch user's templates, org settings, and available identities (for delegation)
@@ -44,7 +43,8 @@ export default function CreateProposalPage() {
     (async () => {
       try {
         const [data, settings, identities] = await Promise.all([
-          getUserTemplates(user.uid),
+          // Staff sees all templates; admins/CEO see only their own + all
+          role === "staff" ? getAllTemplates() : getUserTemplates(user.uid),
           getOrgSettings(user.uid),
           getAvailableIdentities(user.uid),
         ]);
