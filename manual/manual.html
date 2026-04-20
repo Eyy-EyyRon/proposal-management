@@ -69,6 +69,9 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
         <li><a href="#signatures"    class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Signatures</a></li>
         <li><a href="#sharing"       class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Cross-Dept Sharing</a></li>
         <li><a href="#notifications" class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Notifications</a></li>
+        <li><a href="#audit-trail"    class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Audit Trail &amp; Certificates</a></li>
+        <li><a href="#urgency-editor" class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Inline Urgency Editor</a></li>
+        <li><a href="#pipeline-bar"   class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Pipeline Progress Bar</a></li>
       </ul>
     </div>
     <div>
@@ -87,12 +90,14 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
 <div class="rounded-3xl bg-gradient-to-br from-[#800020] to-[#3d000f] text-white px-10 py-14 shadow-xl">
   <p class="text-xs font-bold uppercase tracking-widest text-rose-300 mb-3">ProposalMS Enterprise · 2026</p>
   <h1 class="text-4xl font-extrabold mb-4 leading-tight">Command &amp; Control<br>User Manual</h1>
-  <p class="text-rose-100 text-base max-w-xl leading-relaxed">A tiered delegation system that lets the CEO focus on high-value conversations while the team handles proposal creation, verification, and client communications with full traceability.</p>
+  <p class="text-rose-100 text-base max-w-xl leading-relaxed">A tiered delegation system that lets the CEO focus on high-value conversations while the team handles proposal creation, verification, and client communications with full traceability — including inline urgency control, CEO push-back loops, department-scoped boards, signed PDF certificates, and cryptographic audit seals.</p>
   <div class="mt-8 flex flex-wrap gap-3">
-    <a href="#ceo-guide"    class="bg-yellow-400/20 hover:bg-yellow-400/30 border border-yellow-300/30 text-yellow-200 text-xs font-bold px-4 py-2 rounded-lg transition">👑 CEO Guide</a>
-    <a href="#admin-guide"  class="bg-indigo-400/20 hover:bg-indigo-400/30 border border-indigo-300/30 text-indigo-200 text-xs font-bold px-4 py-2 rounded-lg transition">🛡 Admin Guide</a>
-    <a href="#staff-guide"  class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-lg transition">⚙️ Staff Guide</a>
-    <a href="#client-guide" class="bg-emerald-400/20 hover:bg-emerald-400/30 border border-emerald-300/30 text-emerald-200 text-xs font-bold px-4 py-2 rounded-lg transition">🤝 Client Guide</a>
+    <a href="#ceo-guide"       class="bg-yellow-400/20 hover:bg-yellow-400/30 border border-yellow-300/30 text-yellow-200 text-xs font-bold px-4 py-2 rounded-lg transition">👑 CEO Guide</a>
+    <a href="#admin-guide"     class="bg-indigo-400/20 hover:bg-indigo-400/30 border border-indigo-300/30 text-indigo-200 text-xs font-bold px-4 py-2 rounded-lg transition">🛡 Admin Guide</a>
+    <a href="#staff-guide"     class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-lg transition">⚙️ Staff Guide</a>
+    <a href="#client-guide"    class="bg-emerald-400/20 hover:bg-emerald-400/30 border border-emerald-300/30 text-emerald-200 text-xs font-bold px-4 py-2 rounded-lg transition">🤝 Client Guide</a>
+    <a href="#urgency-editor"  class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-lg transition">⚡ Urgency Editor</a>
+    <a href="#audit-trail"     class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-lg transition">🔒 Audit Certificates</a>
   </div>
 </div>
 
@@ -294,17 +299,36 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
   <div class="space-y-3 mb-6">
     <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-yellow-400 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span><div><p class="font-semibold text-slate-800 text-sm">Task Center → <strong>+ New Task</strong></p><p class="text-xs text-slate-500 mt-0.5">Navigate to <code>/ceo-dashboard</code> → Task Center.</p></div></div>
     <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-yellow-400 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span><div><p class="font-semibold text-slate-800 text-sm">Fill the Task Brief</p><p class="text-xs text-slate-500 mt-0.5">Enter client name, email, select template, write brief, set urgency (P1/P2/P3).</p></div></div>
-    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-yellow-400 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span><div><p class="font-semibold text-slate-800 text-sm">Assign to General Admin</p><p class="text-xs text-slate-500 mt-0.5">Pick from org's admin list. They receive an in-app notification immediately.</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-yellow-400 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span><div><p class="font-semibold text-slate-800 text-sm">Select Department &amp; Admin Handler</p><p class="text-xs text-slate-500 mt-0.5">Pick a department — a grid of dept-filtered admins appears with avatars. Choose one or leave as <strong>Any admin</strong> (first available picks it up). Set urgency and deadline in the same step.</p></div></div>
     <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-yellow-400 text-white font-bold text-xs flex items-center justify-center shrink-0">4</span><div><p class="font-semibold text-slate-800 text-sm">Wait for Talking Inbox</p><p class="text-xs text-slate-500 mt-0.5">When Dept Admin verifies, the proposal auto-appears with a <span class="badge bg-emerald-100 text-emerald-700 text-[10px]">Ready to Send</span> badge.</p></div></div>
     <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-yellow-400 text-white font-bold text-xs flex items-center justify-center shrink-0">5</span><div><p class="font-semibold text-slate-800 text-sm">Review &amp; Send</p><p class="text-xs text-slate-500 mt-0.5">Open the proposal, review the document, click <strong>Mark as Sent</strong>. Client receives secure portal link.</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-amber-100 bg-amber-50/30 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-amber-500 text-white font-bold text-xs flex items-center justify-center shrink-0">6</span><div><p class="font-semibold text-slate-800 text-sm">Client Requests Revision → Push Back</p><p class="text-xs text-slate-500 mt-0.5">In the <strong>Sent</strong> tab, click <strong>Request Revision</strong> on the card. Write instructions for the team — status resets to <code>revision_requested</code> and staff + dept admin are notified instantly. The task re-enters the verification loop and returns to your Talking Inbox once approved again.</p></div></div>
   </div>
+
+  <h3 class="font-bold text-slate-800 mb-4">CEO Task Center — Four Tabs</h3>
+  <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm mb-6">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-900 text-white text-[12px]"><tr><th class="text-left px-4 py-3">Tab</th><th class="text-left px-4 py-3">What You See</th><th class="text-left px-4 py-3">Primary Action</th></tr></thead>
+      <tbody class="divide-y divide-slate-100">
+        <tr class="hover:bg-emerald-50"><td class="px-4 py-3 font-semibold text-emerald-700">Talking Inbox</td><td class="px-4 py-3 text-slate-600">Only <code>ready_to_send</code> tasks verified by dept admins</td><td class="px-4 py-3 text-slate-500">Review proposal → <strong>Mark as Sent</strong></td></tr>
+        <tr class="hover:bg-indigo-50"><td class="px-4 py-3 font-semibold text-indigo-700">Sent</td><td class="px-4 py-3 text-slate-600">All tasks marked sent — your active client conversations</td><td class="px-4 py-3 text-slate-500"><strong>Request Revision</strong> if client pushes back</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-semibold text-slate-700">In Progress</td><td class="px-4 py-3 text-slate-600">Drafting, verifying, revision-in-flight tasks</td><td class="px-4 py-3 text-slate-500">Monitor pipeline — change urgency inline</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-semibold text-slate-700">All</td><td class="px-4 py-3 text-slate-600">Everything across every status</td><td class="px-4 py-3 text-slate-500">Full oversight &amp; cancel if needed</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="font-bold text-slate-800 mb-4">Pipeline Overview Bar</h3>
+  <p class="text-sm text-slate-500 mb-4">Above the task grid, five live counters show your pipeline at a glance — <strong>Drafting · In Review · Revision · Ready · Sent</strong>. Only visible once at least one task exists.</p>
+
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
     <div class="bg-white border border-yellow-100 rounded-xl p-5 shadow-sm"><p class="font-bold text-yellow-800 mb-1">🔒 Privacy Shield</p><p class="text-sm text-slate-600">Toggle <strong>Private</strong> on any proposal — invisible to all Admins and Staff. Overrides all sharing settings.</p></div>
     <div class="bg-white border border-yellow-100 rounded-xl p-5 shadow-sm"><p class="font-bold text-yellow-800 mb-1">♾ Immortality Logic</p><p class="text-sm text-slate-600">The CEO account cannot be deleted, downgraded, or transferred. Protected at Firestore security rules level.</p></div>
     <div class="bg-white border border-yellow-100 rounded-xl p-5 shadow-sm"><p class="font-bold text-yellow-800 mb-1">📋 Direct Proposals</p><p class="text-sm text-slate-600">Create and send proposals yourself without delegation — use the standard proposal builder for quick deals.</p></div>
     <div class="bg-white border border-yellow-100 rounded-xl p-5 shadow-sm"><p class="font-bold text-yellow-800 mb-1">📊 Full Analytics</p><p class="text-sm text-slate-600">Access conversion rates, monthly volume, response times, and performance metrics across all departments.</p></div>
   </div>
-  <div class="callout callout-info"><p class="text-sm text-indigo-800"><strong>Talking Inbox:</strong> Only <code>ready_to_send</code> proposals appear here. Drafting and verifying proposals are intentionally hidden.</p></div>
+  <div class="callout callout-info"><p class="text-sm text-indigo-800"><strong>Talking Inbox:</strong> Only <code>ready_to_send</code> proposals appear here. Drafting and verifying proposals are intentionally hidden to prevent CEO overload.</p></div>
+  <div class="callout callout-warn"><p class="text-sm font-semibold text-amber-800">Changing Urgency</p><p class="text-sm text-amber-700 mt-1">Click the urgency badge on any task card (P1/P2/P3) to open the inline urgency editor. Selecting P1 resets the SLA timer to 2 hours from now and immediately notifies the team. The change is recorded in task history.</p></div>
 </section>
 
 <!-- ═══ GENERAL ADMIN ═══ -->
@@ -330,7 +354,7 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
     <div class="flex gap-4 items-start bg-white border border-emerald-100 bg-emerald-50/30 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">4a</span><div><p class="font-semibold text-slate-800 text-sm">Approve → Verify &amp; Promote</p><p class="text-xs text-slate-500 mt-0.5">Quality looks good? Click <strong>Verify &amp; Promote</strong>. Status becomes <code>ready_to_send</code> and lands in CEO Talking Inbox.</p></div></div>
     <div class="flex gap-4 items-start bg-white border border-amber-100 bg-amber-50/30 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-amber-500 text-white font-bold text-xs flex items-center justify-center shrink-0">4b</span><div><p class="font-semibold text-slate-800 text-sm">Request Revision</p><p class="text-xs text-slate-500 mt-0.5">Click <strong>Request Revision</strong>, write specific feedback. Staff sees an amber banner on the proposal with your notes.</p></div></div>
   </div>
-  <div class="callout callout-info"><p class="text-sm text-indigo-800"><strong>Department Silo:</strong> Verification Queue is dept-locked. You only see proposals from your own department unless cross-dept share is explicitly granted.</p></div>
+  <div class="callout callout-info"><p class="text-sm text-indigo-800"><strong>Department Silo:</strong> Your Task Board is automatically scoped to your department. A <strong>Sales Dept</strong> badge (or equivalent) appears in the header confirming the filter. You only see your department's tasks — cross-dept noise is eliminated.</p></div>
 </section>
 
 <!-- ═══ STAFF GUIDE ═══ -->
@@ -346,6 +370,7 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
   </div>
   <div class="callout callout-warn"><p class="text-sm font-semibold text-amber-800">Revision Requested</p><ul class="mt-2 space-y-1 text-sm text-amber-700 list-disc list-inside"><li>Amber banner shows admin's feedback at the top of the proposal</li><li>Task moves to <strong>Revision Requested</strong> section on your board</li><li>Edit the proposal → re-click <strong>Submit for Verification</strong></li><li>Do not contact the client during this phase</li></ul></div>
   <div class="callout callout-danger"><p class="text-sm font-semibold text-red-800">🚫 You cannot send a tasked proposal to the client.</p><p class="text-sm text-red-700 mt-1">The Send button is intentionally hidden on CEO-tasked proposals. All client communication flows through the CEO after verification.</p></div>
+  <div class="callout callout-tip"><p class="text-sm font-semibold text-emerald-800">Escalating Urgency</p><p class="text-sm text-emerald-700 mt-1">If a task becomes more urgent, click the urgency badge on the task card and select a higher tier. P1 escalation immediately notifies the CEO. The change is visible to everyone in the chain.</p></div>
 </section>
 
 <!-- ═══ CLIENT PORTAL ═══ -->
@@ -421,9 +446,83 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-medium">Client opens proposal</td><td class="px-5 py-3 text-slate-600">CEO / Admin</td><td class="px-5 py-3"><span class="badge bg-indigo-100 text-indigo-700">In-app</span></td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-medium">Client signs proposal</td><td class="px-5 py-3 text-slate-600">CEO &amp; Admin</td><td class="px-5 py-3"><span class="badge bg-emerald-100 text-emerald-700">In-app</span></td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-medium">P1 SLA &lt; 30 min</td><td class="px-5 py-3 text-slate-600">Admin &amp; assigned Staff</td><td class="px-5 py-3"><span class="badge bg-red-100 text-red-700">⚡ Toast alert</span></td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-medium">CEO push-back (revision requested)</td><td class="px-5 py-3 text-slate-600">Staff + Dept Admin</td><td class="px-5 py-3"><span class="badge bg-amber-100 text-amber-700">In-app + amber banner</span></td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-medium">Urgency escalated to P1</td><td class="px-5 py-3 text-slate-600">CEO (if not the actor)</td><td class="px-5 py-3"><span class="badge bg-red-100 text-red-700">⚡ Toast alert</span></td></tr>
       </tbody>
     </table>
   </div>
+</section>
+
+<!-- ═══ AUDIT TRAIL ═══ -->
+<section id="audit-trail">
+  <h2 class="text-2xl font-extrabold mb-2">🔒 Audit Trail &amp; Signed Certificates</h2>
+  <p class="text-slate-500 mb-6 max-w-2xl leading-relaxed">Every accepted proposal generates a tamper-proof audit record with a cryptographic hash, signer IP, and downloadable certificate.</p>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">🔑 Content Hash</p><p class="text-sm text-slate-600">SHA-256 hash of the proposal HTML computed at sign-time. Shown on the CEO proposal detail page with a green <strong>Hash Verified</strong> badge — or a red <strong>Tampered</strong> alert if the document was altered post-signing.</p></div>
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">🌐 Signer IP</p><p class="text-sm text-slate-600">Client's IP address captured via <code>/api/get-signer-ip</code> at the moment of signature. Stored in the audit seal and visible to CEO &amp; Admin on the proposal detail page.</p></div>
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">📜 Signed Certificate</p><p class="text-sm text-slate-600">Click <strong>Download Certificate</strong> on the CEO proposal detail page to generate a signed HTML snapshot via <code>/api/generate-signed-pdf</code>. Includes proposal content, signer name, timestamp, IP, and hash.</p></div>
+  </div>
+  <div class="callout callout-danger"><p class="text-sm font-semibold text-red-800">Hash Tamper Alert</p><p class="text-sm text-red-700 mt-1">If the proposal content is edited after the client has signed, the CEO detail page shows a red <strong>⚠ Document Tampered</strong> banner. The audit seal is immutable — it records what the client actually signed, not the current state of the document.</p></div>
+  <div class="callout callout-tip"><p class="text-sm font-semibold text-emerald-800">Client Thank-You Page</p><p class="text-sm text-emerald-700 mt-1">After signing, clients see a confirmation screen with their audit seal reference. A <strong>Download Signed Copy</strong> button generates the same certificate for the client's own records.</p></div>
+</section>
+
+<!-- ═══ URGENCY EDITOR ═══ -->
+<section id="urgency-editor">
+  <h2 class="text-2xl font-extrabold mb-2">⚡ Inline Urgency Editor</h2>
+  <p class="text-slate-500 mb-6 max-w-2xl leading-relaxed">Any member of the delegation chain — CEO, Admin, Dept Admin, or Staff — can change a task's urgency at any time directly from the task card. No modal required.</p>
+  <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6">
+    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">How It Works</p>
+    <ol class="space-y-3 text-sm text-slate-600 list-decimal list-inside">
+      <li>Find the task card on your board (Task Center, Task Board, or My Tasks).</li>
+      <li>Click the coloured urgency badge (e.g. <span class="badge bg-slate-100 text-slate-700 border border-slate-200 text-[10px]">P3 Normal</span>) — a dropdown appears.</li>
+      <li>Select the new urgency tier. The SLA timer resets from <em>now</em> using the new window.</li>
+      <li>The change is saved to Firestore instantly and logged in task history with actor name and timestamp.</li>
+    </ol>
+  </div>
+  <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm mb-4">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-900 text-white text-[12px]"><tr><th class="text-left px-4 py-3">From → To</th><th class="text-left px-4 py-3">Effect</th><th class="text-left px-4 py-3">Who Is Notified</th></tr></thead>
+      <tbody class="divide-y divide-slate-100">
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3">Any → <strong class="text-red-700">P1</strong></td><td class="px-4 py-3 text-slate-600">SLA resets to 2h · red pulse ring · CEO notified</td><td class="px-4 py-3 text-slate-500">CEO (if not the actor)</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3">Any → <strong class="text-orange-700">P2</strong></td><td class="px-4 py-3 text-slate-600">SLA resets to 24h · orange border</td><td class="px-4 py-3 text-slate-500">No additional notification</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3">Any → <strong class="text-slate-600">P3</strong></td><td class="px-4 py-3 text-slate-600">SLA resets to 72h · standard grey</td><td class="px-4 py-3 text-slate-500">No additional notification</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout callout-warn"><p class="text-sm text-amber-800">Urgency changes are <strong>not reversible via undo</strong> — but every change is recorded in the task history audit log with the actor's name. Escalating frequently can cause SLA timer resets and should only be done when genuinely warranted.</p></div>
+</section>
+
+<!-- ═══ PIPELINE BAR ═══ -->
+<section id="pipeline-bar">
+  <h2 class="text-2xl font-extrabold mb-2">📊 Pipeline Progress Bar</h2>
+  <p class="text-slate-500 mb-6 max-w-2xl leading-relaxed">Every task card shows a four-stage pipeline bar so anyone in the chain can see at a glance where a task stands.</p>
+  <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm mb-6 overflow-x-auto">
+    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5 text-center">Pipeline Stages</p>
+    <div class="flex items-start gap-0 min-w-[360px]">
+      <div class="flex flex-1 flex-col items-center">
+        <div class="flex w-full items-center"><div class="h-1.5 flex-1 invisible"></div><div class="h-3 w-3 rounded-full border-2 border-violet-600 bg-white"></div><div class="h-1.5 flex-1 bg-violet-400 rounded-full"></div></div>
+        <span class="mt-2 text-[11px] font-semibold text-violet-600">Draft</span>
+        <span class="text-[10px] text-slate-400 text-center mt-0.5">Staff building the proposal</span>
+      </div>
+      <div class="flex flex-1 flex-col items-center">
+        <div class="flex w-full items-center"><div class="h-1.5 flex-1 bg-violet-400 rounded-full"></div><div class="h-3 w-3 rounded-full border-2 border-violet-600 bg-white"></div><div class="h-1.5 flex-1 bg-violet-400 rounded-full"></div></div>
+        <span class="mt-2 text-[11px] font-semibold text-violet-600">Review</span>
+        <span class="text-[10px] text-slate-400 text-center mt-0.5">Dept Admin verifying</span>
+      </div>
+      <div class="flex flex-1 flex-col items-center">
+        <div class="flex w-full items-center"><div class="h-1.5 flex-1 bg-violet-400 rounded-full"></div><div class="h-3 w-3 rounded-full border-2 border-violet-600 bg-white"></div><div class="h-1.5 flex-1 bg-slate-100 rounded-full"></div></div>
+        <span class="mt-2 text-[11px] font-semibold text-violet-600">Talking</span>
+        <span class="text-[10px] text-slate-400 text-center mt-0.5">CEO Talking Inbox</span>
+      </div>
+      <div class="flex flex-1 flex-col items-center">
+        <div class="flex w-full items-center"><div class="h-1.5 flex-1 bg-slate-100 rounded-full"></div><div class="h-3 w-3 rounded-full border-2 border-slate-200 bg-white"></div><div class="h-1.5 flex-1 invisible"></div></div>
+        <span class="mt-2 text-[11px] font-semibold text-slate-400">Sent</span>
+        <span class="text-[10px] text-slate-400 text-center mt-0.5">Delivered to client</span>
+      </div>
+    </div>
+    <p class="text-center text-[11px] text-slate-400 mt-4">Active stage = <span class="text-violet-600 font-semibold">violet dot</span> · Completed = filled violet · Revision = <span class="text-amber-600 font-semibold">amber</span></p>
+  </div>
+  <div class="callout callout-info"><p class="text-sm text-indigo-800">When a task is in <code>revision_requested</code> or <code>changes_requested</code>, the bar turns amber and the active stage label reads <strong>Revision</strong>. Cancelled tasks do not show the pipeline bar.</p></div>
 </section>
 
 <!-- ═══ FAQ ═══ -->
@@ -462,6 +561,22 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
       <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-slate-50 transition text-sm"><span>Can Staff see the client's chat messages?</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
       <div class="hidden p-5 bg-slate-50 text-slate-600 border-t border-slate-200 text-sm">Yes — the <strong>Discussion</strong> tab is visible to Staff. The violet <strong>Internal</strong> tab is separate — only Staff and Admins see it; the client never does.</div>
     </div>
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-slate-50 transition text-sm"><span>The client wants changes after I sent the proposal. What do I do? (CEO)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-amber-50 text-slate-600 border-t border-slate-200 text-sm">Go to the <strong>Sent</strong> tab in Task Center → click <strong>Request Revision</strong> on the task card → write your instructions for the team → submit. The task returns to <code>revision_requested</code> and staff is notified. Once they revise and dept admin re-verifies, the task reappears in your Talking Inbox.</div>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-slate-50 transition text-sm"><span>Why do I only see my department's tasks on the Task Board? (Admin)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-indigo-50 text-slate-600 border-t border-slate-200 text-sm">Your Task Board is automatically scoped to your <code>department</code> profile field. This is intentional — it prevents cross-department overload. A <strong>Sales Dept</strong> (or equivalent) badge in the page header confirms the active filter. If your profile has no department set, you see all tasks assigned to you by UID.</div>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-slate-50 transition text-sm"><span>Can I escalate a task from P3 to P1 mid-workflow? (Any role)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-red-50 text-slate-600 border-t border-slate-200 text-sm">Yes. Click the urgency badge on the task card → select <strong>P1 Critical</strong>. The SLA timer resets to 2 hours from now and the CEO receives an immediate notification. The escalation is recorded in task history with the actor's name and timestamp.</div>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-slate-50 transition text-sm"><span>How do I download a signed proposal certificate? (CEO)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-slate-50 text-slate-600 border-t border-slate-200 text-sm">Open the accepted proposal from <code>/ceo-dashboard/proposals/[id]</code> → click <strong>Download Certificate</strong> in the Audit Seal panel. This generates a signed HTML snapshot with the proposal body, signer name, timestamp, IP address, and SHA-256 hash of the original signed content.</div>
+    </div>
   </div>
 </section>
 
@@ -480,8 +595,14 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Internal Tab</td><td class="px-5 py-3 text-slate-600">Staff/admin-only discussion thread on a proposal. Completely hidden from the client portal.</td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Privacy Shield</td><td class="px-5 py-3 text-slate-600">CEO-only toggle making a proposal invisible to all staff and admins, regardless of sharing settings.</td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Immortality Logic</td><td class="px-5 py-3 text-slate-600">Firestore rule preventing the CEO account from being deleted or downgraded by any user.</td></tr>
-        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Department Silo</td><td class="px-5 py-3 text-slate-600">Default behavior: each department can only see its own proposals. Cross-sharing must be explicitly granted.</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Department Silo</td><td class="px-5 py-3 text-slate-600">Default behavior: each department can only see its own proposals and tasks. Cross-sharing must be explicitly granted.</td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Dynamic Fields</td><td class="px-5 py-3 text-slate-600">Placeholders in templates (e.g. <code>clientName</code>, <code>clientEmail</code>) filled per proposal.</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">CEO Push-Back</td><td class="px-5 py-3 text-slate-600">CEO-initiated revision request on a sent task. Reopens the drafting loop: status → <code>revision_requested</code>, staff &amp; dept admin notified.</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Urgency Editor</td><td class="px-5 py-3 text-slate-600">Inline dropdown on any task card's urgency badge. Lets any chain member change P1/P2/P3 instantly; P1 escalation notifies CEO and resets SLA timer.</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Pipeline Bar</td><td class="px-5 py-3 text-slate-600">Visual four-stage progress indicator (Draft → Review → Talking → Sent) shown on every active task card. Turns amber during revision phases.</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Content Hash</td><td class="px-5 py-3 text-slate-600">SHA-256 hash of the proposal HTML computed at sign-time. Used to detect post-signing tampering; displayed on the CEO proposal detail page.</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Audit Seal</td><td class="px-5 py-3 text-slate-600">Immutable record written at sign-time: signer name, timestamp, IP address, and content hash. Cannot be edited after creation.</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Signed Certificate</td><td class="px-5 py-3 text-slate-600">Downloadable HTML snapshot of the signed proposal including full audit seal. Available to CEO and client after acceptance.</td></tr>
       </tbody>
     </table>
   </div>
@@ -489,7 +610,7 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
 
 <!-- Footer -->
 <div class="border-t border-slate-200 pt-8 pb-4 text-center text-xs text-slate-400">
-  ProposalMS Enterprise User Manual · 2026 · All content reflects the Command &amp; Control workflow
+  ProposalMS Enterprise User Manual · 2026 · v2 — Task Delegation, Urgency Editor, CEO Push-Back, Audit Certificates
 </div>
 
 </main>
