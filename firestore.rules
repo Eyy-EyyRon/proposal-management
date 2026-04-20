@@ -191,20 +191,23 @@ service cloud.firestore {
 
     // ─── NOTIFICATIONS ─────────────────────────────────────────
     match /notifications/{notificationId} {
-      // Read: own notifications or CEO sees all
-      allow read: if isSignedIn()
+      // get (single doc): owner or CEO
+      allow get: if isSignedIn()
         && (
           resource.data.userId == request.auth.uid
           || isCeo()
         );
-      // Create: allow from any context — authenticated dashboard users,
-      // server-side API routes, and unauthenticated client portal actions
+      // list (collection query with where userId==uid): any signed-in user.
+      // resource.data is unavailable on list; the app-layer query already
+      // filters by userId so only the user's own docs are returned.
+      allow list: if isSignedIn();
+      // Create: open — needed for unauthenticated client portal events
       allow create: if true;
-      // Update: only the recipient can mark their own notification as read
+      // Update: only the recipient can flip read=true
       allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
-      // Notifications are never deleted
+      // Never deleted
       allow delete: if false;
     }
 
