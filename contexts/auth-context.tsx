@@ -35,8 +35,9 @@ export interface UserProfile {
   department: string | null;
   avatarUrl?: string;
   jobTitle?: string;
-  fullPower?: boolean;       // true if CEO granted this admin full authority
-  delegatedCeoId?: string;   // the CEO UID this admin can act as
+  fullPower?: boolean;         // true if CEO granted this admin full authority
+  delegatedCeoId?: string;     // the CEO UID this user can act as
+  isExecutiveAdmin?: boolean;  // true for super_admin granted "Act as CEO" by CEO
   createdAt: unknown;
   updatedAt: unknown;
 }
@@ -132,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 jobTitle: data.jobTitle ?? undefined,
                 fullPower: data.fullPower ?? false,
                 delegatedCeoId: data.delegatedCeoId ?? undefined,
+                isExecutiveAdmin: data.isExecutiveAdmin ?? false,
                 createdAt: data.createdAt,
                 updatedAt: data.updatedAt,
               };
@@ -174,7 +176,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const canActAsCeo = (
     profile?.role === "ceo" ||
-    (profile?.role === "admin" && profile?.fullPower === true && !!profile?.delegatedCeoId)
+    // Dept Admin with full power
+    (profile?.role === "admin" && profile?.fullPower === true && !!profile?.delegatedCeoId) ||
+    // Super Admin granted Executive Admin authority by CEO
+    (profile?.role === "super_admin" && profile?.isExecutiveAdmin === true && !!profile?.delegatedCeoId)
   );
 
   const toggleActingAsCeo = useCallback(async () => {

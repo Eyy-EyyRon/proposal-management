@@ -10,6 +10,8 @@ import {
   subscribeToAdminTasks,
   subscribeToDeptAdminTasks,
   subscribeToDeptScopedTasks,
+  subscribeToSuperAdminTasks,
+  subscribeToVerificationQueueSuperAdmin,
   subscribeToStaffTasks,
   subscribeToVerificationQueue,
   submitTaskForReview,
@@ -33,7 +35,7 @@ function toDueMs(dueAt: unknown): number {
 
 export default function TasksPage() {
   const { user, profile } = useAuth();
-  const { isAdmin, isStaff } = useRole();
+  const { isAdmin, isStaff, isSuperAdmin } = useRole();
   const [tasks, setTasks] = useState<ProposalTask[]>([]);
   const [verificationQueue, setVerificationQueue] = useState<ProposalTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,17 @@ export default function TasksPage() {
   useEffect(() => {
     if (!user) return;
     const uid = user.uid;
+
+    if (isSuperAdmin) {
+      const unsub1 = subscribeToSuperAdminTasks((data) => {
+        setTasks(data);
+        setLoading(false);
+      });
+      const unsub2 = subscribeToVerificationQueueSuperAdmin((q) => {
+        setVerificationQueue(q);
+      });
+      return () => { unsub1(); unsub2(); };
+    }
 
     if (isAdmin) {
       const dept = profile?.department ?? "";
@@ -99,7 +112,7 @@ export default function TasksPage() {
     }
 
     setLoading(false);
-  }, [user, isAdmin, isStaff, profile?.department]);
+  }, [user, isSuperAdmin, isAdmin, isStaff, profile?.department]);
 
   // SLA breach watcher — toast when P1 within 30 min
   useEffect(() => {
@@ -137,15 +150,23 @@ export default function TasksPage() {
     [tasks]
   );
 
-  // Needs assignment (admin): drafting with incomplete chain
+  // Needs assignment (admin/super_admin): drafting with incomplete chain
   const needsAssignment = useMemo(
-    () => tasks.filter((t) =>
-      isAdmin && t.status === "drafting" && (
-        (t.adminId === user?.uid && !t.deptAdminId) ||
-        (t.deptAdminId === user?.uid && !t.assigneeId)
-      )
-    ),
-    [tasks, isAdmin, user?.uid]
+    () => tasks.filter((t) => {
+      if (t.status !== "drafting") return false;
+      if (isSuperAdmin) {
+        // Super Admin sees any task missing a deptAdmin or staff assignment
+        return !t.deptAdminId || !t.assigneeId;
+      }
+      if (isAdmin) {
+        return (
+          (t.adminId === user?.uid && !t.deptAdminId) ||
+          (t.deptAdminId === user?.uid && !t.assigneeId)
+        );
+      }
+      return false;
+    }),
+    [tasks, isSuperAdmin, isAdmin, user?.uid]
   );
 
   // In-progress tasks (not p1-pinned, not needing assignment, not in verif queue)
@@ -168,7 +189,33 @@ export default function TasksPage() {
   // ─── Action renderers ────────────────────────────────────────
 
   const renderAdminActions = (task: ProposalTask) => {
-    if (task.status === "drafting" && task.adminId === user?.uid && !task.deptAdminId) {
+    if (task.status !== "drafting") return null;
+    // Super Admin: can assign deptAdmin or staff on any task regardless of ownership
+    if (isSuperAdmin) {
+      if (!task.deptAdminId) {
+        return (
+          <button
+            onClick={() => setAssignModal({ task, level: "deptAdmin" })}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-violet-700 active:scale-95"
+          >
+            <UserPlus className="h-3.5 w-3.5" /> Assign Dept Admin
+          </button>
+        );
+      }
+      if (!task.assigneeId) {
+        return (
+          <button
+            onClick={() => setAssignModal({ task, level: "staff" })}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-violet-700 active:scale-95"
+          >
+            <UserPlus className="h-3.5 w-3.5" /> Assign Staff
+          </button>
+        );
+      }
+      return null;
+    }
+    // Dept Admin: scoped to their segment of the chain
+    if (task.adminId === user?.uid && !task.deptAdminId) {
       return (
         <button
           onClick={() => setAssignModal({ task, level: "deptAdmin" })}
@@ -178,7 +225,7 @@ export default function TasksPage() {
         </button>
       );
     }
-    if (task.status === "drafting" && task.deptAdminId === user?.uid && !task.assigneeId) {
+    if (task.deptAdminId === user?.uid && !task.assigneeId) {
       return (
         <button
           onClick={() => setAssignModal({ task, level: "staff" })}
@@ -221,7 +268,7 @@ export default function TasksPage() {
 
   return (
     <main className="flex min-h-screen flex-col">
-      <Topbar title={isAdmin ? "Task Board" : "My Tasks"} />
+      <Topbar title={isSuperAdmin ? "System Task Board" : isAdmin ? "Task Board" : "My Tasks"} />
 
       <div className="flex flex-1 flex-col gap-6 p-6">
         {/* Page header */}
@@ -229,9 +276,15 @@ export default function TasksPage() {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold text-slate-900">
-                {isAdmin ? "Task Board" : "My Tasks"}
+                {isSuperAdmin ? "System Task Board" : isAdmin ? "Task Board" : "My Tasks"}
               </h2>
-              {isAdmin && profile?.department && (
+              {isSuperAdmin && (
+                <span className="flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                  <Building2 className="h-3 w-3" />
+                  All Departments
+                </span>
+              )}
+              {isAdmin && !isSuperAdmin && profile?.department && (
                 <span className="flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
                   <Building2 className="h-3 w-3" />
                   {profile.department} Dept
@@ -239,7 +292,9 @@ export default function TasksPage() {
               )}
             </div>
             <p className="mt-0.5 text-[13px] text-slate-500">
-              {isAdmin
+              {isSuperAdmin
+                ? "System-wide oversight. Assign dept admins and staff, monitor all active tasks across departments."
+                : isAdmin
                 ? profile?.department
                   ? `You see tasks scoped to your department (${profile.department}). Route, verify, and escalate.`
                   : "Route, verify, and escalate delegated proposals. CEO never sees unverified work."
@@ -247,7 +302,7 @@ export default function TasksPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {isAdmin && verificationQueue.length > 0 && (
+            {(isAdmin || isSuperAdmin) && verificationQueue.length > 0 && (
               <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-[12px] font-bold text-emerald-700 ring-1 ring-emerald-200">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {verificationQueue.length} pending verification
@@ -270,7 +325,7 @@ export default function TasksPage() {
           <div className="space-y-8">
 
             {/* ── P1 CRITICAL PINNED SECTION ── */}
-            {isAdmin && p1Critical.length > 0 && (
+            {(isAdmin || isSuperAdmin) && p1Critical.length > 0 && (
               <section className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Pin className="h-4 w-4 text-rose-500" />
@@ -284,15 +339,15 @@ export default function TasksPage() {
                   {p1Critical.map((task) => (
                     <div key={task.id} className="relative">
                       <div className="pointer-events-none absolute inset-0 rounded-xl ring-2 ring-rose-400 ring-offset-1 animate-pulse" />
-                      <TaskCard task={task} actions={isAdmin ? renderAdminActions(task) : renderStaffActions(task)} />
+                      <TaskCard task={task} actions={(isAdmin || isSuperAdmin) ? renderAdminActions(task) : renderStaffActions(task)} />
                     </div>
                   ))}
                 </div>
               </section>
             )}
 
-            {/* ── VERIFICATION QUEUE (Dept Admin) ── */}
-            {isAdmin && verificationQueue.length > 0 && (
+            {/* ── VERIFICATION QUEUE (Dept Admin / Super Admin) ── */}
+            {(isAdmin || isSuperAdmin) && verificationQueue.length > 0 && (
               <section>
                 <div className="mb-3 flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-emerald-600" />
@@ -301,7 +356,7 @@ export default function TasksPage() {
                     {verificationQueue.length}
                   </span>
                   <span className="ml-auto text-[11px] text-slate-400">
-                    Dept-locked · Only {profile?.department ?? "your dept"} proposals
+                    {isSuperAdmin ? "All departments" : `Dept-locked · Only ${profile?.department ?? "your dept"} proposals`}
                   </span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -312,8 +367,8 @@ export default function TasksPage() {
               </section>
             )}
 
-            {/* ── NEEDS ASSIGNMENT (Admin routing) ── */}
-            {isAdmin && needsAssignment.length > 0 && (
+            {/* ── NEEDS ASSIGNMENT (Admin / Super Admin routing) ── */}
+            {(isAdmin || isSuperAdmin) && needsAssignment.length > 0 && (
               <section>
                 <div className="mb-3 flex items-center gap-2">
                   <UserPlus className="h-4 w-4 text-violet-500" />
@@ -363,7 +418,7 @@ export default function TasksPage() {
                     <TaskCard
                       key={task.id}
                       task={task}
-                      actions={isAdmin ? renderAdminActions(task) : renderStaffActions(task)}
+                      actions={(isAdmin || isSuperAdmin) ? renderAdminActions(task) : renderStaffActions(task)}
                     />
                   ))}
                 </div>

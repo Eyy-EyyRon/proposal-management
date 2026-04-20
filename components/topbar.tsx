@@ -143,8 +143,8 @@ export function Topbar({ title }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Acting-as-CEO toggle (only for CEO or fullPower Admin) */}
-        {canActAsCeo && profile?.role === "admin" && (
+        {/* Acting-as-CEO toggle — for fullPower Dept Admin or Executive Super Admin */}
+        {canActAsCeo && (profile?.role === "admin" || profile?.role === "super_admin") && (
           <button
             onClick={handleToggleActingAsCeo}
             className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition ${

@@ -18,7 +18,7 @@ import {
   URGENCY_META,
   URGENCY_SLA,
 } from "@/lib/firestore";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/auth-context";
 import { toast } from "@/components/providers/toast";
 
 interface CreateTaskModalProps {
@@ -67,6 +67,7 @@ export function CreateTaskModal({
   prefillDepartment,
 }: CreateTaskModalProps) {
   const { user, profile } = useAuth();
+  const { isSuperAdmin } = useRole();
   const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [saving, setSaving] = useState(false);
@@ -167,7 +168,7 @@ export function CreateTaskModal({
   const handleSubmit = async () => {
     if (!user || !profile) return;
     const selectedTemplate = templates.find((t) => t.id === templateId);
-    const requesterName = `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() || "CEO";
+    const requesterName = `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() || (isSuperAdmin ? "Super Admin" : "CEO");
     const selectedAdmin = admins.find((a) => a.id === selectedAdminId);
     const assignedAdminId = selectedAdmin?.id ?? user.uid;
     const assignedAdminName = selectedAdmin

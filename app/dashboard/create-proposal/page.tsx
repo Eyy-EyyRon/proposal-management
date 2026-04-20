@@ -8,7 +8,7 @@ import {
   ArrowLeft, Check, Copy, ExternalLink, Loader2, Mail, 
   Crown, User, Shield
 } from "lucide-react";
-import { useAuth, useRole } from "@/contexts/auth-context";
+import { useAuth, useRole, useActingAsCeo } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import { 
   getUserTemplates, getAllTemplates, createProposal, getOrgSettings, getAvailableIdentities,
@@ -19,6 +19,7 @@ import {
 export default function CreateProposalPage() {
   const { user, profile } = useAuth();
   const { role } = useRole();
+  const { actingAsCeo, ceoId: delegatedCeoId } = useActingAsCeo();
   
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
@@ -88,9 +89,11 @@ export default function CreateProposalPage() {
         }) ?? ""] || "";
 
       // Determine owner and sender based on identity selection
-      const isSendingOnBehalf = selectedIdentity !== "self" && availableIdentities.length > 0;
-      const ownerId = isSendingOnBehalf ? selectedIdentity : user.uid;
+      // When actingAsCeo, ownerId = CEO UID, actorId = Super Admin's own UID
+      const isSendingOnBehalf = (actingAsCeo && !!delegatedCeoId) || (selectedIdentity !== "self" && availableIdentities.length > 0);
+      const ownerId = actingAsCeo && delegatedCeoId ? delegatedCeoId : (isSendingOnBehalf ? selectedIdentity : user.uid);
       const sentById = user.uid;
+      const actorId = isSendingOnBehalf ? user.uid : undefined;
 
       // Delegation revocation check (Scenario 2)
       if (isSendingOnBehalf) {
@@ -112,6 +115,7 @@ export default function CreateProposalPage() {
       await createProposal(proposalId, {
         ownerId,
         sentById,
+        actorId,
         isDelegated: isSendingOnBehalf,
         department: profile?.department ?? "Sales",
         templateId: data.templateId,

@@ -182,9 +182,10 @@ export type ProposalType = "direct" | "tasked"; // direct = normal send; tasked 
 export interface Proposal {
   id: string;
   // Delegated Authority fields
-  ownerId: string; // The UID of the identity used (e.g., CEO) - for branding/signatures
-  sentById: string; // The UID of the actual person who created/sent the doc
-  isDelegated: boolean; // Flag to indicate if it was sent on behalf of another
+  ownerId: string;    // The UID of the identity used (e.g., CEO) — for branding/signatures
+  sentById: string;   // The UID of the actual person who triggered the send
+  actorId?: string;   // The UID of the real human who made the write (when actingAsCeo, actorId !== ownerId)
+  isDelegated: boolean; // true when actorId differs from ownerId
   // Original field (deprecated, use ownerId/sentById)
   userId: string;
   department: string;
@@ -379,6 +380,7 @@ export async function createProposal(
   data: {
     ownerId: string;
     sentById: string;
+    actorId?: string;  // real writer UID when actingAsCeo; omit if actor === owner
     isDelegated: boolean;
     department: string;
     templateId: string;
@@ -406,6 +408,7 @@ export async function createProposal(
     // Delegated Authority fields
     ownerId: data.ownerId,
     sentById: data.sentById,
+    actorId: data.actorId ?? data.sentById,
     isDelegated: data.isDelegated,
     // Legacy field for backward compatibility
     userId: data.ownerId,
@@ -1392,7 +1395,9 @@ export async function updateDelegationSettings(
   await Promise.all(batchUpdates);
 }
 
-// Update CEO's Level 2 (Full Authority / Executive Admin) settings
+// Update CEO's Level 2 (Full Authority / Executive Admin) settings.
+// Sets isExecutiveAdmin + fullPower + delegatedCeoId on each granted user so
+// toggleActingAsCeo works for both "admin" and "super_admin" roles.
 export async function updateExecutiveAdminSettings(
   ceoId: string,
   executiveAdminIds: string[]
@@ -1414,6 +1419,9 @@ export async function updateExecutiveAdminSettings(
       batchUpdates.push(
         updateDoc(doc(db, "users", userId), {
           isExecutiveAdmin: isExec,
+          // These two fields power toggleActingAsCeo for both admin and super_admin
+          fullPower: isExec,
+          delegatedCeoId: isExec ? ceoId : null,
           updatedAt: serverTimestamp(),
         })
       );
@@ -2345,11 +2353,12 @@ export interface ProposalTask {
   id: string;
   proposalId: string | null;   // null until a draft is created
   // The chain
-  requesterId: string;          // CEO who initiated
+  requesterId: string;          // The user who created the task (CEO or Super Admin)
   requesterName: string;
-  adminId?: string;             // General Admin who received from CEO
+  ceoId?: string;               // The CEO to notify on ready_to_send (if Super Admin created task)
+  adminId?: string;             // Dept Admin who received from requester
   adminName?: string;
-  deptAdminId?: string;         // Dept Admin who received from General Admin
+  deptAdminId?: string;         // Dept Admin assigned for verification
   deptAdminName?: string;
   assigneeId?: string;          // Staff who builds the draft
   assigneeName?: string;
@@ -2378,6 +2387,7 @@ export interface ProposalTask {
 export async function createTask(data: {
   requesterId: string;
   requesterName: string;
+  ceoId?: string;               // Set when a Super Admin creates the task on behalf of CEO oversight
   adminId: string;
   adminName: string;
   department: string;
@@ -2396,6 +2406,7 @@ export async function createTask(data: {
     proposalId: null,
     requesterId: data.requesterId,
     requesterName: data.requesterName,
+    ceoId: data.ceoId ?? null,
     adminId: data.adminId,
     adminName: data.adminName,
     deptAdminId: null,
@@ -2587,18 +2598,23 @@ export async function verifyAndPromoteTask(
     }],
   });
 
-  // Notify the CEO that a proposal is ready for the Talking Inbox
-  const ceoId = task.requesterId as string;
-  if (ceoId) {
+  // Notify the CEO. If ceoId is stored (future use), prefer it; otherwise use requesterId.
+  // Also always notify the requester (Super Admin) if they differ from ceoId.
+  const ceoNotifyId = (task.ceoId || task.requesterId) as string;
+  const requesterId = task.requesterId as string;
+  const notifyIds = new Set<string>([ceoNotifyId]);
+  if (requesterId) notifyIds.add(requesterId);
+
+  notifyIds.forEach((uid) => {
     fireTaskNotification({
       taskId,
       event: "task_ready",
-      targetUserId: ceoId,
+      targetUserId: uid,
       clientName: task.clientName as string,
       urgency: task.urgency as string,
       senderName: adminName,
     });
-  }
+  });
 }
 
 // ─── MARK TASK SENT (CEO sends the proposal) ────────────────
@@ -2650,6 +2666,34 @@ export async function cancelTask(
 }
 
 // ─── SUBSCRIPTIONS ──────────────────────────────────────────
+
+// Super Admin: all tasks across the system for oversight
+export function subscribeToSuperAdminTasks(
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("status", "in", ["drafting", "verifying", "revision_requested", "ready_to_send"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// Super Admin: verification queue — all depts (broad oversight)
+export function subscribeToVerificationQueueSuperAdmin(
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("status", "==", "verifying"),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
 
 // CEO: tasks that are ready_to_send (the "Talking Inbox")
 export function subscribeToReadyToSendTasks(

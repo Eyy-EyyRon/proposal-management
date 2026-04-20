@@ -120,6 +120,15 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["departments", "department", "updatedAt"])
           )
+          ||
+          // CEO: can write delegation authority fields on any non-CEO user
+          // (covers updateExecutiveAdminSettings — fullPower, delegatedCeoId, isExecutiveAdmin)
+          (
+            isCeo()
+            && !isRootCeo(userId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["isExecutiveAdmin", "fullPower", "delegatedCeoId", "updatedAt"])
+          )
         );
 
       // ── IMMORTALITY RULE ──────────────────────────────────────────────
@@ -404,10 +413,10 @@ service cloud.firestore {
 
     // ─── TASKS (Tiered Delegation & Verification) ──────────────
     match /tasks/{taskId} {
-      // Read: anyone in the task chain (requester, admin, deptAdmin, assignee) or CEO
+      // Read: anyone in the task chain (requester, admin, deptAdmin, assignee), CEO, or Super Admin
       allow read: if isSignedIn()
         && (
-          isCeo()
+          isSuperAdmin()  // Super Admin has system-wide oversight
           || resource.data.requesterId == request.auth.uid
           || resource.data.adminId == request.auth.uid
           || resource.data.deptAdminId == request.auth.uid
@@ -417,10 +426,11 @@ service cloud.firestore {
       // List: signed-in users (app filters by role; rules can't filter "in" on list)
       allow list: if isSignedIn();
 
-      // Create: CEO, super_admin, or admin can create a task
+      // Create: CEO, Super Admin, or Dept Admin can initiate a task
       allow create: if isSignedIn()
         && (isSuperAdmin() || isAdmin())
-        && request.resource.data.status == "drafting";
+        && request.resource.data.status == "drafting"
+        && request.resource.data.requesterId == request.auth.uid;
 
       // Update: depends on the transition
       allow update: if isSignedIn()
@@ -428,10 +438,13 @@ service cloud.firestore {
           // CEO can update any task
           isCeo()
           ||
-          // Admin assigned to the task can assign dept admin / staff
+          // Super Admin: can assign dept admin / staff on tasks they created or any task
+          isSuperAdmin()
+          ||
+          // Dept Admin (admin role) assigned as adminId can assign deptAdmin / staff
           (resource.data.adminId == request.auth.uid && isAdmin())
           ||
-          // Dept Admin can verify/request-changes for tasks in their department
+          // Dept Admin assigned as deptAdminId: verify / request-changes only
           (
             resource.data.deptAdminId == request.auth.uid
             && isAdmin()
