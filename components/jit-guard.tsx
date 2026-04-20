@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ShieldAlert, X, AlertTriangle, Loader2 } from "lucide-react";
-import { useIsElevated, useElevation } from "@/contexts/auth-context";
+import { ShieldAlert, X, AlertTriangle, Loader2, Lock } from "lucide-react";
+import { useIsElevated, useIsCriticallyElevated, useElevation } from "@/contexts/auth-context";
+
+const MIN_REASON_LENGTH = 10;
 
 interface JITGuardProps {
   children: (props: { trigger: (action: () => Promise<void> | void) => void }) => ReactNode;
   actionLabel?: string;
   requiresElevation?: boolean;
+  requiresCritical?: boolean;
   onElevationNeeded?: () => void;
 }
 
@@ -15,17 +18,21 @@ export function JITGuard({
   children,
   actionLabel = "this action",
   requiresElevation = true,
+  requiresCritical = false,
   onElevationNeeded,
 }: JITGuardProps) {
   const isElevated = useIsElevated();
+  const isCriticallyElevated = useIsCriticallyElevated();
   const { elevation } = useElevation();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState<(() => Promise<void> | void) | null>(null);
   const [executing, setExecuting] = useState(false);
 
+  const hasRequiredElevation = requiresCritical ? isCriticallyElevated : isElevated;
+
   const trigger = (action: () => Promise<void> | void) => {
-    if (requiresElevation && !isElevated) {
+    if (requiresElevation && !hasRequiredElevation) {
       onElevationNeeded?.();
       return;
     }
@@ -35,7 +42,7 @@ export function JITGuard({
   };
 
   const handleConfirm = async () => {
-    if (!reason.trim() || !pending) return;
+    if (reason.trim().length < MIN_REASON_LENGTH || !pending) return;
     setExecuting(true);
     try {
       await pending();
@@ -53,6 +60,28 @@ export function JITGuard({
     setPending(null);
     setReason("");
   };
+
+  // Locked state — wrap children with a visual lock overlay
+  if (requiresElevation && !hasRequiredElevation) {
+    return (
+      <div className="relative inline-flex">
+        <div className="pointer-events-none select-none opacity-40 grayscale">
+          {children({ trigger: () => {} })}
+        </div>
+        <button
+          type="button"
+          onClick={() => onElevationNeeded?.()}
+          title={requiresCritical ? "Requires Critical Elevation (CEO approval)" : "Requires Elevation — click to request access"}
+          className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg transition hover:bg-slate-900/10 focus:outline-none focus:ring-2 focus:ring-orange-400/60"
+        >
+          <span className="flex items-center gap-1 rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-bold text-white shadow">
+            <Lock className="h-2.5 w-2.5" />
+            {requiresCritical ? "Critical" : "Elevate"}
+          </span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -105,15 +134,27 @@ export function JITGuard({
               <div>
                 <label className="mb-1.5 block text-[12px] font-medium text-slate-700">
                   Reason for action <span className="text-rose-500">*</span>
+                  <span className="ml-1 text-[11px] font-normal text-slate-400">(min {MIN_REASON_LENGTH} characters)</span>
                 </label>
                 <textarea
                   autoFocus
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   rows={3}
-                  placeholder={`e.g., Ticket #1234 — removing ex-employee account per HR request`}
+                  placeholder="e.g., Ticket #1234 — removing ex-employee account per HR request"
                   className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-300/40"
                 />
+                <div className="mt-1 flex items-center justify-between">
+                  <span className={`text-[11px] ${
+                    reason.trim().length === 0 ? "text-slate-400" :
+                    reason.trim().length < MIN_REASON_LENGTH ? "text-rose-500" : "text-emerald-600"
+                  }`}>
+                    {reason.trim().length < MIN_REASON_LENGTH
+                      ? `${MIN_REASON_LENGTH - reason.trim().length} more character${MIN_REASON_LENGTH - reason.trim().length !== 1 ? "s" : ""} required`
+                      : "✓ Reason accepted"}
+                  </span>
+                  <span className="text-[11px] text-slate-400">{reason.trim().length} / {MIN_REASON_LENGTH}+</span>
+                </div>
               </div>
             </div>
 
@@ -127,7 +168,7 @@ export function JITGuard({
               </button>
               <button
                 onClick={handleConfirm}
-                disabled={executing || !reason.trim()}
+                disabled={executing || reason.trim().length < MIN_REASON_LENGTH}
                 className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-rose-700 disabled:opacity-50 active:scale-95"
               >
                 {executing ? (
