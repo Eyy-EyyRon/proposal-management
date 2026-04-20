@@ -11,7 +11,9 @@ import {
   Search,
   Trash2,
   MoreHorizontal,
+  Lock,
 } from "lucide-react";
+import { useIsElevated } from "@/contexts/auth-context";
 import {
   subscribeToDepartmentsList,
   subscribeToAllUsers,
@@ -24,6 +26,7 @@ import {
 type ViewMode = "grid" | "detail";
 
 export default function DepartmentsPage() {
+  const isElevated = useIsElevated();
   const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
   const [users, setUsers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +85,10 @@ export default function DepartmentsPage() {
   };
 
   const handleDeleteDepartment = async (id: string) => {
+    if (!isElevated) {
+      alert("Elevation required. Go to Settings → Security to request temporary elevated access.");
+      return;
+    }
     if (!confirm("Delete this department? Users will need to be reassigned.")) return;
     setDeleting(id);
     try {
@@ -194,12 +201,19 @@ export default function DepartmentsPage() {
                           handleDeleteDepartment(dept.id);
                         }}
                         disabled={deleting === dept.id}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 opacity-0 transition-all group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-500"
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg opacity-0 transition-all group-hover:opacity-100 ${
+                          isElevated
+                            ? "text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                            : "cursor-not-allowed text-slate-300 hover:bg-slate-50 hover:text-slate-400"
+                        }`}
+                        title={isElevated ? "Delete department" : "Requires elevation — go to Settings → Security"}
                       >
                         {deleting === dept.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
+                        ) : isElevated ? (
                           <Trash2 className="h-4 w-4" />
+                        ) : (
+                          <Lock className="h-4 w-4" />
                         )}
                       </button>
                     </div>

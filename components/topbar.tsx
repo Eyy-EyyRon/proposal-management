@@ -48,7 +48,7 @@ export function Topbar({ title }: TopbarProps) {
   const { user, profile } = useAuth();
   const { role } = useRole();
   const { actingAsCeo, toggleActingAsCeo, canActAsCeo } = useActingAsCeo();
-  const { isElevated, elevationExpiresAt, revokeElevation: endElevation, elevationCountdown } = useElevation();
+  const { isElevated, revokeElevation: endElevation, elevationCountdown } = useElevation();
 
   const initials = profile
     ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
@@ -98,21 +98,25 @@ export function Topbar({ title }: TopbarProps) {
 
   return (
     <div>
-      {/* JIT Elevation Active Banner */}
+      {/* JIT Elevation Active Banner — pulsing orange */}
       {isElevated && (
-        <div className="flex items-center justify-between border-b border-rose-300 bg-gradient-to-r from-rose-500 to-rose-600 px-6 py-1.5">
-          <div className="flex items-center gap-2">
-            <Lock className="h-4 w-4 text-rose-100" />
-            <span className="text-[12px] font-semibold text-white">
-              Elevated Privileges Active
+        <div className="flex items-center justify-between border-b border-orange-300 bg-gradient-to-r from-orange-400 to-amber-400 px-6 py-1.5">
+          <div className="flex items-center gap-2.5">
+            {/* Pulsing dot */}
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
             </span>
-            <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium text-white">
+            <span className="text-[12px] font-bold text-orange-950">
+              Active Admin Mode
+            </span>
+            <span className="rounded-full bg-orange-900/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-orange-950">
               {elevationCountdown} remaining
             </span>
           </div>
           <button
             onClick={() => endElevation("self")}
-            className="text-[11px] font-semibold text-rose-100 underline-offset-2 hover:underline"
+            className="text-[11px] font-semibold text-orange-900 underline-offset-2 hover:underline"
           >
             Revoke Now
           </button>

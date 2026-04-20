@@ -185,8 +185,13 @@ export default function TeamManagementPage() {
 
       await setUserDepartments(selectedUser.id, selectedDepartments, departmentId);
 
-      // Only update role if it changed (and user is not CEO)
+      // Role change is a destructive action — requires elevation
       if (selectedRole !== selectedUser.role && selectedUser.role !== "ceo") {
+        if (!isElevated) {
+          alert("Role changes require elevation. Go to Settings \u2192 Security to request temporary elevated access.");
+          setSaving(false);
+          return;
+        }
         await setUserRole(selectedUser.id, selectedRole);
       }
 
@@ -451,23 +456,35 @@ export default function TeamManagementPage() {
             {/* Role picker */}
             {selectedUser.role !== "ceo" && (
               <div className="mb-5">
-                <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
+                <div className="mb-2 flex items-center gap-2">
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
+                  {!isElevated && (
+                    <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+                      <Lock className="h-2.5 w-2.5" /> Elevation required to change
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   {(["staff", "admin", "super_admin"] as const).map((r) => {
                     const labels: Record<string, string> = { staff: "Staff", admin: "Dept Admin", super_admin: "Super Admin" };
+                    const isCurrentRole = r === selectedUser.role;
+                    const isSelected = selectedRole === r;
+                    const canChange = isElevated || isCurrentRole;
                     const colors: Record<string, string> = {
-                      staff: selectedRole === r ? "border-slate-500 bg-slate-50 text-slate-700" : "border-slate-200 text-slate-500",
-                      admin: selectedRole === r ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500",
-                      super_admin: selectedRole === r ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-500",
+                      staff: isSelected ? "border-slate-500 bg-slate-50 text-slate-700" : "border-slate-200 text-slate-400",
+                      admin: isSelected ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-400",
+                      super_admin: isSelected ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-400",
                     };
                     return (
                       <button
                         key={r}
-                        onClick={() => setSelectedRole(r)}
-                        className={`rounded-lg border px-3 py-2 text-[12px] font-medium transition ${colors[r]}`}
+                        onClick={() => canChange && setSelectedRole(r)}
+                        disabled={!canChange}
+                        title={!canChange ? "Requires elevation to change role" : undefined}
+                        className={`rounded-lg border px-3 py-2 text-[12px] font-medium transition ${colors[r]} ${!canChange && !isSelected ? "cursor-not-allowed opacity-50" : ""}`}
                       >
                         {labels[r]}
-                        {selectedRole === r && <Check className="ml-1 inline h-3 w-3" />}
+                        {isSelected && <Check className="ml-1 inline h-3 w-3" />}
                       </button>
                     );
                   })}
