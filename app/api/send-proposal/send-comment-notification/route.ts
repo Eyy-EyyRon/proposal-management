@@ -161,12 +161,15 @@ export async function POST(req: NextRequest) {
         }).then(() => {})
       );
 
-      // Create in-app notification
+      // Create in-app notification — top-level collection, keyed by userId
       notifications.push(
-        addDoc(collection(db, "users", userId, "notifications"), {
-          type: "viewed", // Using viewed as the closest match for client activity
+        addDoc(collection(db, "notifications"), {
+          userId,
+          type: "commented",
           message: `${clientName} commented on "${proposalTitle}"${isCeo ? " (on your behalf)" : ""}`,
           proposalId,
+          actorRole: "client",
+          actorName: clientName,
           read: false,
           createdAt: serverTimestamp(),
         }).then(() => {})

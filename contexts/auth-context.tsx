@@ -2,14 +2,16 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
   type ReactNode,
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { writeAuditLog } from "@/lib/firestore";
 
 // ─── TYPES ───────────────────────────────────────────────────
 export type UserRole = "staff" | "admin" | "ceo";
@@ -33,6 +35,8 @@ export interface UserProfile {
   department: string | null;
   avatarUrl?: string;
   jobTitle?: string;
+  fullPower?: boolean;       // true if CEO granted this admin full authority
+  delegatedCeoId?: string;   // the CEO UID this admin can act as
   createdAt: unknown;
   updatedAt: unknown;
 }
@@ -44,7 +48,14 @@ interface AuthContextValue {
   loading: boolean;
 }
 
-// ─── CONTEXT ─────────────────────────────────────────────────
+interface ActingAsCeoContextValue {
+  actingAsCeo: boolean;
+  ceoId: string | null;
+  toggleActingAsCeo: () => Promise<void>;
+  canActAsCeo: boolean;   // true for CEO or fullPower Admin
+}
+
+// ─── CONTEXTS ────────────────────────────────────────────────
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   profile: null,
@@ -52,17 +63,29 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
 });
 
+const ActingAsCeoContext = createContext<ActingAsCeoContextValue>({
+  actingAsCeo: false,
+  ceoId: null,
+  toggleActingAsCeo: async () => {},
+  canActAsCeo: false,
+});
+
 export function useAuth() {
   return useContext(AuthContext);
 }
 
+export function useActingAsCeo() {
+  return useContext(ActingAsCeoContext);
+}
+
 export function useRole() {
   const { role } = useContext(AuthContext);
+  const { actingAsCeo } = useContext(ActingAsCeoContext);
   return {
     role,
     isStaff: role === "staff",
     isAdmin: role === "admin",
-    isCeo: role === "ceo",
+    isCeo: role === "ceo" || actingAsCeo,
     isAtLeast: (minRole: UserRole) => {
       const order: Record<UserRole, number> = { staff: 0, admin: 1, ceo: 2 };
       return order[role] >= order[minRole];
@@ -75,6 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actingAsCeo, setActingAsCeo] = useState(false);
+  const [ceoId, setCeoId] = useState<string | null>(null);
 
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
@@ -95,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           (snap) => {
             if (snap.exists()) {
               const data = snap.data();
-              setProfile({
+              const newProfile: UserProfile = {
                 email: data.email ?? "",
                 firstName: data.firstName ?? "",
                 lastName: data.lastName ?? "",
@@ -104,9 +129,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 department: data.department ?? null,
                 avatarUrl: data.avatarUrl ?? undefined,
                 jobTitle: data.jobTitle ?? undefined,
+                fullPower: data.fullPower ?? false,
+                delegatedCeoId: data.delegatedCeoId ?? undefined,
                 createdAt: data.createdAt,
                 updatedAt: data.updatedAt,
-              });
+              };
+              setProfile(newProfile);
             } else {
               // User doc not yet created (e.g. just registered)
               setProfile(null);
@@ -143,12 +171,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const value: AuthContextValue = {
+  const canActAsCeo = (
+    profile?.role === "ceo" ||
+    (profile?.role === "admin" && profile?.fullPower === true && !!profile?.delegatedCeoId)
+  );
+
+  const toggleActingAsCeo = useCallback(async () => {
+    if (!user || !profile) return;
+    if (!canActAsCeo) return;
+    const next = !actingAsCeo;
+    // For CEO, ceoId is their own UID; for fullPower admin, it's the delegatedCeoId
+    const resolvedCeoId = profile.role === "ceo" ? user.uid : (profile.delegatedCeoId ?? null);
+    // Fetch ceo name for audit
+    let ceoName = "CEO";
+    if (resolvedCeoId && resolvedCeoId !== user.uid) {
+      try {
+        const ceoSnap = await getDoc(doc(db, "users", resolvedCeoId));
+        if (ceoSnap.exists()) {
+          const d = ceoSnap.data();
+          ceoName = `${d.firstName ?? ""} ${d.lastName ?? ""}`.trim() || ceoName;
+        }
+      } catch { /* non-critical */ }
+    }
+    setActingAsCeo(next);
+    setCeoId(next ? resolvedCeoId : null);
+    await writeAuditLog({
+      action: "identity_switched",
+      actorId: user.uid,
+      actorName: `${profile.firstName} ${profile.lastName}`,
+      actorRole: profile.role,
+      description: next
+        ? `${profile.firstName} ${profile.lastName} activated CEO identity (acting as ${ceoName})`
+        : `${profile.firstName} ${profile.lastName} deactivated CEO identity`,
+      actingAsCeo: next,
+      metadata: { ceoId: resolvedCeoId },
+    });
+  }, [user, profile, actingAsCeo, canActAsCeo]);
+
+  const authValue: AuthContextValue = {
     user,
     profile,
     role: profile?.role ?? "staff",
     loading,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const actingValue: ActingAsCeoContextValue = {
+    actingAsCeo,
+    ceoId,
+    toggleActingAsCeo,
+    canActAsCeo,
+  };
+
+  return (
+    <AuthContext.Provider value={authValue}>
+      <ActingAsCeoContext.Provider value={actingValue}>
+        {children}
+      </ActingAsCeoContext.Provider>
+    </AuthContext.Provider>
+  );
 }

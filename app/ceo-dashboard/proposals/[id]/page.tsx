@@ -148,7 +148,7 @@ export default function CeoProposalDetailPage() {
           quote: activeQuote || null,
           ceoName: `${profile.firstName} ${profile.lastName}`,
         }),
-      }).catch(console.error);
+      }).catch(() => {});
 
       // Also notify the staff sender if different from the CEO (Scenario 9)
       if (proposal.sentById && proposal.sentById !== user.uid) {
@@ -163,7 +163,7 @@ export default function CeoProposalDetailPage() {
             staffId: proposal.sentById,
             ownerId: proposal.ownerId,
           }),
-        }).catch(console.error);
+        }).catch(() => {});
       }
 
       setNewComment("");

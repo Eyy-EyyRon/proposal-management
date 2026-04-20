@@ -6,9 +6,11 @@ import {
   limit,
   onSnapshot,
   doc,
+  addDoc,
   updateDoc,
   writeBatch,
   getDocs,
+  serverTimestamp,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -95,4 +97,44 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
   const batch = writeBatch(db);
   snap.docs.forEach((d) => batch.update(d.ref, { read: true }));
   await batch.commit();
+}
+
+// ─── CREATE IN-APP NOTIFICATION ─────────────────────────────
+// Writes to the TOP-LEVEL notifications collection.
+// subscribeToNotifications() filters by userId — this must match.
+export async function createInAppNotification(payload: {
+  userId: string;
+  type: NotificationType;
+  message: string;
+  proposalId?: string;
+  department?: string;
+  actorRole?: AppNotification["actorRole"];
+  actorName?: string;
+}): Promise<void> {
+  await addDoc(collection(db, "notifications"), {
+    userId: payload.userId,
+    type: payload.type,
+    message: payload.message,
+    proposalId: payload.proposalId ?? null,
+    department: payload.department ?? null,
+    actorRole: payload.actorRole ?? null,
+    actorName: payload.actorName ?? null,
+    read: false,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// ─── BATCH NOTIFY MULTIPLE USERS ────────────────────────────
+// Notifies owner + sender in one call, deduplicating if they are the same person.
+export async function notifyProposalStakeholders(
+  ownerUserId: string,
+  senderUserId: string,
+  payload: Omit<Parameters<typeof createInAppNotification>[0], "userId">
+): Promise<void> {
+  const targets = new Set<string>([ownerUserId, senderUserId].filter(Boolean));
+  await Promise.all(
+    Array.from(targets).map((uid) =>
+      createInAppNotification({ ...payload, userId: uid })
+    )
+  );
 }

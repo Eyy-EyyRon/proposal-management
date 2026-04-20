@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export const dynamic = 'force-dynamic';
 
@@ -21,8 +23,8 @@ export async function POST(req: NextRequest) {
       clientName,
       clientEmail,
       signatureUrl,
-      staffEmails,
-      ceoEmail,
+      ownerUserId,   // UID of the identity owner (CEO)
+      senderUserId,  // UID of the actual sender (Staff/Admin)
       version,
     } = body as {
       proposalId: string;
@@ -30,14 +32,39 @@ export async function POST(req: NextRequest) {
       clientName: string;
       clientEmail: string;
       signatureUrl: string;
-      staffEmails: string[];
-      ceoEmail?: string;
+      ownerUserId: string;
+      senderUserId: string;
       version: number;
     };
 
     if (!proposalId || !clientEmail) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
+
+    // Resolve UIDs → email addresses from Firestore
+    const resolveUser = async (uid: string): Promise<{ email: string; name: string } | null> => {
+      if (!uid) return null;
+      try {
+        const snap = await getDoc(doc(db, "users", uid));
+        if (!snap.exists()) return null;
+        const d = snap.data();
+        return {
+          email: d.email || "",
+          name: `${d.firstName || ""} ${d.lastName || ""}`.trim() || d.email || "",
+        };
+      } catch { return null; }
+    };
+
+    const [ownerUser, senderUser] = await Promise.all([
+      resolveUser(ownerUserId),
+      resolveUser(senderUserId),
+    ]);
+
+    // Deduplicate staff emails (owner + sender, skip if same)
+    const staffEmailMap = new Map<string, string>();
+    if (ownerUser?.email) staffEmailMap.set(ownerUserId, ownerUser.email);
+    if (senderUser?.email) staffEmailMap.set(senderUserId, senderUser.email);
+    const staffEmails = Array.from(staffEmailMap.values());
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const proposalUrl = `${appUrl}/p/${proposalId}`;
@@ -131,8 +158,8 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    // Send to staff who sent the proposal
-    if (staffEmails && staffEmails.length > 0) {
+    // Send to all staff (owner + sender, already deduplicated)
+    if (staffEmails.length > 0) {
       emails.push(
         resend.emails.send({
           from: `Hyacinth Proposal System <${fromAddress}>`,
@@ -143,23 +170,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Send to CEO if different from staff
-    if (ceoEmail && !staffEmails?.includes(ceoEmail)) {
-      emails.push(
-        resend.emails.send({
-          from: `Hyacinth Proposal System <${fromAddress}>`,
-          to: [ceoEmail],
-          subject: `✍️ Proposal signed by client - ${proposalTitle} (v${version})`,
-          html: createEmailHtml("ceo"),
-        })
-      );
-    }
-
     await Promise.all(emails);
+
+    // Write in-app signed notifications for owner + sender (deduplicated)
+    const notifyUids = new Set<string>([ownerUserId, senderUserId].filter(Boolean));
+    await Promise.all(
+      Array.from(notifyUids).map((uid) =>
+        addDoc(collection(db, "notifications"), {
+          userId: uid,
+          type: "signed",
+          message: `${clientName} signed "${proposalTitle}" (v${version})`,
+          proposalId,
+          actorRole: "client",
+          actorName: clientName,
+          read: false,
+          createdAt: serverTimestamp(),
+        })
+      )
+    );
 
     return NextResponse.json({ 
       success: true,
-      notified: [clientEmail, ...(staffEmails || []), ...(ceoEmail ? [ceoEmail] : [])].filter(Boolean)
+      notified: [clientEmail, ...staffEmails].filter(Boolean),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";

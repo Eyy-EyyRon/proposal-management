@@ -155,7 +155,7 @@ export interface Proposal {
   // Template snapshot — deep copy stored at creation time (Scenario 13)
   templateSnapshot?: {
     fields: Array<{ id: string; name: string; type: string; required: boolean }>;
-    description?: string;
+    description?: string | null;
   } | null;
   clientName: string;
   clientEmail: string;
@@ -189,7 +189,7 @@ export async function createProposal(
     templateName: string;
     templateFileUrl?: string | null;
     templateGdocUrl?: string | null;
-    templateSnapshot?: { fields: Array<{ id: string; name: string; type: string; required: boolean }>; description?: string } | null;
+    templateSnapshot?: { fields: Array<{ id: string; name: string; type: string; required: boolean }>; description?: string | null } | null;
     clientName: string;
     clientEmail: string;
     fieldValues: Record<string, string>;
@@ -259,7 +259,7 @@ export async function createProposalRevision(
     templateGdocUrl?: string | null;
     templateId?: string;
     templateName?: string;
-    templateSnapshot?: { fields: Array<{ id: string; name: string; type: string; required: boolean }>; description?: string } | null;
+    templateSnapshot?: { fields: Array<{ id: string; name: string; type: string; required: boolean }>; description?: string | null } | null;
   }
 ): Promise<void> {
   const newVersionNum = (currentProposal.version || 1) + 1;
@@ -1083,4 +1083,183 @@ export function subscribeToGlobalStats(
       if (error.code !== "permission-denied") console.error(error);
     }
   );
+}
+
+// ─── AUDIT LOGS (append-only) ────────────────────────────────
+
+export type AuditAction =
+  | "proposal_created"
+  | "proposal_trashed"
+  | "proposal_restored"
+  | "proposal_deleted"
+  | "proposal_reassigned"
+  | "proposal_voided"
+  | "proposal_archived"
+  | "template_created"
+  | "template_updated"
+  | "template_versioned"
+  | "template_trashed"
+  | "user_deactivated"
+  | "user_reactivated"
+  | "identity_switched"
+  | "delegation_granted"
+  | "delegation_revoked"
+  | "staff_reassigned"
+  | "status_changed";
+
+export interface AuditLogEntry {
+  id?: string;
+  action: AuditAction;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  targetId?: string;       // proposalId / templateId / userId
+  targetType?: string;     // "proposal" | "template" | "user"
+  description: string;
+  metadata?: Record<string, unknown>;
+  department?: string;
+  actingAsCeo?: boolean;   // true if Executive Admin acting on CEO's behalf
+  createdAt: unknown;
+}
+
+export async function writeAuditLog(
+  entry: Omit<AuditLogEntry, "id" | "createdAt">
+): Promise<void> {
+  await addDoc(collection(db, "logs"), {
+    ...entry,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToAuditLogs(
+  callback: (logs: AuditLogEntry[]) => void,
+  limitCount = 100
+): () => void {
+  const q = query(
+    collection(db, "logs"),
+    orderBy("createdAt", "desc"),
+    firestoreLimit(limitCount)
+  );
+  return onSnapshot(
+    q,
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as AuditLogEntry)),
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+// ─── PROPOSAL REASSIGNMENT ───────────────────────────────────
+
+export async function getActiveProposalCountByUser(userId: string): Promise<number> {
+  const q = query(
+    collection(db, "proposals"),
+    where("sentById", "==", userId),
+    where("isDeleted", "==", false),
+    where("status", "in", ["sent", "viewed"])
+  );
+  const snap = await getDocs(q);
+  return snap.size;
+}
+
+export async function reassignProposals(
+  fromUserId: string,
+  toUserId: string,
+  actorId: string,
+  actorName: string,
+  actorRole: string
+): Promise<number> {
+  const q = query(
+    collection(db, "proposals"),
+    where("sentById", "==", fromUserId),
+    where("isDeleted", "==", false),
+    where("status", "in", ["sent", "viewed"])
+  );
+  const snap = await getDocs(q);
+  const updates: Promise<void>[] = snap.docs.map((d) =>
+    updateDoc(doc(db, "proposals", d.id), {
+      sentById: toUserId,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await Promise.all(updates);
+  if (snap.size > 0) {
+    await writeAuditLog({
+      action: "staff_reassigned",
+      actorId,
+      actorName,
+      actorRole,
+      targetId: fromUserId,
+      targetType: "user",
+      description: `${snap.size} proposals reassigned from ${fromUserId} to ${toUserId}`,
+      metadata: { fromUserId, toUserId, count: snap.size },
+    });
+  }
+  return snap.size;
+}
+
+// ─── TEMPLATE VERSIONING ─────────────────────────────────────
+
+export async function saveTemplateVersion(
+  templateId: string,
+  snapshot: {
+    name: string;
+    fields: TemplateField[];
+    description: string | null;
+    fileUrl: string | null;
+    gdocUrl: string | null;
+  },
+  versionNumber: number
+): Promise<void> {
+  await setDoc(
+    doc(db, "templates", templateId, "versions", String(versionNumber)),
+    {
+      ...snapshot,
+      versionNumber,
+      savedAt: serverTimestamp(),
+    }
+  );
+}
+
+export async function updateTemplateWithVersion(
+  templateId: string,
+  data: Partial<Pick<Template, "fileUrl" | "filePath" | "name" | "description" | "fields">>,
+  actorId: string,
+  actorName: string,
+  actorRole: string
+): Promise<void> {
+  // Get current template to snapshot its current state as a version
+  const currentSnap = await getDoc(doc(db, "templates", templateId));
+  if (!currentSnap.exists()) throw new Error("Template not found");
+  const current = currentSnap.data() as Template;
+  const currentVersion: number = (current as unknown as Record<string, unknown>).version as number ?? 1;
+
+  // Save a snapshot of the current state as the old version
+  await saveTemplateVersion(
+    templateId,
+    {
+      name: current.name,
+      fields: current.fields,
+      description: current.description,
+      fileUrl: current.fileUrl,
+      gdocUrl: current.gdocUrl,
+    },
+    currentVersion
+  );
+
+  // Write the update with incremented version
+  await updateDoc(doc(db, "templates", templateId), {
+    ...data,
+    version: currentVersion + 1,
+    updatedAt: serverTimestamp(),
+  });
+
+  await writeAuditLog({
+    action: "template_versioned",
+    actorId,
+    actorName,
+    actorRole,
+    targetId: templateId,
+    targetType: "template",
+    description: `Template "${current.name}" updated from v${currentVersion} to v${currentVersion + 1}`,
+    metadata: { previousVersion: currentVersion },
+  });
 }

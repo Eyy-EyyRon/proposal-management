@@ -121,7 +121,7 @@ export default function CreateProposalPage() {
         // Template snapshotting: deep-copy field schema at creation time (Scenario 13)
         templateSnapshot: template ? {
           fields: template.fields.map((f) => ({ id: f.id, name: f.name, type: f.type, required: f.required })),
-          description: template.description ?? undefined,
+          description: template.description ?? null,
         } : null,
         clientName,
         clientEmail,

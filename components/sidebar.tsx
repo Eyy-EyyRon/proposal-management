@@ -24,9 +24,10 @@ import {
   Activity,
   Shield,
   Building2,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
-import { useAuth, useRole, type UserRole } from "@/contexts/auth-context";
+import { useAuth, useRole, useActingAsCeo, type UserRole } from "@/contexts/auth-context";
 import { signOut } from "@/lib/auth";
 
 // ─── NAV CONFIG ─────────────────────────────────────────────
@@ -70,6 +71,7 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Departments",   href: "/super-admin/departments",  icon: Building2 },
       { label: "Team",          href: "/super-admin/team",         icon: Users },
       { label: "Templates",     href: "/super-admin/templates",    icon: LayoutTemplate },
+      { label: "Audit Log",     href: "/dashboard/audit-log",      icon: ClipboardList },
       { label: "Settings",      href: "/super-admin/settings",     icon: Settings },
     ],
     switchTo: [
@@ -140,24 +142,44 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
     quickBtnHover: "",
   },
   admin: {
-    aside:         "border-r border-slate-200/60 bg-white/95 backdrop-blur-xl",
-    brand:         "bg-[#800020]",
-    brandShadow:   "",
+    aside:         "border-r border-indigo-100 bg-white/95 backdrop-blur-xl",
+    brand:         "bg-indigo-700",
+    brandShadow:   "shadow-sm shadow-indigo-200",
     brandIcon:     Shield,
-    badgeCls:      "rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500",
-    badgeLabel:    "ADMIN ACCESS",
-    sectionLabel:  "text-slate-500",
-    activeLink:    "bg-[#800020]/10 text-[#800020]",
-    activeIcon:    "text-[#800020]",
-    hoverLink:     "text-slate-500 hover:bg-slate-50 hover:text-[#5f0018]",
-    chevron:       "text-[#800020]/40",
-    divider:       "border-slate-100",
-    avatar:        "bg-[#800020]",
-    avatarShadow:  "",
-    hoverUser:     "hover:bg-slate-50",
-    hoverLogout:   "hover:bg-slate-100 hover:text-slate-700",
-    quickBtn:      "",
-    quickBtnHover: "",
+    badgeCls:      "rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700",
+    badgeLabel:    "DEPT ADMIN",
+    sectionLabel:  "text-indigo-400",
+    activeLink:    "bg-indigo-50 text-indigo-800 shadow-sm shadow-indigo-100/50",
+    activeIcon:    "text-indigo-600",
+    hoverLink:     "text-slate-500 hover:bg-indigo-50/50 hover:text-indigo-700",
+    chevron:       "text-indigo-300",
+    divider:       "border-indigo-100/60",
+    avatar:        "bg-gradient-to-br from-indigo-500 to-indigo-700",
+    avatarShadow:  "shadow-sm shadow-indigo-200",
+    hoverUser:     "hover:bg-indigo-50/50",
+    hoverLogout:   "hover:bg-indigo-50 hover:text-indigo-700",
+    quickBtn:      "bg-indigo-600 text-white",
+    quickBtnHover: "hover:bg-indigo-700",
+  },
+  admin_ceo: {
+    aside:         "border-r border-amber-200/60 bg-amber-50/60 backdrop-blur-xl",
+    brand:         "bg-gradient-to-br from-amber-500 to-amber-600",
+    brandShadow:   "shadow-sm shadow-amber-300",
+    brandIcon:     Crown,
+    badgeCls:      "rounded-full bg-amber-200 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900",
+    badgeLabel:    "CEO IDENTITY",
+    sectionLabel:  "text-amber-600",
+    activeLink:    "bg-amber-100 text-amber-900 shadow-sm shadow-amber-200/50",
+    activeIcon:    "text-amber-700",
+    hoverLink:     "text-slate-500 hover:bg-amber-100/60 hover:text-amber-800",
+    chevron:       "text-amber-400",
+    divider:       "border-amber-200/60",
+    avatar:        "bg-gradient-to-br from-amber-500 to-amber-600",
+    avatarShadow:  "shadow-sm shadow-amber-300",
+    hoverUser:     "hover:bg-amber-100/50",
+    hoverLogout:   "hover:bg-amber-100 hover:text-amber-800",
+    quickBtn:      "bg-amber-600 text-white",
+    quickBtnHover: "hover:bg-amber-700",
   },
   staff: {
     aside:         "border-r border-slate-200/60 bg-white/95 backdrop-blur-xl",
@@ -194,11 +216,14 @@ export function Sidebar() {
   const router = useRouter();
   const { profile } = useAuth();
   const { role, isCeo, isAtLeast } = useRole();
+  const { actingAsCeo } = useActingAsCeo();
 
   // Determine which nav set based on current folder
   const activeRole = detectActiveRole(pathname, role);
   const config = NAV_CONFIG[activeRole] ?? NAV_CONFIG.staff;
-  const theme = ROLE_THEMES[activeRole] ?? ROLE_THEMES.staff;
+  // If admin is acting as CEO, use the golden CEO theme
+  const themeKey = (activeRole === "admin" && actingAsCeo) ? "admin_ceo" : activeRole;
+  const theme = ROLE_THEMES[themeKey] ?? ROLE_THEMES.staff;
   const BrandIcon = theme.brandIcon;
 
   // Memoize nav items to prevent re-renders

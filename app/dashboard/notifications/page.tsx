@@ -93,20 +93,24 @@ export default function NotificationsPage() {
     setMarkingAll(false);
   };
 
+  const getNotificationHref = (notification: AppNotification) =>
+    notification.proposalId
+      ? `/dashboard/proposals/${notification.proposalId}`
+      : "/dashboard/proposals";
+
   const handleNotificationClick = async (
     event: MouseEvent<HTMLAnchorElement>,
     notification: AppNotification,
   ) => {
     event.preventDefault();
+    const dest = getNotificationHref(notification);
     if (!notification.read) {
       setFadingId(notification.id);
       await markNotificationRead(notification.id);
-      window.setTimeout(() => {
-        router.push("/dashboard/proposals");
-      }, 160);
+      window.setTimeout(() => router.push(dest), 160);
       return;
     }
-    router.push("/dashboard/proposals");
+    router.push(dest);
   };
 
   return (

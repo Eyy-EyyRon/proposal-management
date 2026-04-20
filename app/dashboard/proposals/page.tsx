@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen, Eye } from "lucide-react";
+import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen, Eye, AlertTriangle, Archive } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth, useRole } from "@/contexts/auth-context";
-import { subscribeToProposals, subscribeToProposalsByDepartment, moveToTrash, type Proposal } from "@/lib/firestore";
+import { subscribeToProposals, subscribeToProposalsByDepartment, moveToTrash, archiveProposal, type Proposal } from "@/lib/firestore";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DepartmentBadge } from "@/components/department-badge";
@@ -127,6 +127,7 @@ export default function ProposalsPage() {
   const { isCeo } = useRole();
   const router = useRouter();
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [voidWarningProposal, setVoidWarningProposal] = useState<Proposal | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -186,10 +187,23 @@ export default function ProposalsPage() {
     return matchesSearch && proposal.status === statusFilter;
   });
 
-  const handleTrash = async (proposalId: string) => {
+  const handleTrash = async (proposal: Proposal) => {
+    if (proposal.status === "accepted") {
+      toast.error("Cannot trash a signed proposal.", {
+        description: "This document is legally signed. Use \"Archive\" instead.",
+      });
+      return;
+    }
     if (!confirm("Move this proposal to trash?")) return;
-    await moveToTrash("proposals", proposalId);
-    setProposals((prev) => prev.filter((p) => p.id !== proposalId));
+    await moveToTrash("proposals", proposal.id);
+    setProposals((prev) => prev.filter((p) => p.id !== proposal.id));
+    toast.success("Proposal moved to trash.");
+  };
+
+  const handleArchiveAccepted = async (proposalId: string) => {
+    await archiveProposal(proposalId);
+    setProposals((prev) => prev.map((p) => p.id === proposalId ? { ...p, status: "archived" } : p));
+    toast.success("Proposal archived.");
   };
 
   const handleCopyLink = async (proposalId: string) => {
@@ -368,13 +382,23 @@ export default function ProposalsPage() {
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-0.5 opacity-0 transition-all group-hover:opacity-100">
-                            <Link
-                              href={`/dashboard/proposals/${proposal.id}`}
-                              title="View proposal details"
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Link>
+                            {proposal.status === "accepted" ? (
+                              <button
+                                onClick={() => setVoidWarningProposal(proposal)}
+                                title="View / Edit signed proposal"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <Link
+                                href={`/dashboard/proposals/${proposal.id}`}
+                                title="View proposal details"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            )}
                             <button
                               onClick={() => handleCopyLink(proposal.id)}
                               title="Copy shareable link"
@@ -386,15 +410,23 @@ export default function ProposalsPage() {
                                 <Copy className="h-4 w-4" />
                               )}
                             </button>
-                            {proposal.status !== "archived" && (
+                            {proposal.status === "accepted" ? (
                               <button
-                                onClick={() => handleTrash(proposal.id)}
+                                onClick={() => handleArchiveAccepted(proposal.id)}
+                                title="Archive signed proposal"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                              >
+                                <Archive className="h-4 w-4" />
+                              </button>
+                            ) : proposal.status !== "archived" ? (
+                              <button
+                                onClick={() => handleTrash(proposal)}
                                 title="Move to trash"
                                 className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-red-50 hover:text-red-500"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -415,6 +447,39 @@ export default function ProposalsPage() {
           </div>
         )}
       </div>
+
+      {/* Void Warning Modal — shown when navigating to an accepted proposal for editing */}
+      {voidWarningProposal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-2xl border border-rose-200 bg-white p-8 shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50">
+              <AlertTriangle className="h-6 w-6 text-rose-600" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-slate-900">Legally Signed Document</h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
+              This proposal was <strong>accepted and legally signed</strong> by {voidWarningProposal.clientName}.
+              Creating a new version will <strong className="text-rose-600">VOID the signature</strong>.
+            </p>
+            <p className="mt-2 text-[12px] font-medium text-rose-600">Proceed only if you have client consent.</p>
+            <div className="mt-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setVoidWarningProposal(null)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <Link
+                href={`/dashboard/proposals/${voidWarningProposal.id}`}
+                onClick={() => setVoidWarningProposal(null)}
+                className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-rose-700"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Proceed Anyway
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

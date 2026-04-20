@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase } from "lucide-react";
+import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase, ShieldAlert, ToggleLeft, ToggleRight } from "lucide-react";
 import Link from "next/link";
-import { useAuth, useRole } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { useAuth, useRole, useActingAsCeo } from "@/contexts/auth-context";
 import {
   subscribeToNotifications,
   markNotificationRead,
@@ -45,10 +46,22 @@ export function Topbar({ title }: TopbarProps) {
   const ref = useRef<HTMLDivElement>(null);
   const { user, profile } = useAuth();
   const { role } = useRole();
+  const { actingAsCeo, toggleActingAsCeo, canActAsCeo } = useActingAsCeo();
 
   const initials = profile
     ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
     : "U";
+
+  const handleToggleActingAsCeo = async () => {
+    await toggleActingAsCeo();
+    const next = !actingAsCeo;
+    toast(next ? "CEO Identity Active" : "Returned to Admin Mode", {
+      description: next
+        ? "You are now operating with full CEO authority. All actions are logged."
+        : "Switched back to department admin identity.",
+      icon: next ? "👑" : "🔒",
+    });
+  };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -82,10 +95,62 @@ export function Topbar({ title }: TopbarProps) {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200/60 bg-white px-6">
-      <h1 className="text-[15px] font-semibold text-slate-900">{title}</h1>
+    <div>
+      {/* CEO Identity Active Banner */}
+      {actingAsCeo && (
+        <div className="flex items-center justify-between border-b border-amber-300 bg-gradient-to-r from-amber-400 to-amber-500 px-6 py-1.5">
+          <div className="flex items-center gap-2">
+            <Crown className="h-4 w-4 text-amber-900" />
+            <span className="text-[12px] font-semibold text-amber-950">
+              CEO Identity Active
+            </span>
+            <span className="rounded-full bg-amber-900/20 px-2 py-0.5 text-[10px] font-medium text-amber-950">
+              All actions are logged and attributed to CEO
+            </span>
+          </div>
+          <button
+            onClick={handleToggleActingAsCeo}
+            className="text-[11px] font-semibold text-amber-950 underline-offset-2 hover:underline"
+          >
+            Deactivate
+          </button>
+        </div>
+      )}
+
+    <header className={`flex h-14 shrink-0 items-center justify-between border-b px-6 transition-colors ${
+      actingAsCeo
+        ? "border-amber-200 bg-amber-50"
+        : role === "admin"
+        ? "border-indigo-100 bg-white"
+        : "border-slate-200/60 bg-white"
+    }`}>
+      <div className="flex items-center gap-3">
+        <h1 className="text-[15px] font-semibold text-slate-900">{title}</h1>
+        {role === "admin" && !actingAsCeo && (
+          <span className="flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+            <ShieldAlert className="h-3 w-3" />
+            Department Admin
+          </span>
+        )}
+      </div>
 
       <div className="flex items-center gap-2">
+        {/* Acting-as-CEO toggle (only for CEO or fullPower Admin) */}
+        {canActAsCeo && profile?.role === "admin" && (
+          <button
+            onClick={handleToggleActingAsCeo}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition ${
+              actingAsCeo
+                ? "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+            }`}
+            title={actingAsCeo ? "Deactivate CEO Identity" : "Activate CEO Identity"}
+          >
+            {actingAsCeo ? <ToggleRight className="h-4 w-4 text-amber-600" /> : <ToggleLeft className="h-4 w-4" />}
+            {actingAsCeo ? "CEO Active" : "Act as CEO"}
+          </button>
+        )}
+
         {/* Search trigger */}
         <button
           onClick={() => {
@@ -143,9 +208,9 @@ export function Topbar({ title }: TopbarProps) {
                     const Icon = cfg.icon;
                     return (
                       <Link
-                        href={`/dashboard/proposals`}
+                        href={n.proposalId ? `/dashboard/proposals/${n.proposalId}` : `/dashboard/proposals`}
                         key={n.id}
-                        onClick={() => handleNotificationClick(n)}
+                        onClick={() => { handleNotificationClick(n); setOpen(false); }}
                         className={`flex items-start gap-3 px-4 py-3 transition hover:bg-slate-50 ${
                           i !== notifications.length - 1 ? "border-b border-slate-100/60" : ""
                         } ${!n.read ? "bg-indigo-50/30" : ""}`}
@@ -198,5 +263,6 @@ export function Topbar({ title }: TopbarProps) {
         </button>
       </div>
     </header>
+    </div>
   );
 }

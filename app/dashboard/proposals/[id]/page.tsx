@@ -152,7 +152,7 @@ export default function ProposalDetailPage() {
           quote: activeQuote || null,
           ceoName: `${profile.firstName} ${profile.lastName}`,
         }),
-      }).catch(console.error);
+      }).catch(() => {});
 
       // Also notify the staff member if the current user is the CEO (Scenario 9)
       if (proposal.sentById && proposal.sentById !== user.uid) {
@@ -167,7 +167,7 @@ export default function ProposalDetailPage() {
             staffId: proposal.sentById,
             ownerId: proposal.ownerId,
           }),
-        }).catch(console.error);
+        }).catch(() => {});
       }
 
       setNewComment("");
@@ -369,7 +369,7 @@ export default function ProposalDetailPage() {
                               isNewVersion: true,
                               version: (proposal.version || 1) + 1,
                             }),
-                          }).catch(console.error);
+                          }).catch(() => {});
                           router.push(`/dashboard/proposals/${newProposalId}`);
                         } catch (err) {
                           console.error("Failed to create revision:", err);

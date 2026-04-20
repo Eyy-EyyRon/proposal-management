@@ -40,6 +40,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isSameDept(deptField) {
+      return getUserDept() != null && deptField == getUserDept();
+    }
+
     // ─── USERS ───────────────────────────────────────────────
     match /users/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
@@ -47,11 +51,22 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdminOrCeo();
 
       allow update: if
+        // CEO: unrestricted
         isCeo()
         ||
+        // Self: can update own profile but NEVER change role, email, or delegatedUserIds
         (
           isOwner(userId)
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role"])
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds"])
+        )
+        ||
+        // Admin: can update staff in their dept, but CANNOT touch role, email, or delegatedUserIds
+        // and CANNOT modify the CEO account at all
+        (
+          isAdmin()
+          && resource.data.role in ["staff"]
+          && isSameDept(resource.data.department)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds", "canSendOnBehalfOf"])
         );
 
       allow delete: if isCeo();
@@ -100,10 +115,16 @@ service cloud.firestore {
         );
 
       // Create: Allow if authenticated, and ownerId/sentById are properly set
+      // Admin must create within their own department
       allow create: if isSignedIn()
         && request.resource.data.sentById == request.auth.uid
-        && request.resource.data.ownerId == request.resource.data.sentById || request.resource.data.isDelegated == true
-        && request.resource.data.status == "sent";
+        && (request.resource.data.ownerId == request.resource.data.sentById || request.resource.data.isDelegated == true)
+        && request.resource.data.status == "sent"
+        && (
+          isCeo()
+          || !isAdmin()
+          || isSameDept(request.resource.data.department)
+        );
 
       // Delete: Allow if owner, sender, or Admin/CEO
       allow delete: if isSignedIn()
@@ -170,15 +191,21 @@ service cloud.firestore {
 
     // ─── NOTIFICATIONS ─────────────────────────────────────────
     match /notifications/{notificationId} {
+      // Read: own notifications or CEO sees all
       allow read: if isSignedIn()
         && (
           resource.data.userId == request.auth.uid
           || isCeo()
         );
+      // Create: allow from any context — authenticated dashboard users,
+      // server-side API routes, and unauthenticated client portal actions
+      allow create: if true;
+      // Update: only the recipient can mark their own notification as read
       allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
-      allow create, delete: if false;
+      // Notifications are never deleted
+      allow delete: if false;
     }
 
     // ─── ANALYTICS ───────────────────────────────────────────
@@ -191,6 +218,16 @@ service cloud.firestore {
     match /stats/{docId} {
       allow read: if isSignedIn();
       allow write: if false;
+    }
+
+    // ─── AUDIT LOGS (append-only, undeletable) ──────────────
+    match /logs/{logId} {
+      // Anyone signed-in can create a log entry
+      allow create: if isSignedIn();
+      // Logs are immutable — no updates or deletes ever
+      allow update, delete: if false;
+      // Only CEO/Admin can read audit logs
+      allow read: if isAdminOrCeo();
     }
 
     // ─── DENY ALL OTHER PATHS ────────────────────────────────

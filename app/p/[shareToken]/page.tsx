@@ -177,12 +177,29 @@ export default function ProposalPortalPage() {
   }, [shareToken]);
 
   useEffect(() => {
-    if (viewState !== "document" || viewTracked.current || !shareToken) return;
+    if (viewState !== "document" || viewTracked.current || !shareToken || !proposal) return;
     viewTracked.current = true;
-    if (proposal?.status !== "accepted") {
-        markProposalViewed(shareToken).catch(console.error);
+    if (proposal.status !== "accepted") {
+      markProposalViewed(shareToken).catch(() => {});
+      // Fire viewed notifications for owner + sender
+      const targets = new Set<string>(
+        [proposal.ownerId, proposal.sentById, proposal.userId].filter(Boolean) as string[]
+      );
+      const title = proposal.templateName || "Proposal";
+      targets.forEach((uid) => {
+        fetch("/api/notify-viewed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: uid,
+            proposalId: shareToken,
+            clientName: proposal.clientName,
+            proposalTitle: title,
+          }),
+        }).catch(() => {});
+      });
     }
-  }, [viewState, shareToken, proposal?.status]);
+  }, [viewState, shareToken, proposal]);
 
   useEffect(() => {
     if (!proposal?.id) return;
@@ -223,10 +240,10 @@ export default function ProposalPortalPage() {
           staffId: proposal.sentById || proposal.userId, // Actual sender
           ownerId: proposal.ownerId // CEO/identity owner (may be different)
         })
-      }).catch(console.error);
+      }).catch(() => {});
 
-    } catch (error) {
-      console.error("Failed to post comment", error);
+    } catch {
+      // comment failed silently — Firestore write already attempted above
     } finally {
       setSubmittingComment(false);
     }
@@ -326,24 +343,20 @@ export default function ProposalPortalPage() {
       await acceptProposal(proposal.id, sigType, sigUrl);
 
       // Send signed document copies to all parties
-      try {
-        await fetch("/api/send-signed-document", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            proposalId: shareToken,
-            proposalTitle: proposal.templateName || "Proposal",
-            clientName: proposal.clientName,
-            clientEmail: proposal.fieldValues?.email || proposal.clientEmail || "client@example.com",
-            signatureUrl: sigUrl,
-            staffEmails: proposal.sentById ? [proposal.sentById] : [],
-            ceoEmail: proposal.ownerId || proposal.userId,
-            version: proposal.version || 1,
-          }),
-        });
-      } catch (emailError) {
-        console.error("Failed to send signed document copies:", emailError);
-      }
+      fetch("/api/send-signed-document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId: shareToken,
+          proposalTitle: proposal.templateName || "Proposal",
+          clientName: proposal.clientName,
+          clientEmail: proposal.fieldValues?.email || proposal.clientEmail || "client@example.com",
+          signatureUrl: sigUrl,
+          ownerUserId: proposal.ownerId || proposal.userId,
+          senderUserId: proposal.sentById || proposal.userId,
+          version: proposal.version || 1,
+        }),
+      }).catch(() => {});
 
       setProposal({ ...proposal, status: "accepted" });
 
@@ -359,6 +372,24 @@ export default function ProposalPortalPage() {
     setRejecting(true);
     try {
       await rejectProposal(proposal.id);
+      // Fire rejected notifications for owner + sender
+      const targets = new Set<string>(
+        [proposal.ownerId, proposal.sentById, proposal.userId].filter(Boolean) as string[]
+      );
+      const title = proposal.templateName || "Proposal";
+      targets.forEach((uid) => {
+        fetch("/api/notify-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: uid,
+            proposalId: proposal.id,
+            type: "rejected",
+            clientName: proposal.clientName,
+            proposalTitle: title,
+          }),
+        }).catch(() => {});
+      });
       setViewState("rejected");
     } catch {
       setSubmitError("Failed to submit. Please try again.");

@@ -125,11 +125,14 @@ export async function POST(req: NextRequest) {
       html: emailHtml,
     });
 
-    // 2. Create in-app notification
-    await addDoc(collection(db, "users", ceoId, "notifications"), {
+    // 2. Create in-app notification — top-level collection keyed by userId
+    await addDoc(collection(db, "notifications"), {
+      userId: ceoId,
       type: "delegated_proposal",
       message: `${staffName} sent "${templateName}" to ${clientName} on your behalf`,
       proposalId,
+      actorRole: "staff",
+      actorName: staffName,
       read: false,
       createdAt: serverTimestamp(),
     });
