@@ -66,14 +66,8 @@ export async function publishTemplate(
   });
 }
 
-export async function unpublishTemplate(templateId: string): Promise<void> {
-  await updateDoc(doc(db, "templates", templateId), {
-    isPublished: false,
-    publishedAt: null,
-    publishedBy: null,
-    updatedAt: serverTimestamp(),
-  });
-}
+// unpublishTemplate is defined in the CEO Defensive Architecture section below
+// with full audit logging support.
 
 export async function createTemplate(data: {
   userId: string;
@@ -171,7 +165,7 @@ export async function saveOrgSettings(
 
 // ─── PROPOSAL TYPES ─────────────────────────────────────────
 
-export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "archived" | "superseded" | "void";
+export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "archived" | "superseded" | "void" | "pending_ceo_approval";
 
 export interface Proposal {
   id: string;
@@ -221,6 +215,128 @@ export interface Proposal {
   isPrivate: boolean;        // true = only root CEO can see; overrides sharedWith
   // Multidepartmental Sharing
   sharedWith?: string[];     // dept IDs granted View/Collaborate rights
+  originDepartmentId: string; // Source of truth: the department that created this proposal
+  accessLevel?: "view_only" | "collaborative"; // Sharing access level
+  searchKeywords?: string[]; // Flattened metadata for cross-dept indexed search
+  // Threshold Alerts (CEO Approval Hold)
+  holdReason?: string | null;
+  holdTriggeredBy?: string | null;
+  holdReleasedBy?: string | null;
+  holdReleasedAt?: unknown | null;
+}
+
+// ─── SEARCH KEYWORDS BUILDER ─────────────────────────────────
+// Flattened array of lowercased tokens for cross-dept indexed searching
+function buildSearchKeywords(meta: {
+  clientName: string;
+  clientEmail: string;
+  templateName: string;
+  department: string;
+}): string[] {
+  const tokens = new Set<string>();
+  const add = (s: string) => {
+    if (!s) return;
+    tokens.add(s.toLowerCase());
+    s.toLowerCase().split(/\s+/).forEach((w) => { if (w) tokens.add(w); });
+  };
+  add(meta.clientName);
+  add(meta.clientEmail);
+  add(meta.templateName);
+  add(meta.department);
+  return Array.from(tokens);
+}
+
+// ─── PROPOSALS SUMMARY (Lightweight Dashboard) ──────────────
+// ~1KB snapshot for the dashboard list; avoids fetching heavy content
+export interface ProposalSummary {
+  id: string;
+  clientName: string;
+  clientEmail: string;
+  templateName: string;
+  department: string;
+  originDepartmentId: string;
+  status: string;
+  sharedWith: string[];
+  isPrivate: boolean;
+  isDeleted: boolean;
+  isDelegated: boolean;
+  ownerId: string;
+  sentById: string;
+  version: number;
+  isLatest: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export async function writeProposalSummary(
+  proposalId: string,
+  data: Omit<ProposalSummary, "id" | "createdAt" | "updatedAt">
+): Promise<void> {
+  await setDoc(doc(db, "proposals_summary", proposalId), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function updateProposalSummary(
+  proposalId: string,
+  data: Partial<ProposalSummary>
+): Promise<void> {
+  // Strip id if present
+  const { id: _id, ...rest } = data;
+  void _id;
+  await updateDoc(doc(db, "proposals_summary", proposalId), {
+    ...rest,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// ─── SHARED WITH ME SUBSCRIPTION ─────────────────────────────
+// Subscribes to proposals shared with a specific department (for the "Shared with Me" tab)
+export function subscribeToSharedWithMeProposals(
+  department: string,
+  callback: (proposals: Proposal[], hasMore: boolean) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("sharedWith", "array-contains", department),
+    where("isDeleted", "==", false),
+    where("isPrivate", "==", false),
+    orderBy("createdAt", "desc"),
+    firestoreLimit(PROPOSALS_PAGE_SIZE)
+  );
+  return onSnapshot(
+    q,
+    (s) => {
+      callback(
+        s.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal),
+        s.docs.length >= PROPOSALS_PAGE_SIZE
+      );
+    },
+    (e) => { if (e.code !== "permission-denied") console.error(e); }
+  );
+}
+
+// Load more shared-with-me proposals (pagination)
+export async function loadMoreSharedWithMeProposals(
+  department: string,
+  lastCreatedAtSeconds: number
+): Promise<{ proposals: Proposal[]; hasMore: boolean }> {
+  const q = query(
+    collection(db, "proposals"),
+    where("sharedWith", "array-contains", department),
+    where("isDeleted", "==", false),
+    where("isPrivate", "==", false),
+    orderBy("createdAt", "desc"),
+    startAfter(new Date(lastCreatedAtSeconds * 1000)),
+    firestoreLimit(PROPOSALS_PAGE_SIZE)
+  );
+  const snap = await getDocs(q);
+  return {
+    proposals: snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal),
+    hasMore: snap.docs.length >= PROPOSALS_PAGE_SIZE,
+  };
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────
@@ -245,6 +361,14 @@ export async function createProposal(
     previousVersionId?: string | null;
   }
 ): Promise<void> {
+  // Build searchKeywords for cross-dept indexed searching
+  const searchKeywords = buildSearchKeywords({
+    clientName: data.clientName,
+    clientEmail: data.clientEmail,
+    templateName: data.templateName,
+    department: data.department,
+  });
+
   await setDoc(doc(db, "proposals", proposalId), {
     // Delegated Authority fields
     ownerId: data.ownerId,
@@ -274,6 +398,9 @@ export async function createProposal(
     isLatest: true,
     isPrivate: false,
     sharedWith: [],
+    originDepartmentId: data.department,
+    accessLevel: "view_only",
+    searchKeywords,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     // Versioning fields
@@ -281,6 +408,25 @@ export async function createProposal(
     previousVersionId: data.previousVersionId ?? null,
     nextVersionId: null,
   });
+
+  // Write lightweight summary for the performance dashboard
+  writeProposalSummary(proposalId, {
+    clientName: data.clientName,
+    clientEmail: data.clientEmail,
+    templateName: data.templateName,
+    department: data.department,
+    originDepartmentId: data.department,
+    status: "sent",
+    sharedWith: [],
+    isPrivate: false,
+    isDeleted: false,
+    isDelegated: data.isDelegated,
+    ownerId: data.ownerId,
+    sentById: data.sentById,
+    version: data.version ?? 1,
+    isLatest: true,
+  }).catch(() => {});
+
   incrementGlobalStats("totalProposals").catch(() => {});
   incrementGlobalStats("totalSent").catch(() => {});
 }
@@ -318,6 +464,14 @@ export async function createProposalRevision(
 ): Promise<void> {
   const newVersionNum = (currentProposal.version || 1) + 1;
 
+  const tplName = updates.templateName ?? currentProposal.templateName;
+  const searchKeywords = buildSearchKeywords({
+    clientName: currentProposal.clientName,
+    clientEmail: currentProposal.clientEmail,
+    templateName: tplName,
+    department: currentProposal.department,
+  });
+
   // Create the new version document
   await setDoc(doc(db, "proposals", newProposalId), {
     ownerId: currentProposal.ownerId,
@@ -326,7 +480,7 @@ export async function createProposalRevision(
     userId: currentProposal.ownerId,
     department: currentProposal.department,
     templateId: updates.templateId ?? currentProposal.templateId,
-    templateName: updates.templateName ?? currentProposal.templateName,
+    templateName: tplName,
     templateFileUrl: updates.templateFileUrl ?? currentProposal.templateFileUrl,
     templateGdocUrl: updates.templateGdocUrl ?? currentProposal.templateGdocUrl,
     // Always carry forward the template snapshot (deep copy protection)
@@ -347,12 +501,33 @@ export async function createProposalRevision(
     isLatest: true,
     isPrivate: currentProposal.isPrivate ?? false,
     sharedWith: currentProposal.sharedWith ?? [],
+    originDepartmentId: currentProposal.originDepartmentId ?? currentProposal.department,
+    accessLevel: currentProposal.accessLevel ?? "view_only",
+    searchKeywords,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     version: newVersionNum,
     previousVersionId: currentProposal.id,
     nextVersionId: null,
   });
+
+  // Write lightweight summary
+  writeProposalSummary(newProposalId, {
+    clientName: currentProposal.clientName,
+    clientEmail: currentProposal.clientEmail,
+    templateName: tplName,
+    department: currentProposal.department,
+    originDepartmentId: currentProposal.originDepartmentId ?? currentProposal.department,
+    status: "sent",
+    sharedWith: currentProposal.sharedWith ?? [],
+    isPrivate: currentProposal.isPrivate ?? false,
+    isDeleted: false,
+    isDelegated: currentProposal.isDelegated,
+    ownerId: currentProposal.ownerId,
+    sentById: currentProposal.sentById,
+    version: newVersionNum,
+    isLatest: true,
+  }).catch(() => {});
 
   // Mark the old version as superseded and store forward link; it is no longer latest
   await updateDoc(doc(db, "proposals", currentProposal.id), {
@@ -375,12 +550,16 @@ export async function createProposalRevision(
 // Update multi-dept sharing — Admins can grant collaborator depts view/comment rights
 export async function updateProposalSharing(
   proposalId: string,
-  sharedWith: string[]
+  sharedWith: string[],
+  accessLevel: "view_only" | "collaborative" = "view_only"
 ): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
     sharedWith,
+    accessLevel,
     updatedAt: serverTimestamp(),
   });
+  // Keep summary in sync
+  updateProposalSummary(proposalId, { sharedWith }).catch(() => {});
 }
 
 // Toggle sensitivity shield — CEO-only: marks/unmarks a proposal as private
@@ -392,6 +571,8 @@ export async function updateProposalPrivacy(
     isPrivate,
     updatedAt: serverTimestamp(),
   });
+  // Keep summary in sync
+  updateProposalSummary(proposalId, { isPrivate }).catch(() => {});
 }
 
 // Get proposals where user is either owner (identity used) or sender (actual sender)
@@ -832,11 +1013,17 @@ export async function moveToTrash(
   collectionName: "proposals" | "templates",
   docId: string
 ): Promise<void> {
-  await updateDoc(doc(db, collectionName, docId), {
+  // Identity Lockdown: kill signatures & comments on trashed proposals
+  const update: Record<string, unknown> = {
     isDeleted: true,
     deletedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  });
+  };
+  if (collectionName === "proposals") {
+    update.isSignable = false;
+    update.isCommentable = false;
+  }
+  await updateDoc(doc(db, collectionName, docId), update);
 }
 
 export async function restoreFromTrash(
@@ -1459,7 +1646,9 @@ export type AuditAction =
   | "status_changed"
   | "proposal_revised"
   | "proposal_privacy_changed"
-  | "proposal_sharing_updated";
+  | "proposal_sharing_updated"
+  | "template_published"
+  | "template_unpublished";
 
 export interface AuditLogEntry {
   id?: string;
@@ -1615,5 +1804,750 @@ export async function updateTemplateWithVersion(
     targetType: "template",
     description: `Template "${current.name}" updated from v${currentVersion} to v${currentVersion + 1}`,
     metadata: { previousVersion: currentVersion },
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── CEO DEFENSIVE ARCHITECTURE ─────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+// ─── SUCCESSION TIMER (48h Protocol) ─────────────────────────
+// An Admin can request emergency root access. The CEO has 48h to veto.
+
+export interface SuccessionRequest {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  reason: string;
+  status: "pending" | "approved" | "denied" | "expired";
+  requestedAt: unknown;
+  expiresAt: unknown; // requestedAt + 48h
+  resolvedAt?: unknown;
+  resolvedBy?: string;
+}
+
+const SUCCESSION_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+export async function createSuccessionRequest(
+  requesterId: string,
+  requesterName: string,
+  reason: string
+): Promise<string> {
+  const now = new Date();
+  const ref = await addDoc(collection(db, "succession_requests"), {
+    requesterId,
+    requesterName,
+    reason,
+    status: "pending",
+    requestedAt: serverTimestamp(),
+    expiresAt: new Date(now.getTime() + SUCCESSION_TTL_MS),
+  });
+  return ref.id;
+}
+
+export async function vetoCeoSuccessionRequest(
+  requestId: string,
+  ceoId: string,
+  action: "approved" | "denied"
+): Promise<void> {
+  await updateDoc(doc(db, "succession_requests", requestId), {
+    status: action,
+    resolvedAt: serverTimestamp(),
+    resolvedBy: ceoId,
+  });
+}
+
+export function subscribeToSuccessionRequests(
+  callback: (requests: SuccessionRequest[]) => void
+): () => void {
+  const q = query(
+    collection(db, "succession_requests"),
+    orderBy("requestedAt", "desc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SuccessionRequest));
+  });
+}
+
+// ─── THRESHOLD ALERTS (Pending CEO Approval) ─────────────────
+// Delegated proposals exceeding a dollar/discount threshold enter
+// pending_ceo_approval state until the CEO manually releases them.
+
+export async function holdForCeoApproval(
+  proposalId: string,
+  reason: string,
+  triggeredBy: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "pending_ceo_approval",
+    holdReason: reason,
+    holdTriggeredBy: triggeredBy,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function releaseCeoHold(
+  proposalId: string,
+  ceoId: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "sent",
+    holdReason: null,
+    holdTriggeredBy: null,
+    holdReleasedBy: ceoId,
+    holdReleasedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  incrementGlobalStats("totalSent").catch(() => {});
+}
+
+export function subscribeToPendingApprovals(
+  callback: (proposals: Proposal[]) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals"),
+    where("status", "==", "pending_ceo_approval"),
+    where("isDeleted", "==", false),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal));
+  });
+}
+
+// ─── GLOBAL PRICING FLOORS (CEO-Only Setting) ────────────────
+// Enforces a hard minimum margin across all departments.
+
+export interface CeoSettings {
+  minimumMarginPercent: number;  // e.g. 15 = 15% floor
+  maxDiscountPercent: number;    // e.g. 25 = max 25% discount
+  thresholdDollarAmount: number; // e.g. 50000 = flag proposals over $50k
+  updatedAt: unknown;
+  updatedBy: string;
+}
+
+const CEO_SETTINGS_REF = () => doc(db, "ceo_settings", "global");
+
+export async function getCeoSettings(): Promise<CeoSettings | null> {
+  const snap = await getDoc(CEO_SETTINGS_REF());
+  return snap.exists() ? (snap.data() as CeoSettings) : null;
+}
+
+export async function updateCeoSettings(
+  ceoId: string,
+  settings: Partial<CeoSettings>
+): Promise<void> {
+  await setDoc(CEO_SETTINGS_REF(), {
+    ...settings,
+    updatedBy: ceoId,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export function subscribeToCeoSettings(
+  callback: (settings: CeoSettings | null) => void
+): () => void {
+  return onSnapshot(CEO_SETTINGS_REF(), (snap) => {
+    callback(snap.exists() ? (snap.data() as CeoSettings) : null);
+  });
+}
+
+// ─── TEMPLATE SANDBOX (Publish-to-Org Workflow) ──────────────
+// CEO edits are saved as drafts (isPublished: false).
+// Only when explicitly "Published to Org" do they become visible to staff.
+
+export async function publishTemplateToOrg(
+  templateId: string,
+  ceoId: string,
+  ceoName: string
+): Promise<void> {
+  await updateDoc(doc(db, "templates", templateId), {
+    isPublished: true,
+    publishedAt: serverTimestamp(),
+    publishedBy: ceoId,
+    updatedAt: serverTimestamp(),
+  });
+  await writeAuditLog({
+    action: "template_published",
+    actorId: ceoId,
+    actorName: ceoName,
+    actorRole: "ceo",
+    targetId: templateId,
+    targetType: "template",
+    description: `Template published to organization by ${ceoName}`,
+  });
+}
+
+export async function unpublishTemplate(
+  templateId: string,
+  ceoId: string,
+  ceoName: string
+): Promise<void> {
+  await updateDoc(doc(db, "templates", templateId), {
+    isPublished: false,
+    updatedAt: serverTimestamp(),
+  });
+  await writeAuditLog({
+    action: "template_unpublished",
+    actorId: ceoId,
+    actorName: ceoName,
+    actorRole: "ceo",
+    targetId: templateId,
+    targetType: "template",
+    description: `Template unpublished from organization by ${ceoName}`,
+  });
+}
+
+// ─── SHARING MONITOR (CEO Visibility) ─────────────────────────
+// Logs every cross-department share action for CEO oversight.
+
+export interface SharingLogEntry {
+  id: string;
+  proposalId: string;
+  proposalClientName: string;
+  originDepartment: string;
+  sharedWith: string[];
+  accessLevel: string;
+  sharedBy: string;
+  sharedByName: string;
+  createdAt: unknown;
+}
+
+export async function writeSharingLog(entry: Omit<SharingLogEntry, "id" | "createdAt">): Promise<void> {
+  await addDoc(collection(db, "sharing_logs"), {
+    ...entry,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToSharingLogs(
+  callback: (logs: SharingLogEntry[]) => void,
+  limitCount = 50
+): () => void {
+  const q = query(
+    collection(db, "sharing_logs"),
+    orderBy("createdAt", "desc"),
+    firestoreLimit(limitCount)
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SharingLogEntry));
+  });
+}
+
+// ─── IMMUTABLE ANALYTICS (Audit-Log Derived) ─────────────────
+// Reads from audit_logs to compute historical stats that survive deletions.
+// Used by CEO analytics page instead of counting live documents.
+
+export interface AuditDerivedStats {
+  totalCreated: number;
+  totalSent: number;
+  totalViewed: number;
+  totalAccepted: number;
+  totalRejected: number;
+  byDepartment: Record<string, { created: number; accepted: number; rejected: number }>;
+  byMonth: { month: string; created: number; accepted: number }[];
+}
+
+export async function getImmutableAnalytics(
+  startDate?: Date,
+  endDate?: Date
+): Promise<AuditDerivedStats> {
+  let q = query(
+    collection(db, "audit_logs"),
+    orderBy("createdAt", "desc")
+  );
+  if (startDate) {
+    q = query(q, where("createdAt", ">=", startDate));
+  }
+  if (endDate) {
+    q = query(q, where("createdAt", "<=", endDate));
+  }
+
+  const snap = await getDocs(q);
+  const stats: AuditDerivedStats = {
+    totalCreated: 0, totalSent: 0, totalViewed: 0,
+    totalAccepted: 0, totalRejected: 0,
+    byDepartment: {},
+    byMonth: [],
+  };
+
+  const monthBuckets: Record<string, { created: number; accepted: number }> = {};
+
+  for (const d of snap.docs) {
+    const log = d.data();
+    const action = log.action as string;
+    const dept = (log.metadata?.department as string) || "Unknown";
+    const ts = log.createdAt as { seconds: number } | null;
+    const monthKey = ts ? new Date(ts.seconds * 1000).toISOString().slice(0, 7) : "unknown";
+
+    if (!stats.byDepartment[dept]) {
+      stats.byDepartment[dept] = { created: 0, accepted: 0, rejected: 0 };
+    }
+    if (!monthBuckets[monthKey]) {
+      monthBuckets[monthKey] = { created: 0, accepted: 0 };
+    }
+
+    if (action === "proposal_created" || action === "proposal_sent") {
+      stats.totalCreated++;
+      stats.totalSent++;
+      stats.byDepartment[dept].created++;
+      monthBuckets[monthKey].created++;
+    } else if (action === "proposal_viewed") {
+      stats.totalViewed++;
+    } else if (action === "proposal_accepted" || action === "proposal_signed") {
+      stats.totalAccepted++;
+      stats.byDepartment[dept].accepted++;
+      monthBuckets[monthKey].accepted++;
+    } else if (action === "proposal_rejected") {
+      stats.totalRejected++;
+      stats.byDepartment[dept].rejected++;
+    }
+  }
+
+  stats.byMonth = Object.entries(monthBuckets)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, data]) => ({ month, ...data }));
+
+  return stats;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── TIERED DELEGATION & VERIFICATION (TASK SYSTEM) ──────────
+// ═══════════════════════════════════════════════════════════════
+
+export type TaskStatus = "drafting" | "verifying" | "changes_requested" | "ready_to_send" | "sent" | "cancelled";
+export type UrgencyLevel = "p1" | "p2" | "p3";
+
+// SLA windows per urgency (milliseconds)
+export const URGENCY_SLA: Record<UrgencyLevel, number> = {
+  p1: 2 * 60 * 60 * 1000,    // 2 hours
+  p2: 24 * 60 * 60 * 1000,   // 24 hours
+  p3: 72 * 60 * 60 * 1000,   // 72 hours (standard)
+};
+
+export const URGENCY_META: Record<UrgencyLevel, { label: string; color: string; bg: string; ring: string }> = {
+  p1: { label: "Critical", color: "text-rose-700",   bg: "bg-rose-50",   ring: "ring-rose-300" },
+  p2: { label: "High",     color: "text-orange-700", bg: "bg-orange-50", ring: "ring-orange-300" },
+  p3: { label: "Normal",   color: "text-slate-600",  bg: "bg-slate-50",  ring: "ring-slate-200" },
+};
+
+// Fire-and-forget notification for task events
+function fireTaskNotification(data: {
+  taskId: string;
+  event: string;
+  targetUserId: string;
+  clientName: string;
+  urgency: string;
+  senderName: string;
+}) {
+  fetch("/api/notify-task", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  }).catch(() => {});
+}
+
+export interface TaskHistoryEntry {
+  action: string;    // "created" | "assigned" | "submitted" | "changes_requested" | "verified" | "promoted" | "sent" | "cancelled"
+  by: string;        // UID
+  byName: string;
+  to?: string;       // target UID (for assignments)
+  toName?: string;
+  note?: string;
+  at: unknown;       // Timestamp
+}
+
+export interface ProposalTask {
+  id: string;
+  proposalId: string | null;   // null until a draft is created
+  // The chain
+  requesterId: string;          // CEO who initiated
+  requesterName: string;
+  adminId?: string;             // General Admin who received from CEO
+  adminName?: string;
+  deptAdminId?: string;         // Dept Admin who received from General Admin
+  deptAdminName?: string;
+  assigneeId?: string;          // Staff who builds the draft
+  assigneeName?: string;
+  // Task metadata
+  department: string;
+  clientName: string;
+  clientEmail?: string;
+  templateId?: string;
+  templateName?: string;
+  briefDescription: string;     // What the CEO wants
+  // Urgency & SLA
+  urgency: UrgencyLevel;
+  dueAt: unknown;               // Timestamp = createdAt + SLA window
+  // State
+  status: TaskStatus;
+  verificationNote?: string;    // Note from dept admin on changes_requested
+  // History
+  history: TaskHistoryEntry[];
+  // Timestamps
+  createdAt: unknown;
+  updatedAt: unknown;
+}
+
+// ─── CREATE TASK (CEO → Admin) ───────────────────────────────
+
+export async function createTask(data: {
+  requesterId: string;
+  requesterName: string;
+  adminId: string;
+  adminName: string;
+  department: string;
+  clientName: string;
+  clientEmail?: string;
+  templateId?: string;
+  templateName?: string;
+  briefDescription: string;
+  urgency: UrgencyLevel;
+}): Promise<string> {
+  const now = new Date();
+  const dueAt = new Date(now.getTime() + URGENCY_SLA[data.urgency]);
+
+  const ref = await addDoc(collection(db, "tasks"), {
+    proposalId: null,
+    requesterId: data.requesterId,
+    requesterName: data.requesterName,
+    adminId: data.adminId,
+    adminName: data.adminName,
+    deptAdminId: null,
+    deptAdminName: null,
+    assigneeId: null,
+    assigneeName: null,
+    department: data.department,
+    clientName: data.clientName,
+    clientEmail: data.clientEmail ?? null,
+    templateId: data.templateId ?? null,
+    templateName: data.templateName ?? null,
+    briefDescription: data.briefDescription,
+    urgency: data.urgency,
+    dueAt,
+    status: "drafting",
+    verificationNote: null,
+    history: [{
+      action: "created",
+      by: data.requesterId,
+      byName: data.requesterName,
+      to: data.adminId,
+      toName: data.adminName,
+      at: serverTimestamp(),
+    }],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// ─── ASSIGN TASK (Admin → Dept Admin, or Dept Admin → Staff) ─
+
+export async function assignTask(
+  taskId: string,
+  assignerId: string,
+  assignerName: string,
+  targetId: string,
+  targetName: string,
+  level: "deptAdmin" | "staff"
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const history = (task.history || []) as TaskHistoryEntry[];
+
+  const update: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "assigned",
+      by: assignerId,
+      byName: assignerName,
+      to: targetId,
+      toName: targetName,
+      at: new Date().toISOString(),
+    }],
+  };
+
+  if (level === "deptAdmin") {
+    update.deptAdminId = targetId;
+    update.deptAdminName = targetName;
+  } else {
+    update.assigneeId = targetId;
+    update.assigneeName = targetName;
+  }
+
+  await updateDoc(doc(db, "tasks", taskId), update);
+
+  // Notify the target
+  fireTaskNotification({
+    taskId,
+    event: "task_assigned",
+    targetUserId: targetId,
+    clientName: task.clientName as string,
+    urgency: task.urgency as string,
+    senderName: assignerName,
+  });
+}
+
+// ─── LINK PROPOSAL TO TASK ──────────────────────────────────
+
+export async function linkProposalToTask(
+  taskId: string,
+  proposalId: string
+): Promise<void> {
+  await updateDoc(doc(db, "tasks", taskId), {
+    proposalId,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// ─── SUBMIT FOR REVIEW (Staff → Dept Admin) ─────────────────
+
+export async function submitTaskForReview(
+  taskId: string,
+  staffId: string,
+  staffName: string
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const history = (task.history || []) as TaskHistoryEntry[];
+
+  await updateDoc(doc(db, "tasks", taskId), {
+    status: "verifying",
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "submitted",
+      by: staffId,
+      byName: staffName,
+      at: new Date().toISOString(),
+    }],
+  });
+
+  // Notify the dept admin (or admin) to review
+  const reviewerId = (task.deptAdminId || task.adminId) as string;
+  if (reviewerId) {
+    fireTaskNotification({
+      taskId,
+      event: "task_submitted",
+      targetUserId: reviewerId,
+      clientName: task.clientName as string,
+      urgency: task.urgency as string,
+      senderName: staffName,
+    });
+  }
+}
+
+// ─── REQUEST CHANGES (Dept Admin → Staff) ────────────────────
+
+export async function requestTaskChanges(
+  taskId: string,
+  adminId: string,
+  adminName: string,
+  note: string
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const history = (task.history || []) as TaskHistoryEntry[];
+
+  await updateDoc(doc(db, "tasks", taskId), {
+    status: "changes_requested",
+    verificationNote: note,
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "changes_requested",
+      by: adminId,
+      byName: adminName,
+      note,
+      at: new Date().toISOString(),
+    }],
+  });
+
+  // Notify the staff assignee
+  const staffId = task.assigneeId as string;
+  if (staffId) {
+    fireTaskNotification({
+      taskId,
+      event: "task_changes_requested",
+      targetUserId: staffId,
+      clientName: task.clientName as string,
+      urgency: task.urgency as string,
+      senderName: adminName,
+    });
+  }
+}
+
+// ─── VERIFY & PROMOTE (Dept Admin → CEO Ready) ──────────────
+
+export async function verifyAndPromoteTask(
+  taskId: string,
+  adminId: string,
+  adminName: string
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const history = (task.history || []) as TaskHistoryEntry[];
+
+  await updateDoc(doc(db, "tasks", taskId), {
+    status: "ready_to_send",
+    verificationNote: null,
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "verified",
+      by: adminId,
+      byName: adminName,
+      at: new Date().toISOString(),
+    }],
+  });
+
+  // Notify the CEO that a proposal is ready for the Talking Inbox
+  const ceoId = task.requesterId as string;
+  if (ceoId) {
+    fireTaskNotification({
+      taskId,
+      event: "task_ready",
+      targetUserId: ceoId,
+      clientName: task.clientName as string,
+      urgency: task.urgency as string,
+      senderName: adminName,
+    });
+  }
+}
+
+// ─── MARK TASK SENT (CEO sends the proposal) ────────────────
+
+export async function markTaskSent(
+  taskId: string,
+  ceoId: string,
+  ceoName: string
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const history = (task.history || []) as TaskHistoryEntry[];
+
+  await updateDoc(doc(db, "tasks", taskId), {
+    status: "sent",
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "sent",
+      by: ceoId,
+      byName: ceoName,
+      at: new Date().toISOString(),
+    }],
+  });
+}
+
+// ─── CANCEL TASK ────────────────────────────────────────────
+
+export async function cancelTask(
+  taskId: string,
+  userId: string,
+  userName: string
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const history = (task.history || []) as TaskHistoryEntry[];
+
+  await updateDoc(doc(db, "tasks", taskId), {
+    status: "cancelled",
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "cancelled",
+      by: userId,
+      byName: userName,
+      at: new Date().toISOString(),
+    }],
+  });
+}
+
+// ─── SUBSCRIPTIONS ──────────────────────────────────────────
+
+// CEO: tasks that are ready_to_send (the "Talking Inbox")
+export function subscribeToReadyToSendTasks(
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("status", "==", "ready_to_send"),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// CEO: all active tasks (for oversight)
+export function subscribeToAllActiveTasks(
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("status", "in", ["drafting", "verifying", "changes_requested", "ready_to_send"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// Admin: tasks assigned to them
+export function subscribeToAdminTasks(
+  adminId: string,
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("adminId", "==", adminId),
+    where("status", "in", ["drafting", "verifying", "changes_requested", "ready_to_send"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// Dept Admin: tasks assigned to them for verification
+export function subscribeToDeptAdminTasks(
+  deptAdminId: string,
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("deptAdminId", "==", deptAdminId),
+    where("status", "in", ["drafting", "verifying", "changes_requested"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// Staff: tasks assigned to them
+export function subscribeToStaffTasks(
+  staffId: string,
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("assigneeId", "==", staffId),
+    where("status", "in", ["drafting", "changes_requested"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// Single task subscription
+export function subscribeToTask(
+  taskId: string,
+  callback: (task: ProposalTask | null) => void
+): () => void {
+  return onSnapshot(doc(db, "tasks", taskId), (snap) => {
+    callback(snap.exists() ? ({ id: snap.id, ...snap.data() } as ProposalTask) : null);
   });
 }

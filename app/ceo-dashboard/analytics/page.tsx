@@ -14,15 +14,13 @@ import {
 } from "recharts";
 import {
   subscribeToDepartmentsList,
-  subscribeToAllProposals,
-  type Proposal,
+  subscribeToGlobalStats,
+  getImmutableAnalytics,
+  type GlobalStats,
+  type AuditDerivedStats,
   type FirestoreDepartment,
 } from "@/lib/firestore";
-
-function tsMs(ts: unknown): number {
-  if (!ts || typeof ts !== "object") return 0;
-  return ((ts as { seconds: number }).seconds ?? 0) * 1000;
-}
+import { StatCardSkeleton } from "@/components/proposal-skeleton";
 
 const DEPT_PALETTE = [
   "#6366f1", "#d946ef", "#f59e0b", "#0ea5e9", "#10b981",
@@ -30,111 +28,104 @@ const DEPT_PALETTE = [
 ];
 
 export default function CeoAnalyticsPage() {
-  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
+  const [globalStats, setGlobalStats] = useState<Partial<GlobalStats>>({});
+  const [auditStats, setAuditStats] = useState<AuditDerivedStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDept, setSelectedDept] = useState("all");
 
+  // 1-doc headline stats (instant load)
   useEffect(() => {
-    try {
-      const unsub = subscribeToAllProposals((data) => {
-        setProposals(data);
-        setLoading(false);
-      });
-      return unsub;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load");
-      setLoading(false);
-    }
+    return subscribeToGlobalStats((stats) => {
+      setGlobalStats(stats);
+      setStatsLoading(false);
+    });
+  }, []);
+
+  // Immutable analytics from audit_logs (historical truth)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stats = await getImmutableAnalytics();
+        if (!cancelled) { setAuditStats(stats); setLoading(false); }
+      } catch (err) {
+        if (!cancelled) { setError(err instanceof Error ? err.message : "Failed to load"); setLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    const unsub = subscribeToDepartmentsList(setDepartments);
-    return unsub;
+    return subscribeToDepartmentsList(setDepartments);
   }, []);
 
-  // Filter by selected department
-  const active = useMemo(() => {
-    const base = proposals.filter((p) => p.status !== "archived");
-    if (selectedDept === "all") return base;
-    return base.filter((p) => p.department === selectedDept);
-  }, [proposals, selectedDept]);
-
-  const totalSent = active.length;
-  const viewedCount = active.filter((p) => ["viewed", "accepted", "rejected"].includes(p.status)).length;
-  const acceptedCount = active.filter((p) => p.status === "accepted").length;
-  const pipelineCount = active.filter((p) => p.status === "sent" || p.status === "viewed").length;
-
+  // Headline numbers from stats/global (1-doc read)
+  const totalSent = globalStats.totalProposals ?? auditStats?.totalCreated ?? 0;
+  const viewedCount = globalStats.totalViewed ?? auditStats?.totalViewed ?? 0;
+  const acceptedCount = globalStats.totalAccepted ?? auditStats?.totalAccepted ?? 0;
+  const rejectedCount = globalStats.totalRejected ?? auditStats?.totalRejected ?? 0;
+  const pipelineCount = (globalStats.totalSent ?? 0);
   const viewRate = totalSent > 0 ? ((viewedCount / totalSent) * 100) : 0;
   const closeRate = totalSent > 0 ? ((acceptedCount / totalSent) * 100) : 0;
 
-  const avgSign = useMemo(() => {
-    const signed = active.filter((p) => p.status === "accepted" && p.signedAt && p.createdAt);
-    if (signed.length === 0) return "—";
-    const total = signed.reduce((sum, p) => sum + (tsMs(p.signedAt) - tsMs(p.createdAt)), 0);
-    const avgDays = total / signed.length / 86_400_000;
-    return avgDays < 1 ? `${Math.round(avgDays * 24)}h` : `${avgDays.toFixed(1)}d`;
-  }, [active]);
-
-  // Department comparison — always show all depts (unfiltered)
+  // Department charts derived from immutable audit_logs
   const deptData = useMemo(() => {
-    const allActive = proposals.filter((p) => p.status !== "archived");
+    if (!auditStats) return [];
     return departments.map((dept) => {
-      const dp = allActive.filter((p) => p.department === dept.name);
+      const d = auditStats.byDepartment[dept.name];
+      if (!d) return null;
       return {
         name: dept.name,
-        total: dp.length,
-        accepted: dp.filter((p) => p.status === "accepted").length,
-        rejected: dp.filter((p) => p.status === "rejected").length,
-        pending: dp.filter((p) => p.status === "sent" || p.status === "viewed").length,
+        total: d.created,
+        accepted: d.accepted,
+        rejected: d.rejected,
+        pending: d.created - d.accepted - d.rejected,
       };
-    }).filter((d) => d.total > 0);
-  }, [proposals, departments]);
+    }).filter(Boolean) as { name: string; total: number; accepted: number; rejected: number; pending: number }[];
+  }, [auditStats, departments]);
 
-  // Heatmap data: status × department
+  // Heatmap from audit-derived department breakdown
   const heatmapData = useMemo(() => {
-    const allActive = proposals.filter((p) => p.status !== "archived");
-    const statuses = ["sent", "viewed", "accepted", "rejected"] as const;
+    if (!auditStats) return [];
     return departments.map((dept) => {
-      const dp = allActive.filter((p) => p.department === dept.name);
-      const row: Record<string, string | number> = { name: dept.name };
-      for (const s of statuses) row[s] = dp.filter((p) => p.status === s).length;
-      return row;
-    }).filter((r) => departments.some((d) => d.name === r.name));
-  }, [proposals, departments]);
+      const d = auditStats.byDepartment[dept.name];
+      if (!d) return null;
+      return {
+        name: dept.name,
+        sent: d.created,
+        viewed: 0,
+        accepted: d.accepted,
+        rejected: d.rejected,
+      };
+    }).filter(Boolean) as Record<string, string | number>[];
+  }, [auditStats, departments]);
 
-  // Department close rates
   const deptCloseRate = useMemo(() => {
-    const allActive = proposals.filter((p) => p.status !== "archived");
-    return departments.map((dept, i) => {
-      const dp = allActive.filter((p) => p.department === dept.name);
-      const acc = dp.filter((p) => p.status === "accepted").length;
-      const rate = dp.length > 0 ? Math.round((acc / dp.length) * 100) : 0;
-      return { name: dept.name, rate, fill: DEPT_PALETTE[i % DEPT_PALETTE.length] };
-    }).filter((d) => deptData.some((dd) => dd.name === d.name));
-  }, [proposals, departments, deptData]);
+    return deptData.map((d, i) => {
+      const rate = d.total > 0 ? Math.round((d.accepted / d.total) * 100) : 0;
+      return { name: d.name, rate, fill: DEPT_PALETTE[i % DEPT_PALETTE.length] };
+    });
+  }, [deptData]);
 
   const statusDist = useMemo(() => [
-    { name: "Sent",     value: active.filter((p) => p.status === "sent").length,     color: "#94a3b8" },
-    { name: "Viewed",   value: active.filter((p) => p.status === "viewed").length,   color: "#38bdf8" },
-    { name: "Accepted", value: acceptedCount,                                         color: "#34d399" },
-    { name: "Rejected", value: active.filter((p) => p.status === "rejected").length, color: "#fb7185" },
-  ].filter((d) => d.value > 0), [active, acceptedCount]);
+    { name: "Sent",     value: totalSent - viewedCount - acceptedCount - rejectedCount, color: "#94a3b8" },
+    { name: "Viewed",   value: viewedCount,   color: "#38bdf8" },
+    { name: "Accepted", value: acceptedCount,  color: "#34d399" },
+    { name: "Rejected", value: rejectedCount,  color: "#fb7185" },
+  ].filter((d) => d.value > 0), [totalSent, viewedCount, acceptedCount, rejectedCount]);
 
+  // Timeline from audit byMonth
   const timeline = useMemo(() => {
-    const buckets: { date: string; sent: number; accepted: number }[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86_400_000);
-      buckets.push({ date: d.toISOString().slice(0, 10), sent: 0, accepted: 0 });
-    }
-    for (const p of active) {
-      const key = new Date(tsMs(p.createdAt)).toISOString().slice(0, 10);
-      const b = buckets.find((x) => x.date === key);
-      if (b) { b.sent++; if (p.status === "accepted") b.accepted++; }
-    }
-    return buckets;
-  }, [active]);
+    if (!auditStats) return [];
+    return auditStats.byMonth.slice(-14).map((m) => ({
+      date: m.month,
+      sent: m.created,
+      accepted: m.accepted,
+    }));
+  }, [auditStats]);
 
   const deptFilter = (
     <div className="flex items-center gap-2">
@@ -190,7 +181,7 @@ export default function CeoAnalyticsPage() {
               <StatCard label="Total Pipeline"      value={pipelineCount}                icon={DollarSign}  accent="blue" />
               <StatCard label="View Rate"           value={`${viewRate.toFixed(1)}%`}    icon={Eye}         accent="blue" />
               <StatCard label="Global Close Rate"   value={`${closeRate.toFixed(1)}%`}   icon={CheckCircle} accent="green" />
-              <StatCard label="Avg. Time to Sign"   value={avgSign}                      icon={Clock}       accent="indigo" />
+              <StatCard label="Rejected"             value={rejectedCount}                icon={Clock}       accent="red" />
             </section>
 
             {/* Department Performance Bar Chart */}

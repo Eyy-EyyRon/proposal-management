@@ -10,10 +10,11 @@ import {
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { useAuth, useRole } from "@/contexts/auth-context";
-import { type Proposal, createProposalRevision, softDeleteComment, updateProposalSharing, updateProposalPrivacy, writeAuditLog } from "@/lib/firestore";
+import { type Proposal, createProposalRevision, softDeleteComment, updateProposalPrivacy, writeAuditLog } from "@/lib/firestore";
 // renderProposalHtml is lazy-loaded to keep mammoth out of the initial bundle
 import { exportProposalPdf } from "@/lib/export-utils";
 import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
+import { ShareProposalModal } from "@/components/share-proposal-modal";
 import { toast } from "@/components/providers/toast";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -70,9 +71,7 @@ export default function ProposalDetailPage() {
 
   // isPrivate / sharedWith controls (CEO/Admin)
   const [savingPrivacy, setSavingPrivacy] = useState(false);
-  const [sharingInput, setSharingInput] = useState("");
-  const [savingSharing, setSavingSharing] = useState(false);
-  const [showSharingPanel, setShowSharingPanel] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Fetch proposal using real-time subscription
   useEffect(() => {
@@ -402,20 +401,6 @@ export default function ProposalDetailPage() {
     }
   };
 
-  const handleSaveSharing = async () => {
-    if (!proposal) return;
-    const depts = sharingInput.split(",").map((d) => d.trim()).filter(Boolean);
-    setSavingSharing(true);
-    try {
-      await updateProposalSharing(proposal.id, depts);
-      toast.success("Sharing updated.");
-    } catch {
-      toast.error("Failed to update sharing.");
-    } finally {
-      setSavingSharing(false);
-    }
-  };
-
   const handleSoftDeleteComment = async (commentId: string) => {
     if (!proposal) return;
     try {
@@ -502,6 +487,11 @@ export default function ProposalDetailPage() {
                   Shared · {proposal.sharedWith!.join(", ")}
                 </span>
               )}
+              {profile?.department && (proposal.originDepartmentId ?? proposal.department) !== profile.department && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600 ring-1 ring-indigo-200">
+                  Shared from {proposal.originDepartmentId ?? proposal.department}
+                </span>
+              )}
               {proposal.isDelegated && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
                   Delegated Send
@@ -527,10 +517,10 @@ export default function ProposalDetailPage() {
                 {proposal.isPrivate ? "Private" : "Set Private"}
               </button>
             )}
-            {/* Sharing Panel — CEO/Admin */}
+            {/* Sharing Modal — CEO/Admin */}
             {(isCeo || isAdmin) && (
               <button
-                onClick={() => { setShowSharingPanel((v) => !v); setSharingInput((proposal.sharedWith ?? []).join(", ")); }}
+                onClick={() => setShowShareModal(true)}
                 className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[12px] font-medium text-violet-700 transition hover:bg-violet-100 active:scale-95"
               >
                 Share
@@ -613,31 +603,6 @@ export default function ProposalDetailPage() {
             <p className="text-[13px] font-medium text-amber-800">
               You are acting as CEO. This proposal was sent on their behalf. All branding and signatures reflect the CEO identity.
             </p>
-          </div>
-        )}
-
-        {/* Sharing Panel — CEO/Admin inline expand */}
-        {showSharingPanel && (isCeo || isAdmin) && (
-          <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 space-y-3">
-            <p className="text-[13px] font-semibold text-violet-800">Share with Departments</p>
-            <p className="text-[12px] text-violet-600">Enter department IDs separated by commas. Those departments can view and comment on this proposal.</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={sharingInput}
-                onChange={(e) => setSharingInput(e.target.value)}
-                placeholder="e.g. Sales, IT, HR"
-                className="flex-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-violet-200"
-              />
-              <button
-                onClick={handleSaveSharing}
-                disabled={savingSharing}
-                className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-violet-700 active:scale-95 disabled:opacity-50"
-              >
-                {savingSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                Save
-              </button>
-            </div>
           </div>
         )}
 
@@ -1093,6 +1058,19 @@ export default function ProposalDetailPage() {
 
       {/* Animated Confirm Modal — handles all destructive/primary confirmations */}
       <ConfirmModal {...modalProps} isLoading={resending || voiding} />
+
+      {/* Cross-departmental sharing modal */}
+      {proposal && (
+        <ShareProposalModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          proposalId={proposal.id}
+          proposalClientName={proposal.clientName}
+          currentSharedWith={proposal.sharedWith ?? []}
+          currentAccessLevel={proposal.accessLevel ?? "view_only"}
+          originDepartmentId={proposal.originDepartmentId ?? proposal.department}
+        />
+      )}
     </main>
   );
 }

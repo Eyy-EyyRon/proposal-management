@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, memo } from "react";
 import Link from "next/link";
-import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen, Eye, AlertTriangle, Archive } from "lucide-react";
+import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen, Eye, AlertTriangle, Archive, Share2 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import {
   subscribeToPaginatedProposals,
   subscribeToPaginatedProposalsByDepartment,
+  subscribeToSharedWithMeProposals,
+  loadMoreSharedWithMeProposals,
   moveToTrash, archiveProposal, type Proposal,
   PROPOSALS_PAGE_SIZE,
 } from "@/lib/firestore";
@@ -17,6 +19,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DepartmentBadge } from "@/components/department-badge";
 import { exportProposalsCsv, exportProposalsJson } from "@/lib/export-utils";
+
+type ViewTab = "my_work" | "shared_with_me";
 
 type StatusFilter = "all" | "sent" | "viewed" | "accepted" | "rejected" | "archived";
 type GridStatus = "pending" | "viewed" | "accepted" | "rejected" | "archived";
@@ -105,6 +109,145 @@ function StatusCell({ status }: { status: GridStatus }) {
   );
 }
 
+// "Shared from [Dept]" badge — shown when the proposal's origin dept differs from the viewer's dept
+function SharedFromBadge({ originDept, userDept }: { originDept?: string; userDept?: string | null }) {
+  if (!originDept || !userDept || originDept === userDept) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-600 ring-1 ring-violet-200">
+      <Share2 className="h-2.5 w-2.5" />
+      Shared from {originDept}
+    </span>
+  );
+}
+
+// React.memo wrapper to prevent unnecessary re-renders of proposal cards
+const ProposalRow = memo(function ProposalRow({
+  proposal,
+  isLast,
+  copiedId,
+  userDept,
+  onCopyLink,
+  onTrash,
+  onArchive,
+  onVoidWarning,
+}: {
+  proposal: Proposal;
+  isLast: boolean;
+  copiedId: string | null;
+  userDept?: string | null;
+  onCopyLink: (id: string) => void;
+  onTrash: (p: Proposal) => void;
+  onArchive: (id: string) => void;
+  onVoidWarning: (p: Proposal) => void;
+}) {
+  const originDept = proposal.originDepartmentId ?? proposal.department;
+  return (
+    <tr
+      className={`group relative bg-transparent transition-colors duration-200 hover:bg-slate-50/50 ${
+        !isLast ? "border-b border-slate-100/80" : ""
+      }`}
+    >
+      <td className="relative px-5 py-3 pl-6">
+        <span className="absolute left-0 top-0 h-full w-1 bg-[#780116] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+        <div className="flex items-center gap-3">
+          <ClientAvatar name={proposal.clientName} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="truncate text-[13px] font-medium text-slate-800">
+                {proposal.clientName}
+              </p>
+              <SharedFromBadge originDept={originDept} userDept={userDept} />
+            </div>
+            <p className="truncate text-[12px] text-slate-400">
+              {proposal.clientEmail}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-600">
+        {proposal.templateName}
+      </td>
+      <td className="whitespace-nowrap px-5 py-3">
+        {proposal.isDelegated && proposal.sentById !== proposal.ownerId ? (
+          <span
+            title={`Sent by staff (UID: ${proposal.sentById}) acting as CEO`}
+            className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            Delegated
+          </span>
+        ) : (
+          <span className="text-[12px] text-slate-400">Direct</span>
+        )}
+      </td>
+      <td className="whitespace-nowrap px-5 py-3">
+        <DepartmentBadge department={proposal.department} />
+      </td>
+      <td className="whitespace-nowrap px-5 py-3">
+        <StatusCell status={toGridStatus(proposal.status)} />
+      </td>
+      <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
+        {formatTs(proposal.createdAt as unknown as { seconds: number })}
+      </td>
+      <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
+        {proposal.viewedAt
+          ? formatTs(proposal.viewedAt as unknown as { seconds: number })
+          : <span className="text-slate-300">&mdash;</span>
+        }
+      </td>
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-0.5 opacity-0 transition-all group-hover:opacity-100">
+          {proposal.status === "accepted" ? (
+            <button
+              onClick={() => onVoidWarning(proposal)}
+              title="View / Edit signed proposal"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link
+              href={`/dashboard/proposals/${proposal.id}`}
+              title="View proposal details"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
+            >
+              <Eye className="h-4 w-4" />
+            </Link>
+          )}
+          <button
+            onClick={() => onCopyLink(proposal.id)}
+            title="Copy shareable link"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+          >
+            {copiedId === proposal.id ? (
+              <Check className="h-4 w-4 text-emerald-500" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </button>
+          {proposal.status === "accepted" ? (
+            <button
+              onClick={() => onArchive(proposal.id)}
+              title="Archive signed proposal"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+            >
+              <Archive className="h-4 w-4" />
+            </button>
+          ) : proposal.status !== "archived" ? (
+            <button
+              onClick={() => onTrash(proposal)}
+              title="Move to trash"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-red-50 hover:text-red-500"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
+      </td>
+    </tr>
+  );
+});
+
 function EmptyScanState({ onCreate }: { onCreate: string }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
@@ -142,8 +285,16 @@ export default function ProposalsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // Cross-departmental sharing: "Shared with Me" tab
+  const [viewTab, setViewTab] = useState<ViewTab>("my_work");
+  const [sharedProposals, setSharedProposals] = useState<Proposal[]>([]);
+  const [sharedLoading, setSharedLoading] = useState(true);
+  const [sharedHasMore, setSharedHasMore] = useState(false);
+  const [sharedLoadingMore, setSharedLoadingMore] = useState(false);
+
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
 
+  // My Work subscription
   useEffect(() => {
     if (!user) return;
     const dept = profile?.department;
@@ -157,9 +308,20 @@ export default function ProposalsPage() {
     });
   }, [user, profile?.department, isCeo]);
 
-  // Cross-dept access guard: redirect if user navigates to a proposal not in their dept
+  // Shared with Me subscription — only subscribe when user has a department
+  useEffect(() => {
+    const dept = profile?.department;
+    if (!dept) { setSharedLoading(false); return; }
+    return subscribeToSharedWithMeProposals(dept, (data, more) => {
+      setSharedProposals(data); setSharedHasMore(more); setSharedLoading(false);
+    });
+  }, [profile?.department]);
+
+  // Cross-dept access guard: allow if same dept, shared, or CEO
   const handleProposalClick = (proposal: Proposal) => {
     if (!isCeo && profile?.department && proposal.department && proposal.department !== profile.department) {
+      // Allow if user's dept is in the sharedWith array
+      if (proposal.sharedWith?.includes(profile.department)) return true;
       toast.error("Access Denied: This proposal belongs to a different department.");
       router.push("/dashboard/proposals");
       return false;
@@ -294,234 +456,267 @@ export default function ProposalsPage() {
           </div>
         </div>
 
-        {/* Stats — show skeletons during initial load, real values after */}
-        {loading ? (
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
-          </section>
-        ) : (
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Total"    value={counts.total}                  icon={FileText}    accent="indigo" />
-            <StatCard label="Pending"  value={counts.sent + counts.viewed}   icon={Clock}       accent="blue" />
-            <StatCard label="Accepted" value={counts.accepted}               icon={CheckCircle} accent="green" />
-            <StatCard label="Rejected" value={counts.rejected}               icon={XCircle}     accent="red" />
-          </section>
+        {/* View Tabs: My Work / Shared with Me */}
+        {profile?.department && (
+          <div className="flex gap-1 rounded-xl bg-slate-100/60 p-1 w-fit">
+            <button
+              onClick={() => setViewTab("my_work")}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition ${
+                viewTab === "my_work"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              My Work
+            </button>
+            <button
+              onClick={() => setViewTab("shared_with_me")}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition ${
+                viewTab === "shared_with_me"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              Shared with Me
+              {sharedProposals.length > 0 && (
+                <span className="ml-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                  {sharedProposals.length}
+                </span>
+              )}
+            </button>
+          </div>
         )}
 
-        {loading ? (
-          <div className="rounded-xl border border-slate-200/80 bg-white">
-            <ProposalTableSkeleton rows={8} />
-          </div>
-        ) : (
-          /* Table Container */
-          <div className="rounded-xl border border-slate-200/80 bg-white">
-            {/* Toolbar */}
-            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 pt-3 sm:flex-row sm:items-center sm:justify-between">
-              {/* Tabs */}
-              <div className="flex gap-0">
-                {tabs.map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setStatusFilter(tab.key)}
-                    className={`relative px-3 pb-3 text-[13px] font-medium transition ${
-                      statusFilter === tab.key
-                        ? "text-slate-900"
-                        : "text-slate-400 hover:text-slate-600"
-                    }`}
-                  >
-                    {tab.label === "Sent" ? "Pending" : tab.label}
-                    <span className={`ml-1 text-[11px] ${statusFilter === tab.key ? "text-slate-500" : "text-slate-300"}`}>
-                      {tab.count}
-                    </span>
-                    {statusFilter === tab.key && (
-                      <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-slate-900" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Table */}
-            {filteredProposals.length === 0 ? (
-              <EmptyScanState onCreate="/dashboard/create-proposal" />
+        {/* ═══ MY WORK TAB ═══ */}
+        {viewTab === "my_work" && (
+          <>
+            {/* Stats — show skeletons during initial load, real values after */}
+            {loading ? (
+              <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
+              </section>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/50">
-                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Client
-                      </th>
-                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Template
-                      </th>
-                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Sent by
-                      </th>
-                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Dept
-                      </th>
-                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Status
-                      </th>
-                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Sent
-                      </th>
-                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Viewed
-                      </th>
-                      <th className="w-10 px-3 py-2.5" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProposals.map((proposal, i) => (
-                      <tr
-                        key={proposal.id}
-                        className={`group relative bg-transparent transition-colors duration-200 hover:bg-slate-50/50 ${
-                          i !== filteredProposals.length - 1 ? "border-b border-slate-100/80" : ""
-                        }`}
-                      >
-                        <td className="relative px-5 py-3 pl-6">
-                          <span className="absolute left-0 top-0 h-full w-1 bg-[#780116] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-                          <div className="flex items-center gap-3">
-                            <ClientAvatar name={proposal.clientName} />
-                            <div className="min-w-0">
-                              <p className="truncate text-[13px] font-medium text-slate-800">
-                                {proposal.clientName}
-                              </p>
-                              <p className="truncate text-[12px] text-slate-400">
-                                {proposal.clientEmail}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-600">
-                          {proposal.templateName}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3">
-                          {proposal.isDelegated && proposal.sentById !== proposal.ownerId ? (
-                            <span
-                              title={`Sent by staff (UID: ${proposal.sentById}) acting as CEO`}
-                              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100"
-                            >
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                              Delegated
-                            </span>
-                          ) : (
-                            <span className="text-[12px] text-slate-400">Direct</span>
-                          )}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3">
-                          <DepartmentBadge department={proposal.department} />
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3">
-                          <StatusCell status={toGridStatus(proposal.status)} />
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
-                          {formatTs(proposal.createdAt as unknown as { seconds: number })}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
-                          {proposal.viewedAt
-                            ? formatTs(proposal.viewedAt as unknown as { seconds: number })
-                            : <span className="text-slate-300">&mdash;</span>
-                          }
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-0.5 opacity-0 transition-all group-hover:opacity-100">
-                            {proposal.status === "accepted" ? (
-                              <button
-                                onClick={() => setVoidWarningProposal(proposal)}
-                                title="View / Edit signed proposal"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
-                            ) : (
-                              <Link
-                                href={`/dashboard/proposals/${proposal.id}`}
-                                title="View proposal details"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-[#800020]"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Link>
-                            )}
-                            <button
-                              onClick={() => handleCopyLink(proposal.id)}
-                              title="Copy shareable link"
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-slate-600"
-                            >
-                              {copiedId === proposal.id ? (
-                                <Check className="h-4 w-4 text-emerald-500" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </button>
-                            {proposal.status === "accepted" ? (
-                              <button
-                                onClick={() => handleArchiveAccepted(proposal.id)}
-                                title="Archive signed proposal"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-slate-600"
-                              >
-                                <Archive className="h-4 w-4" />
-                              </button>
-                            ) : proposal.status !== "archived" ? (
-                              <button
-                                onClick={() => handleTrash(proposal)}
-                                title="Move to trash"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-300 hover:bg-red-50 hover:text-red-500"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <StatCard label="Total"    value={counts.total}                  icon={FileText}    accent="indigo" />
+                <StatCard label="Pending"  value={counts.sent + counts.viewed}   icon={Clock}       accent="blue" />
+                <StatCard label="Accepted" value={counts.accepted}               icon={CheckCircle} accent="green" />
+                <StatCard label="Rejected" value={counts.rejected}               icon={XCircle}     accent="red" />
+              </section>
             )}
 
-            {/* Footer + Load More */}
-            {filteredProposals.length > 0 && (
-              <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
-                <p className="text-[12px] text-slate-400">
-                  Showing {filteredProposals.length} proposal{filteredProposals.length !== 1 ? "s" : ""}
-                  {hasMore ? " — more available" : ""}
-                </p>
-                {hasMore && (
-                  <button
-                    onClick={async () => {
-                      setLoadingMore(true);
-                      try {
-                        const { getDocs, query, collection, where, orderBy, startAfter, limit } = await import("firebase/firestore");
-                        const { db } = await import("@/lib/firebase");
-                        const dept = profile?.department;
-                        const last = proposals[proposals.length - 1];
-                        if (!last || !user) return;
-                        const lastSnap = await getDocs(
-                          query(collection(db, "proposals"), where(dept && !isCeo ? "department" : "ownerId", "==", dept && !isCeo ? dept : user.uid), where("isDeleted", "==", false), orderBy("createdAt", "desc"), startAfter({ seconds: (last.createdAt as {seconds:number}).seconds, nanoseconds: 0 }), limit(PROPOSALS_PAGE_SIZE))
-                        );
-                        const more = lastSnap.docs.map(d => ({ id: d.id, ...d.data() }) as Proposal);
-                        setProposals(prev => {
-                          const ids = new Set(prev.map(p => p.id));
-                          return [...prev, ...more.filter(p => !ids.has(p.id))];
-                        });
-                        setHasMore(lastSnap.docs.length >= PROPOSALS_PAGE_SIZE);
-                      } finally {
-                        setLoadingMore(false);
-                      }
-                    }}
-                    disabled={loadingMore}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 active:scale-95 disabled:opacity-50"
-                  >
-                    {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                    Load more
-                  </button>
+            {loading ? (
+              <div className="rounded-xl border border-slate-200/80 bg-white">
+                <ProposalTableSkeleton rows={8} />
+              </div>
+            ) : (
+              /* Table Container */
+              <div className="rounded-xl border border-slate-200/80 bg-white">
+                {/* Toolbar */}
+                <div className="flex flex-col gap-3 border-b border-slate-100 px-4 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                  {/* Tabs */}
+                  <div className="flex gap-0">
+                    {tabs.map(tab => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setStatusFilter(tab.key)}
+                        className={`relative px-3 pb-3 text-[13px] font-medium transition ${
+                          statusFilter === tab.key
+                            ? "text-slate-900"
+                            : "text-slate-400 hover:text-slate-600"
+                        }`}
+                      >
+                        {tab.label === "Sent" ? "Pending" : tab.label}
+                        <span className={`ml-1 text-[11px] ${statusFilter === tab.key ? "text-slate-500" : "text-slate-300"}`}>
+                          {tab.count}
+                        </span>
+                        {statusFilter === tab.key && (
+                          <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-slate-900" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Table */}
+                {filteredProposals.length === 0 ? (
+                  <EmptyScanState onCreate="/dashboard/create-proposal" />
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/50">
+                          <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Client</th>
+                          <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Template</th>
+                          <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sent by</th>
+                          <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Dept</th>
+                          <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Status</th>
+                          <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sent</th>
+                          <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Viewed</th>
+                          <th className="w-10 px-3 py-2.5" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredProposals.map((proposal, i) => (
+                          <ProposalRow
+                            key={proposal.id}
+                            proposal={proposal}
+                            isLast={i === filteredProposals.length - 1}
+                            copiedId={copiedId}
+                            userDept={profile?.department}
+                            onCopyLink={handleCopyLink}
+                            onTrash={handleTrash}
+                            onArchive={handleArchiveAccepted}
+                            onVoidWarning={setVoidWarningProposal}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Footer + Load More */}
+                {filteredProposals.length > 0 && (
+                  <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
+                    <p className="text-[12px] text-slate-400">
+                      Showing {filteredProposals.length} proposal{filteredProposals.length !== 1 ? "s" : ""}
+                      {hasMore ? " — more available" : ""}
+                    </p>
+                    {hasMore && (
+                      <button
+                        onClick={async () => {
+                          setLoadingMore(true);
+                          try {
+                            const { getDocs, query, collection, where, orderBy, startAfter, limit } = await import("firebase/firestore");
+                            const { db } = await import("@/lib/firebase");
+                            const dept = profile?.department;
+                            const last = proposals[proposals.length - 1];
+                            if (!last || !user) return;
+                            const lastSnap = await getDocs(
+                              query(collection(db, "proposals"), where(dept && !isCeo ? "department" : "ownerId", "==", dept && !isCeo ? dept : user.uid), where("isDeleted", "==", false), orderBy("createdAt", "desc"), startAfter({ seconds: (last.createdAt as {seconds:number}).seconds, nanoseconds: 0 }), limit(PROPOSALS_PAGE_SIZE))
+                            );
+                            const more = lastSnap.docs.map(d => ({ id: d.id, ...d.data() }) as Proposal);
+                            setProposals(prev => {
+                              const ids = new Set(prev.map(p => p.id));
+                              return [...prev, ...more.filter(p => !ids.has(p.id))];
+                            });
+                            setHasMore(lastSnap.docs.length >= PROPOSALS_PAGE_SIZE);
+                          } finally {
+                            setLoadingMore(false);
+                          }
+                        }}
+                        disabled={loadingMore}
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 active:scale-95 disabled:opacity-50"
+                      >
+                        {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                        Load more
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
-          </div>
+          </>
+        )}
+
+        {/* ═══ SHARED WITH ME TAB ═══ */}
+        {viewTab === "shared_with_me" && (
+          <>
+            {sharedLoading ? (
+              <div className="rounded-xl border border-slate-200/80 bg-white">
+                <ProposalTableSkeleton rows={8} />
+              </div>
+            ) : sharedProposals.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white px-6 py-20 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50">
+                  <Share2 className="h-8 w-8 text-violet-300" />
+                </div>
+                <p className="mt-4 text-sm font-semibold text-slate-800">No shared proposals</p>
+                <p className="mt-1 max-w-[300px] text-[13px] leading-relaxed text-slate-500">
+                  When other departments share proposals with your team, they will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200/80 bg-white">
+                <div className="border-b border-slate-100 px-5 py-3">
+                  <p className="text-[13px] font-semibold text-slate-700">
+                    Proposals shared with {profile?.department}
+                  </p>
+                  <p className="text-[12px] text-slate-400">
+                    These documents originate from other departments but have been shared with your team.
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/50">
+                        <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Client</th>
+                        <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Template</th>
+                        <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sent by</th>
+                        <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Origin Dept</th>
+                        <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Status</th>
+                        <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sent</th>
+                        <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Viewed</th>
+                        <th className="w-10 px-3 py-2.5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sharedProposals.map((proposal, i) => (
+                        <ProposalRow
+                          key={proposal.id}
+                          proposal={proposal}
+                          isLast={i === sharedProposals.length - 1}
+                          copiedId={copiedId}
+                          userDept={profile?.department}
+                          onCopyLink={handleCopyLink}
+                          onTrash={handleTrash}
+                          onArchive={handleArchiveAccepted}
+                          onVoidWarning={setVoidWarningProposal}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Footer + Load More for shared */}
+                <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
+                  <p className="text-[12px] text-slate-400">
+                    Showing {sharedProposals.length} shared proposal{sharedProposals.length !== 1 ? "s" : ""}
+                    {sharedHasMore ? " — more available" : ""}
+                  </p>
+                  {sharedHasMore && (
+                    <button
+                      onClick={async () => {
+                        setSharedLoadingMore(true);
+                        try {
+                          const dept = profile?.department;
+                          const last = sharedProposals[sharedProposals.length - 1];
+                          if (!last || !dept) return;
+                          const result = await loadMoreSharedWithMeProposals(
+                            dept,
+                            (last.createdAt as { seconds: number }).seconds
+                          );
+                          setSharedProposals((prev) => {
+                            const ids = new Set(prev.map((p) => p.id));
+                            return [...prev, ...result.proposals.filter((p) => !ids.has(p.id))];
+                          });
+                          setSharedHasMore(result.hasMore);
+                        } finally {
+                          setSharedLoadingMore(false);
+                        }
+                      }}
+                      disabled={sharedLoadingMore}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 active:scale-95 disabled:opacity-50"
+                    >
+                      {sharedLoadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Load more
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -49,6 +49,12 @@ service cloud.firestore {
       return getUserDept() != null && deptField == getUserDept();
     }
 
+    // ABAC: check if user's dept is in the document's sharedWith array
+    function isSharedWithUser() {
+      return getUserDept() != null
+        && resource.data.get('sharedWith', []).hasAny([getUserDept()]);
+    }
+
     // ─── USERS ───────────────────────────────────────────────
     match /users/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
@@ -67,7 +73,17 @@ service cloud.firestore {
         &&
         (
           // CEO: unrestricted (subject to immortality guard above)
-          isCeo()
+          // ── DIRECT DELEGATION ONLY ────────────────────────────────
+          // Only the actual CEO (role == "ceo") can modify delegation lists.
+          // An Admin "Acting as CEO" cannot grant/revoke delegation power.
+          (
+            isCeo()
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(["delegatedUserIds", "executiveAdminIds"])
+              || getUserRole() == "ceo"
+            )
+          )
           ||
           // Self: can update own profile but NEVER change role, email, or delegatedUserIds
           (
@@ -124,16 +140,30 @@ service cloud.firestore {
     // ─── PROPOSALS ───────────────────────────────────────────
     match /proposals/{proposalId} {
 
-      // Allow public read for client portal
-      // Sensitivity Shield: isPrivate proposals are only readable by the root CEO UID
+      // ABAC-based get: allow read if
+      //   1. Owner/sender (ownerId or sentById matches auth UID)
+      //   2. Same department (departmentId match)
+      //   3. Shared collaborator (user's dept is in sharedWith array)
+      //   4. CEO/Super-Admin (Global Oversight)
+      //   5. Unauthenticated client portal (public share link)
+      // Sensitivity Shield: isPrivate proposals readable only by CEO
       allow get: if
-        !resource.data.get('isPrivate', false)
-        || isCeo()
-        || request.auth == null; // unauthenticated client portal still gets public proposals via share link
+        request.auth == null // unauthenticated client portal
+        || isCeo()           // CEO: Global Oversight
+        || (
+          isSignedIn()
+          && !resource.data.get('isPrivate', false)
+          && (
+            resource.data.ownerId == request.auth.uid
+            || resource.data.sentById == request.auth.uid
+            || isSameDept(resource.data.department)
+            || isSharedWithUser()
+          )
+        );
 
       // List: resource.data is NOT available on list queries in Firestore rules.
-      // Filtering (isPrivate, dept, ownerId) is enforced at the query layer via
-      // where() clauses in the app — the rule just gates whether the user is signed in.
+      // Filtering (isPrivate, dept, ownerId, sharedWith) is enforced at the query
+      // layer via where() clauses in the app — the rule gates authentication.
       // CEO sees all; Admin and Staff are constrained by app-layer where() filters.
       allow list: if isSignedIn();
 
@@ -238,6 +268,15 @@ service cloud.firestore {
       }
     }
 
+    // ─── PROPOSALS SUMMARY (Lightweight Dashboard) ──────────
+    // Mirrors a subset of proposal data for fast dashboard loading.
+    // Same access pattern as proposals.
+    match /proposals_summary/{summaryId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdminOrCeo();
+    }
+
     // ─── NOTIFICATIONS ─────────────────────────────────────────
     match /notifications/{notificationId} {
       // get (single doc): owner or CEO
@@ -297,13 +336,90 @@ service cloud.firestore {
       allow read: if isSignedIn() && isRootCeo(request.auth.uid);
     }
 
-    // ─── DELEGATION GUARD (Circular Delegation Prevention) ───
-    // Enforced at the app layer via updateDelegationSettings:
-    // only users whose actualRole == 'ceo' may call that function.
-    // The Firestore rule below protects the delegatedUserIds field
-    // from being written by non-CEO roles (already covered in /users rules).
+    // ─── SUCCESSION REQUESTS (48h Emergency Root Access) ────
+    // An Admin can create a request. CEO can approve/deny (veto).
+    // After 48h without veto, the request becomes eligible for processing.
+    match /succession_requests/{requestId} {
+      // Only admins can create a succession request
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasAll(["requesterId", "requestedAt", "status", "reason"])
+        && request.resource.data.status == "pending"
+        && request.resource.data.requesterId == request.auth.uid;
+      // Only root CEO can approve/deny; only status + resolvedAt + resolvedBy fields may change
+      allow update: if isSignedIn()
+        && isRootCeo(request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["status", "resolvedAt", "resolvedBy"]);
+      // Read: CEO + the requester
+      allow read: if isSignedIn()
+        && (isCeo() || resource.data.requesterId == request.auth.uid);
+      allow delete: if false;
+    }
 
-    // ─── DENY ALL OTHER PATHS ────────────────────────────────
+    // ─── CEO SETTINGS (Global Pricing Floors, Template Sandbox) ──
+    // Only the actual CEO (not acting-as) can write.
+    match /ceo_settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && getUserRole() == "ceo";
+    }
+
+    // ─── SHARING LOGS (Cross-Dept Sharing Monitor) ────────────
+    // Append-only log for the CEO to monitor sharing activity.
+    match /sharing_logs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+      allow read: if isCeo();
+    }
+
+    // ─── TASKS (Tiered Delegation & Verification) ──────────────
+    match /tasks/{taskId} {
+      // Read: anyone in the task chain (requester, admin, deptAdmin, assignee) or CEO
+      allow read: if isSignedIn()
+        && (
+          isCeo()
+          || resource.data.requesterId == request.auth.uid
+          || resource.data.adminId == request.auth.uid
+          || resource.data.deptAdminId == request.auth.uid
+          || resource.data.assigneeId == request.auth.uid
+        );
+
+      // List: signed-in users (app filters by role; rules can't filter "in" on list)
+      allow list: if isSignedIn();
+
+      // Create: CEO or admin can create a task
+      allow create: if isSignedIn()
+        && (isCeo() || isAdmin())
+        && request.resource.data.status == "drafting";
+
+      // Update: depends on the transition
+      allow update: if isSignedIn()
+        && (
+          // CEO can update any task
+          isCeo()
+          ||
+          // Admin assigned to the task can assign dept admin / staff
+          (resource.data.adminId == request.auth.uid && isAdmin())
+          ||
+          // Dept Admin can verify/request-changes for tasks in their department
+          (
+            resource.data.deptAdminId == request.auth.uid
+            && isAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(["status", "verificationNote", "history", "updatedAt", "assigneeId", "assigneeName"])
+          )
+          ||
+          // Staff assignee can submit for review (status: drafting/changes_requested → verifying)
+          (
+            resource.data.assigneeId == request.auth.uid
+            && resource.data.status in ["drafting", "changes_requested"]
+            && request.resource.data.status == "verifying"
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // ─── DENY ALL OTHER PATHS ────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

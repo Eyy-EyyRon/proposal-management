@@ -25,6 +25,7 @@ import {
   Shield,
   Building2,
   ClipboardList,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth, useRole, useActingAsCeo, type UserRole } from "@/contexts/auth-context";
@@ -53,6 +54,7 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Overview",          href: "/ceo-dashboard",            icon: Globe },
       { label: "Global Analytics",  href: "/ceo-dashboard/analytics",  icon: TrendingUp },
       { label: "All Proposals",     href: "/ceo-dashboard/proposals",  icon: FileText },
+      { label: "Task Center",       href: "/ceo-dashboard/tasks",      icon: ClipboardCheck },
       { label: "Contracts",         href: "/ceo-dashboard/documents",  icon: FolderOpen },
       { label: "Trash",             href: "/ceo-dashboard/trash",      icon: Trash2 },
       { label: "Settings",          href: "/ceo-dashboard/settings", icon: Settings },
@@ -68,6 +70,7 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Overview",      href: "/super-admin",              icon: Shield },
       { label: "Activity",      href: "/super-admin/activity",     icon: Activity },
       { label: "Proposals",     href: "/super-admin/proposals",    icon: FileText },
+      { label: "Tasks",         href: "/dashboard/tasks",          icon: ClipboardCheck },
       { label: "Departments",   href: "/super-admin/departments",  icon: Building2 },
       { label: "Team",          href: "/super-admin/team",         icon: Users },
       { label: "Templates",     href: "/super-admin/templates",    icon: LayoutTemplate },
@@ -84,6 +87,7 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
     items: [
       { label: "Dashboard",     href: "/dashboard",              icon: LayoutDashboard },
       { label: "Proposals",     href: "/dashboard/proposals",    icon: FileText },
+      { label: "My Tasks",      href: "/dashboard/tasks",        icon: ClipboardCheck },
       { label: "Templates",     href: "/dashboard/templates",    icon: LayoutTemplate },
       { label: "Analytics",     href: "/dashboard/analytics",    icon: BarChart2 },
       { label: "Notifications", href: "/dashboard/notifications", icon: Bell },

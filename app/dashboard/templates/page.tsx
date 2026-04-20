@@ -49,7 +49,7 @@ function VariablePill({ label }: { label: string }) {
 }
 
 export default function TemplatesPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isStaff, isAdmin, isCeo } = useRole();
   const canManageTemplates = isAdmin || isCeo;
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -119,7 +119,8 @@ export default function TemplatesPage() {
     setPublishingId(template.id);
     try {
       if (isPublished) {
-        await unpublishTemplate(template.id);
+        const actorName = `${profile?.firstName ?? ""} ${profile?.lastName ?? ""}`.trim() || "Unknown";
+        await unpublishTemplate(template.id, user!.uid, actorName);
         setTemplates((prev) => prev.map((t) => t.id === template.id ? { ...t, isPublished: false } : t));
         toast.success(`"${template.name}" is now a Draft.`);
       } else {

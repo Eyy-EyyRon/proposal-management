@@ -6,6 +6,7 @@ import {
   TrendingUp, FileText, Trash2, ArrowRight, Loader2,
   CheckCircle, Eye, XCircle, DollarSign, Activity,
   Send, FileCheck, FileX, Wifi, WifiOff, AlertTriangle,
+  Share2, Shield, ClipboardCheck,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
@@ -221,12 +222,15 @@ export default function CeoDashboardPage() {
         </div>
 
         {/* Quick Links */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[
-            { label: "Global Analytics", href: "/ceo-dashboard/analytics",  icon: TrendingUp,  desc: "Department comparisons" },
-            { label: "All Proposals",    href: "/ceo-dashboard/proposals",   icon: FileText,    desc: "Cross-dept proposal list" },
-            { label: "Contracts",        href: "/ceo-dashboard/documents",   icon: CheckCircle, desc: "Signed contract repository" },
-            { label: "Trash",            href: "/ceo-dashboard/trash",       icon: Trash2,      desc: "Deleted items recovery" },
+            { label: "Global Analytics",  href: "/ceo-dashboard/analytics",        icon: TrendingUp,  desc: "Department comparisons" },
+            { label: "All Proposals",     href: "/ceo-dashboard/proposals",         icon: FileText,    desc: "Cross-dept proposal list" },
+            { label: "Task Center",       href: "/ceo-dashboard/tasks",             icon: ClipboardCheck, desc: "Talking Inbox & delegation" },
+            { label: "Sharing & Approvals", href: "/ceo-dashboard/sharing-monitor", icon: Share2,      desc: "Cross-dept sharing monitor" },
+            { label: "Delegation Center", href: "/ceo-dashboard/delegation",        icon: Shield,      desc: "Manage authority levels" },
+            { label: "Contracts",         href: "/ceo-dashboard/documents",         icon: CheckCircle, desc: "Signed contract repository" },
+            { label: "Trash",             href: "/ceo-dashboard/trash",             icon: Trash2,      desc: "Deleted items recovery" },
           ].map((item) => (
             <Link
               key={item.href}
