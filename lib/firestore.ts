@@ -2314,9 +2314,10 @@ export async function createTask(data: {
   templateName?: string;
   briefDescription: string;
   urgency: UrgencyLevel;
+  customDueAt?: Date;
 }): Promise<string> {
   const now = new Date();
-  const dueAt = new Date(now.getTime() + URGENCY_SLA[data.urgency]);
+  const dueAt = data.customDueAt ?? new Date(now.getTime() + URGENCY_SLA[data.urgency]);
 
   const ref = await addDoc(collection(db, "tasks"), {
     proposalId: null,
