@@ -1,12 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
   FileText, X, Check, AlertCircle, Download, Pen, Upload,
   Image as ImageIcon, Loader2, ShieldCheck, Sparkles, PenLine, Eraser, LockKeyhole,
-  MessageCircle, Send, Quote
+  MessageCircle, Send, Quote, UserCheck, RefreshCw
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   getProposal, markProposalViewed, acceptProposal, rejectProposal,
   type Proposal,
@@ -15,8 +16,8 @@ import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase"; 
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 type SignatureMode = "draw" | "type" | "upload";
 type ViewState = "loading" | "not-found" | "locked" | "document" | "rejected";
@@ -57,6 +58,21 @@ export default function ProposalPortalPage() {
   const [quoteTooltip, setQuoteTooltip] = useState<{ visible: boolean; x: number; y: number; text: string }>({
     visible: false, x: 0, y: 0, text: ""
   });
+
+  // Change Signer (Client Scenario 4)
+  const [showChangeSigner, setShowChangeSigner] = useState(false);
+  const [newSignerName, setNewSignerName] = useState("");
+  const [newSignerEmail, setNewSignerEmail] = useState("");
+  const [changingSignerLoading, setChangingSignerLoading] = useState(false);
+  const [changeSignerDone, setChangeSignerDone] = useState(false);
+
+  // Presence / Typing Indicator (Inter-Role Scenario 11)
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionId = useRef("client-" + Math.random().toString(36).slice(2));
+
+  // Auto-responder (Client Scenario 7)
+  const [autoResponderShown, setAutoResponderShown] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
@@ -212,6 +228,66 @@ export default function ProposalPortalPage() {
     return () => unsubscribe();
   }, [proposal?.id]);
 
+  // Presence: subscribe to other users typing in this proposal's discussion
+  useEffect(() => {
+    if (!proposal?.id) return;
+    const q = query(collection(db, "proposals", proposal.id, "presence"));
+    const unsub = onSnapshot(q, (snap) => {
+      const names = snap.docs
+        .map((d) => d.data() as { name: string; isTyping: boolean; updatedAt: number })
+        .filter((d) => d.isTyping && Date.now() - (d.updatedAt ?? 0) < 8000)
+        .map((d) => d.name)
+        .filter((n) => n !== (proposal?.clientName ?? ""));
+      setTypingUsers(names);
+    });
+    return () => unsub();
+  }, [proposal?.id, proposal?.clientName]);
+
+  // Presence: broadcast client typing
+  const broadcastTyping = useCallback((isTyping: boolean) => {
+    if (!proposal?.id) return;
+    const ref = doc(db, "proposals", proposal.id, "presence", sessionId.current);
+    setDoc(ref, { name: proposal.clientName || "Client", isTyping, updatedAt: Date.now() }).catch(() => {});
+    if (isTyping) {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => broadcastTyping(false), 6000);
+    }
+  }, [proposal?.id, proposal?.clientName]);
+
+  // Presence: clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (!proposal?.id) return;
+      const ref = doc(db, "proposals", proposal.id, "presence", sessionId.current);
+      deleteDoc(ref).catch(() => {});
+    };
+  }, [proposal?.id]);
+
+  const handleChangeSigner = useCallback(async () => {
+    if (!proposal || !newSignerName.trim() || !newSignerEmail.trim()) return;
+    setChangingSignerLoading(true);
+    try {
+      await fetch("/api/change-signer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId: proposal.id,
+          newSignerName: newSignerName.trim(),
+          newSignerEmail: newSignerEmail.trim(),
+          originalClientName: proposal.clientName,
+          proposalTitle: proposal.templateName || "Proposal",
+          senderName: "",
+          companyName: "",
+        }),
+      });
+      setChangeSignerDone(true);
+    } catch {
+      // silent — user sees the done state only on success
+    } finally {
+      setChangingSignerLoading(false);
+    }
+  }, [proposal, newSignerName, newSignerEmail]);
+
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     // Prevent adding comments when document is already signed
@@ -228,6 +304,8 @@ export default function ProposalPortalPage() {
       
       setNewComment("");
       setActiveQuote(""); // Clear the quote after sending
+      broadcastTyping(false);
+      setAutoResponderShown(true);
       
       fetch("/api/send-comment-notification", {
         method: "POST",
@@ -488,30 +566,38 @@ export default function ProposalPortalPage() {
     );
   }
 
-  // Version detection overlay — shown for superseded/voided proposals
+  // Version detection overlay -- shown for superseded/voided proposals
   if (newerVersionId && (proposal?.status === "superseded" || proposal?.status === "void")) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
-        <div className="mx-4 w-full max-w-md rounded-3xl border border-amber-200/60 bg-white/80 p-10 text-center shadow-xl shadow-slate-200/40 backdrop-blur-xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
-            <AlertCircle className="h-7 w-7 text-amber-500" />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.92, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-4 w-full max-w-md rounded-3xl border border-amber-200/60 bg-white/90 p-10 text-center shadow-2xl shadow-amber-100/60 backdrop-blur-xl"
+        >
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 ring-4 ring-amber-100">
+            <RefreshCw className="h-8 w-8 text-amber-500" />
           </div>
-          <h2 className="mt-5 text-xl font-semibold text-slate-900">A newer version exists</h2>
+          <h2 className="mt-5 text-xl font-bold text-slate-900">This version has been updated</h2>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            This proposal has been revised. Please view the latest version below.
+            A newer version of this proposal is available. Please use the latest version to review and sign.
           </p>
+          <div className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-[12px] text-amber-700">
+            Signing or acting on this outdated version is not permitted.
+          </div>
           <a
-            href={`/p/${newerVersionId}`}
-            className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-6 py-3 text-[13px] font-semibold text-white shadow-lg shadow-indigo-200/50 transition hover:from-violet-600 hover:to-indigo-700"
+            href={"/p/" + newerVersionId}
+            className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-6 py-3.5 text-[13px] font-semibold text-white shadow-lg shadow-indigo-200/50 transition hover:from-violet-600 hover:to-indigo-700 active:scale-95"
           >
-            View Latest Version →
+            Open Latest Version &#x2192;
           </a>
-        </div>
+        </motion.div>
       </div>
     );
   }
 
-  if (viewState === "not-found") {
+    if (viewState === "not-found") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <div className="mx-4 max-w-sm rounded-3xl border border-slate-200/60 bg-white/70 p-10 text-center shadow-xl shadow-slate-200/40 backdrop-blur-xl">
@@ -702,6 +788,42 @@ export default function ProposalPortalPage() {
                       </div>
                     ))
                   )}
+                  {typingUsers.length > 0 && (
+                    <div className="flex items-center gap-1.5 px-1">
+                      <span className="flex gap-0.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]"/>
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]"/>
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]"/>
+                      </span>
+                      <span className="text-[11px] text-slate-400">{typingUsers.join(", ")} is typing…</span>
+                    </div>
+                  )}
+                  {autoResponderShown && (
+                    <div className="flex flex-col items-start">
+                      <span className="text-[10px] text-slate-400 mb-1 px-1">ProposalMS</span>
+                      <div className="px-3 py-2.5 rounded-xl max-w-[85%] text-[12px] leading-relaxed bg-slate-100 text-slate-600 rounded-bl-none border border-slate-200">
+                        Thanks for your message! Our team typically responds within a few hours during business hours.
+                      </div>
+                    </div>
+                  )}
+                  {typingUsers.length > 0 && (
+                    <div className="flex items-center gap-1.5 px-1 py-1">
+                      <span className="flex gap-0.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]"/>
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]"/>
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]"/>
+                      </span>
+                      <span className="text-[11px] text-slate-400">{typingUsers.join(", ")} is typing…</span>
+                    </div>
+                  )}
+                  {autoResponderShown && (
+                    <div className="flex flex-col items-start">
+                      <span className="text-[10px] text-slate-400 mb-1 px-1">Support</span>
+                      <div className="px-3 py-2.5 rounded-xl max-w-[85%] text-[12px] leading-relaxed bg-slate-100 text-slate-600 rounded-bl-none border border-slate-200">
+                        Thanks for your message! Our team typically responds within a few hours during business hours.
+                      </div>
+                    </div>
+                  )}
                   <div ref={messagesEndRef} />
                 </div>
 
@@ -739,7 +861,7 @@ export default function ProposalPortalPage() {
                       <textarea 
                         id="chat-textarea"
                         value={newComment} 
-                        onChange={e => setNewComment(e.target.value)} 
+                        onChange={e => { setNewComment(e.target.value); broadcastTyping(true); }} 
                         placeholder="Type a message..." 
                         rows={2}
                         className="w-full text-[13px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-200 resize-none transition-all"
@@ -773,6 +895,40 @@ export default function ProposalPortalPage() {
                     ))}
                   </dl>
                 </div>
+
+                {/* Change Signer (Client Scenario 4) */}
+                {proposal?.status !== "accepted" && !changeSignerDone && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowChangeSigner((v) => !v)}
+                      className="flex w-full items-center justify-between text-[12px] font-medium text-slate-500 hover:text-slate-800 transition"
+                    >
+                      <span className="flex items-center gap-1.5"><UserCheck className="h-3.5 w-3.5" /> Not the right signer?</span>
+                      <span className="text-[11px] text-violet-600">{showChangeSigner ? "Cancel" : "Change Signer"}</span>
+                    </button>
+                    {showChangeSigner && (
+                      <div className="mt-3 space-y-2">
+                        <input type="text" value={newSignerName} onChange={e => setNewSignerName(e.target.value)} placeholder="Authorized signer full name" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] outline-none focus:ring-2 focus:ring-violet-200" />
+                        <input type="email" value={newSignerEmail} onChange={e => setNewSignerEmail(e.target.value)} placeholder="Authorized signer email" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] outline-none focus:ring-2 focus:ring-violet-200" />
+                        <button
+                          type="button"
+                          onClick={handleChangeSigner}
+                          disabled={changingSignerLoading || !newSignerName.trim() || !newSignerEmail.trim()}
+                          className="w-full rounded-lg bg-violet-600 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        >
+                          {changingSignerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                          {changingSignerLoading ? "Forwarding…" : "Forward to New Signer"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {changeSignerDone && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12px] text-emerald-700 flex items-center gap-2">
+                    <Check className="h-4 w-4 shrink-0" /> Proposal forwarded. The new signer will receive an email shortly.
+                  </div>
+                )}
 
                 {proposal?.status === "accepted" ? (
                   <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/80 p-6 shadow-lg text-center backdrop-blur-xl">

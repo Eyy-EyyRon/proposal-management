@@ -197,7 +197,28 @@ service cloud.firestore {
             && request.resource.data.get('version', 1) == resource.data.get('version', 1)
             && request.resource.data.get('previousVersionId', null) == resource.data.get('previousVersionId', null)
           )
+          ||
+          // Path 5: Client Signature Forwarding (Change Signer)
+          // Only affects forwardedSignerName/Email/At + clientName/clientEmail
+          // Proposal must be in sent/viewed state (not accepted/rejected/archived)
+          (
+            request.auth == null
+            && resource.data.get('isSignable', true) == true
+            && resource.data.status in ["sent", "viewed"]
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["forwardedSignerName", "forwardedSignerEmail", "forwardedAt",
+                          "clientName", "clientEmail", "updatedAt"])
+            && request.resource.data.status == resource.data.status
+          )
         );
+
+      // Presence subcollection — typing/viewing indicators for discussion sidebar
+      // Readable by anyone (client + staff); writable by anyone; auto-expires client-side
+      match /presence/{sessionId} {
+        allow read: if true;
+        allow create, update: if true;
+        allow delete: if true;
+      }
 
       // Comments subcollection - soft-delete only, no hard deletes
       match /comments/{commentId} {

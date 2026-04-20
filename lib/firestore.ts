@@ -207,6 +207,10 @@ export interface Proposal {
   // Status Lockdown (Scenario 10)
   isSignable: boolean;      // false on archive/trash — blocks zombie signatures
   isCommentable: boolean;   // false on archive/trash — closes discussion thread
+  // Signature Delegation (Client Scenario 4)
+  forwardedSignerName?: string | null;
+  forwardedSignerEmail?: string | null;
+  forwardedAt?: unknown | null;
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────

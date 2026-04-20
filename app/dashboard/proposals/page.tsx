@@ -326,6 +326,9 @@ export default function ProposalsPage() {
                         Template
                       </th>
                       <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                        Sent by
+                      </th>
+                      <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                         Dept
                       </th>
                       <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -364,6 +367,19 @@ export default function ProposalsPage() {
                         </td>
                         <td className="whitespace-nowrap px-5 py-3 text-[13px] text-slate-600">
                           {proposal.templateName}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3">
+                          {proposal.isDelegated && proposal.sentById !== proposal.ownerId ? (
+                            <span
+                              title={`Sent by staff (UID: ${proposal.sentById}) acting as CEO`}
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                              Delegated
+                            </span>
+                          ) : (
+                            <span className="text-[12px] text-slate-400">Direct</span>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-5 py-3">
                           <DepartmentBadge department={proposal.department} />
