@@ -258,9 +258,13 @@ export function Topbar({ title }: TopbarProps) {
 
         <div className="ml-1 h-5 w-px bg-slate-200" />
 
-        <button className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white transition hover:bg-slate-800">
-          {initials}
-        </button>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+          {profile?.avatarUrl ? (
+            <img src={profile.avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+          ) : (
+            initials
+          )}
+        </div>
       </div>
     </header>
     </div>

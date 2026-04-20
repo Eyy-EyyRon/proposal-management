@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import {
-  Settings,
   Bell,
   Shield,
   Palette,
@@ -11,9 +10,7 @@ import {
   User,
   Crown,
   Building2,
-  Mail,
   Lock,
-  FileText,
 } from "lucide-react";
 import {
   updateUserProfile,
@@ -351,15 +348,6 @@ export default function CeoSettingsPage() {
             </div>
           )}
 
-          <div className="mt-8 flex items-center justify-end gap-3 border-t border-slate-100 pt-6">
-            <button className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition-all duration-300 ease-out hover:bg-slate-50">
-              Cancel
-            </button>
-            <button className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-[13px] font-medium text-white transition-all duration-300 ease-out hover:bg-amber-600">
-              <Save className="h-4 w-4" />
-              Save Changes
-            </button>
-          </div>
         </div>
       </div>
     </div>

@@ -146,8 +146,12 @@ export function DashboardHeader({ title, subtitle }: DashboardHeaderProps) {
             onClick={() => setProfileOpen(!profileOpen)}
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#800000] text-[11px] font-semibold text-white">
-              {profile ? getInitials(`${profile.firstName} ${profile.lastName}`) : "SA"}
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#800000] text-[11px] font-semibold text-white">
+              {profile?.avatarUrl ? (
+                <img src={profile.avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+              ) : (
+                profile ? getInitials(`${profile.firstName} ${profile.lastName}`) : "SA"
+              )}
             </div>
             <div className="hidden text-left sm:block">
               <p className="text-[13px] font-medium text-slate-800">
