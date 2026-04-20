@@ -10,8 +10,10 @@ import {
   createTask,
   subscribeToDepartmentsList,
   getAllTemplates,
+  getAdminUsers,
   type Template,
   type FirestoreDepartment,
+  type TeamMember,
   type UrgencyLevel,
   URGENCY_META,
   URGENCY_SLA,
@@ -82,6 +84,10 @@ export function CreateTaskModal({
   const [deadlineMode, setDeadlineMode] = useState<DeadlineMode>("preset");
   const [customDateStr, setCustomDateStr] = useState(""); // ISO date string from <input type="date">
   const [selectedSpanDays, setSelectedSpanDays] = useState<number | null>(null);
+  // Admin assignment
+  const [admins, setAdmins] = useState<TeamMember[]>([]);
+  const [adminsLoading, setAdminsLoading] = useState(false);
+  const [selectedAdminId, setSelectedAdminId] = useState<string>("");
 
   // Derived deadline
   const resolvedDeadline: Date = (() => {
@@ -121,8 +127,21 @@ export function CreateTaskModal({
       setDeadlineMode("preset");
       setCustomDateStr("");
       setSelectedSpanDays(null);
+      setSelectedAdminId("");
+      setAdmins([]);
     }
   }, [isOpen, prefillClientName, prefillClientEmail, prefillDepartment]);
+
+  // Re-fetch admins when department changes
+  useEffect(() => {
+    if (!department) { setAdmins([]); setSelectedAdminId(""); return; }
+    setAdminsLoading(true);
+    setSelectedAdminId("");
+    getAdminUsers(department)
+      .then(setAdmins)
+      .catch(() => setAdmins([]))
+      .finally(() => setAdminsLoading(false));
+  }, [department]);
 
   // When urgency changes in preset mode, reset span selection
   useEffect(() => {
@@ -149,14 +168,19 @@ export function CreateTaskModal({
     if (!user || !profile) return;
     const selectedTemplate = templates.find((t) => t.id === templateId);
     const requesterName = `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() || "CEO";
+    const selectedAdmin = admins.find((a) => a.id === selectedAdminId);
+    const assignedAdminId = selectedAdmin?.id ?? user.uid;
+    const assignedAdminName = selectedAdmin
+      ? `${selectedAdmin.firstName} ${selectedAdmin.lastName}`.trim()
+      : requesterName;
 
     setSaving(true);
     try {
       await createTask({
         requesterId: user.uid,
         requesterName,
-        adminId: user.uid,
-        adminName: requesterName,
+        adminId: assignedAdminId,
+        adminName: assignedAdminName,
         department,
         clientName: clientName.trim(),
         clientEmail: clientEmail.trim() || undefined,
@@ -453,6 +477,31 @@ export function CreateTaskModal({
                       {selectedTemplate.name}
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Assigned Admin */}
+              <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
+                <User className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                <div className="flex items-center gap-2">
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Admin Handler</p>
+                    {selectedAdminId ? (() => {
+                      const admin = admins.find((a) => a.id === selectedAdminId);
+                      const name = admin ? `${admin.firstName} ${admin.lastName}`.trim() : "";
+                      const initials = admin ? `${admin.firstName?.[0] ?? ""}${admin.lastName?.[0] ?? ""}`.toUpperCase() : "";
+                      return (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-600">
+                            {admin?.avatarUrl ? <img src={admin.avatarUrl} alt={name} className="h-full w-full object-cover" /> : initials}
+                          </div>
+                          <p className="text-[13px] font-semibold text-slate-800">{name}</p>
+                        </div>
+                      );
+                    })() : (
+                      <p className="text-[13px] text-slate-400 italic">Unassigned — any {department} admin can pick up</p>
+                    )}
+                  </div>
                 </div>
               </div>
 

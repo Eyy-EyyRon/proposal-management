@@ -1635,6 +1635,17 @@ export async function getUsersByDepartment(department: string): Promise<TeamMemb
     );
 }
 
+// Get all admin-role users (optionally filtered by department)
+export async function getAdminUsers(department?: string): Promise<TeamMember[]> {
+  const q = query(collection(db, "users"), where("role", "==", "admin"));
+  const snap = await getDocs(q);
+  const admins = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as TeamMember);
+  if (!department) return admins;
+  return admins.filter((u) =>
+    u.department === department || u.departments?.includes(department)
+  );
+}
+
 // ─── USER PROFILE UPDATE ───────────────────────────────────
 
 export interface UpdateProfileData {
