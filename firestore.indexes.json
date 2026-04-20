@@ -578,26 +578,6 @@
                         ]
                     },
                     {
-                        "collectionGroup": "sharing_logs",
-                        "queryScope": "COLLECTION",
-                        "fields": [
-                            {
-                                "fieldPath": "createdAt",
-                                "order": "DESCENDING"
-                            }
-                        ]
-                    },
-                    {
-                        "collectionGroup": "succession_requests",
-                        "queryScope": "COLLECTION",
-                        "fields": [
-                            {
-                                "fieldPath": "requestedAt",
-                                "order": "DESCENDING"
-                            }
-                        ]
-                    },
-                    {
                         "collectionGroup": "tasks",
                         "queryScope": "COLLECTION",
                         "fields": [
