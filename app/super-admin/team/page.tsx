@@ -293,7 +293,7 @@ export default function TeamManagementPage() {
             </thead>
             <tbody>
               {filteredUsers.map((member, i) => {
-                const roleBadge = ROLE_BADGES[member.role];
+                const roleBadge = ROLE_BADGES[member.role as UserRole] ?? ROLE_BADGES.staff;
                 const RoleIcon = roleBadge.icon;
                 
                 return (
