@@ -215,7 +215,7 @@ export function CreateTaskModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-[520px] rounded-2xl border border-slate-200/80 bg-white shadow-2xl"
+        className="relative w-full max-w-2xl rounded-2xl border border-slate-200/80 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── */}
@@ -260,7 +260,7 @@ export function CreateTaskModal({
 
         {/* ── STEP 1: Client Info ── */}
         {step === 1 && (
-          <div className="space-y-4 px-6 py-5">
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto px-6 py-5">
             <div className="flex items-center gap-2 rounded-xl bg-violet-50/60 px-4 py-2.5">
               <User className="h-4 w-4 text-violet-500" />
               <span className="text-[12px] font-medium text-violet-700">Who is this proposal for?</span>
@@ -303,7 +303,7 @@ export function CreateTaskModal({
 
         {/* ── STEP 2: Scope & Deadline ── */}
         {step === 2 && (
-          <div className="space-y-5 px-6 py-5">
+          <div className="max-h-[60vh] space-y-5 overflow-y-auto px-6 py-5">
             {/* Department + Template */}
             <div className="flex items-center gap-2 rounded-xl bg-violet-50/60 px-4 py-2.5">
               <Building2 className="h-4 w-4 text-violet-500" />
@@ -447,7 +447,7 @@ export function CreateTaskModal({
 
         {/* ── STEP 3: Review & Submit ── */}
         {step === 3 && (
-          <div className="space-y-4 px-6 py-5">
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto px-6 py-5">
             <div className="flex items-center gap-2 rounded-xl bg-emerald-50/60 px-4 py-2.5">
               <CheckCircle className="h-4 w-4 text-emerald-500" />
               <span className="text-[12px] font-medium text-emerald-700">Review before delegating</span>
