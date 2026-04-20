@@ -11,7 +11,7 @@ export default function SuperAdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <RoleGuard minRole="admin">
+    <RoleGuard minRole="super_admin">
       <OnboardingGuard>
         <div className="min-h-screen bg-[#faf8ff] text-slate-900">
           <Sidebar />

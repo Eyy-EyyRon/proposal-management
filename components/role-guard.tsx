@@ -14,6 +14,7 @@ interface RoleGuardProps {
 const ROLE_HOME: Record<UserRole, string> = {
   staff: "/dashboard",
   admin: "/dashboard",
+  super_admin: "/super-admin",
   ceo: "/ceo-dashboard",
 };
 

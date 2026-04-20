@@ -247,7 +247,7 @@ export default function DepartmentsPage() {
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <p className="text-[12px] font-medium text-slate-500 uppercase">Admins</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">
-                {getDepartmentUsers(selectedDept.name).filter((u) => u.role === "admin").length}
+                {getDepartmentUsers(selectedDept.name).filter((u) => u.role === "admin" || u.role === "super_admin").length}
               </p>
             </div>
           </div>
@@ -308,12 +308,14 @@ export default function DepartmentsPage() {
                         <td className="px-6 py-4">
                           <span
                             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
-                              user.role === "admin"
-                                ? "bg-amber-100 text-amber-700"
+                              user.role === "super_admin"
+                                ? "bg-violet-100 text-violet-700"
+                                : user.role === "admin"
+                                ? "bg-indigo-100 text-indigo-700"
                                 : "bg-slate-100 text-slate-700"
                             }`}
                           >
-                            {user.role === "admin" ? "Admin" : "Staff"}
+                            {user.role === "super_admin" ? "Super Admin" : user.role === "admin" ? "Dept Admin" : "Staff"}
                           </span>
                         </td>
                         <td className="px-6 py-4">

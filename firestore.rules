@@ -24,8 +24,12 @@ service cloud.firestore {
       return userDocExists() ? get(userDocPath()).data.department : null;
     }
 
+    function isSuperAdmin() {
+      return isSignedIn() && getUserRole() in ["super_admin", "ceo"];
+    }
+
     function isCeo() {
-      return isSignedIn() && getUserRole() in ["ceo", "super-admin"];
+      return isSignedIn() && getUserRole() == "ceo";
     }
 
     function isRootCeo(userId) {
@@ -38,7 +42,7 @@ service cloud.firestore {
     }
 
     function isAdminOrCeo() {
-      return isSignedIn() && getUserRole() in ["admin", "ceo", "super-admin"];
+      return isSignedIn() && getUserRole() in ["admin", "super_admin", "ceo"];
     }
 
     function isOwner(userId) {
@@ -102,7 +106,7 @@ service cloud.firestore {
           // CEO / super-admin: can update department assignments on any user
           // (covers setUserDepartments — writes departments, department, updatedAt)
           (
-            isCeo()
+            isSuperAdmin()
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["departments", "department", "updatedAt"])
           )
@@ -110,7 +114,7 @@ service cloud.firestore {
 
       // ── IMMORTALITY RULE ──────────────────────────────────────────────
       // The root CEO account can never be deleted by anyone.
-      allow delete: if isCeo() && !isRootCeo(userId);
+      allow delete: if isSuperAdmin() && !isRootCeo(userId);
     }
 
     // ─── DEPARTMENTS ────────────────────────────────────────
@@ -394,9 +398,9 @@ service cloud.firestore {
       // List: signed-in users (app filters by role; rules can't filter "in" on list)
       allow list: if isSignedIn();
 
-      // Create: CEO or admin can create a task
+      // Create: CEO, super_admin, or admin can create a task
       allow create: if isSignedIn()
-        && (isCeo() || isAdmin())
+        && (isSuperAdmin() || isAdmin())
         && request.resource.data.status == "drafting";
 
       // Update: depends on the transition

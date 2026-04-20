@@ -14,7 +14,7 @@ import { auth, db } from "@/lib/firebase";
 import { writeAuditLog } from "@/lib/firestore";
 
 // ─── TYPES ───────────────────────────────────────────────────
-export type UserRole = "staff" | "admin" | "ceo";
+export type UserRole = "staff" | "admin" | "super_admin" | "ceo";
 
 export const DEPARTMENTS = [
   "Sales",
@@ -85,9 +85,10 @@ export function useRole() {
     role,
     isStaff: role === "staff",
     isAdmin: role === "admin",
+    isSuperAdmin: role === "super_admin",
     isCeo: role === "ceo" || actingAsCeo,
     isAtLeast: (minRole: UserRole) => {
-      const order: Record<UserRole, number> = { staff: 0, admin: 1, ceo: 2 };
+      const order: Record<UserRole, number> = { staff: 0, admin: 1, super_admin: 2, ceo: 3 };
       return order[role] >= order[minRole];
     },
   };

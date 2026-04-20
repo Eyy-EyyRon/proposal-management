@@ -120,16 +120,24 @@ export function Topbar({ title }: TopbarProps) {
     <header className={`flex h-14 shrink-0 items-center justify-between border-b px-6 transition-colors ${
       actingAsCeo
         ? "border-amber-200 bg-amber-50"
+        : role === "super_admin"
+        ? "border-violet-100 bg-white"
         : role === "admin"
         ? "border-indigo-100 bg-white"
         : "border-slate-200/60 bg-white"
     }`}>
       <div className="flex items-center gap-3">
         <h1 className="text-[15px] font-semibold text-slate-900">{title}</h1>
+        {role === "super_admin" && !actingAsCeo && (
+          <span className="flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+            <ShieldAlert className="h-3 w-3" />
+            Super Admin
+          </span>
+        )}
         {role === "admin" && !actingAsCeo && (
           <span className="flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
             <ShieldAlert className="h-3 w-3" />
-            Department Admin
+            Dept Admin
           </span>
         )}
       </div>

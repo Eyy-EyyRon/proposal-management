@@ -419,7 +419,7 @@ function ProfileSettings({ userId, profile }: ProfileSettingsProps) {
           </p>
           <p className="text-[13px] text-slate-500">{profile?.email}</p>
           <span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-medium text-amber-700">
-            {profile?.role === "admin" ? "Administrator" : profile?.role}
+            {profile?.role === "super_admin" ? "Super Admin" : profile?.role === "admin" ? "Dept Admin" : profile?.role}
           </span>
           <p className="mt-1 text-[11px] text-slate-400">
             Click avatar to upload new photo

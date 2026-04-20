@@ -60,9 +60,9 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Settings",          href: "/ceo-dashboard/settings", icon: Settings },
     ],
   },
-  admin: {
+  super_admin: {
     basePath: "/super-admin",
-    sectionLabel: "Administration",
+    sectionLabel: "System Administration",
     items: [
       { label: "Overview",      href: "/super-admin",              icon: Shield },
       { label: "Activity",      href: "/super-admin/activity",     icon: Activity },
@@ -73,6 +73,19 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Templates",     href: "/super-admin/templates",    icon: LayoutTemplate },
       { label: "Audit Log",     href: "/dashboard/audit-log",      icon: ClipboardList },
       { label: "Settings",      href: "/super-admin/settings",     icon: Settings },
+    ],
+  },
+  admin: {
+    basePath: "/dashboard",
+    sectionLabel: "Department",
+    items: [
+      { label: "Dashboard",     href: "/dashboard",              icon: LayoutDashboard },
+      { label: "Proposals",     href: "/dashboard/proposals",    icon: FileText },
+      { label: "Tasks",         href: "/dashboard/tasks",        icon: ClipboardCheck },
+      { label: "Templates",     href: "/dashboard/templates",    icon: LayoutTemplate },
+      { label: "Analytics",     href: "/dashboard/analytics",    icon: BarChart2 },
+      { label: "Audit Log",     href: "/dashboard/audit-log",    icon: ClipboardList },
+      { label: "Settings",      href: "/dashboard/settings",     icon: Settings },
     ],
   },
   staff: {
@@ -139,6 +152,26 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
     quickBtn:      "",
     quickBtnHover: "",
   },
+  super_admin: {
+    aside:         "border-r border-violet-100 bg-white/95 backdrop-blur-xl",
+    brand:         "bg-violet-700",
+    brandShadow:   "shadow-sm shadow-violet-200",
+    brandIcon:     Shield,
+    badgeCls:      "rounded-full bg-violet-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700",
+    badgeLabel:    "SUPER ADMIN",
+    sectionLabel:  "text-violet-400",
+    activeLink:    "bg-violet-50 text-violet-800 shadow-sm shadow-violet-100/50",
+    activeIcon:    "text-violet-600",
+    hoverLink:     "text-slate-500 hover:bg-violet-50/50 hover:text-violet-700",
+    chevron:       "text-violet-300",
+    divider:       "border-violet-100/60",
+    avatar:        "bg-gradient-to-br from-violet-500 to-violet-700",
+    avatarShadow:  "shadow-sm shadow-violet-200",
+    hoverUser:     "hover:bg-violet-50/50",
+    hoverLogout:   "hover:bg-violet-50 hover:text-violet-700",
+    quickBtn:      "bg-violet-600 text-white",
+    quickBtnHover: "hover:bg-violet-700",
+  },
   admin: {
     aside:         "border-r border-indigo-100 bg-white/95 backdrop-blur-xl",
     brand:         "bg-indigo-700",
@@ -204,7 +237,7 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
 // ─── DETECT ACTIVE ROLE FROM PATHNAME ───────────────────────
 function detectActiveRole(pathname: string, userRole: UserRole): string {
   if (pathname.startsWith("/ceo-dashboard")) return "ceo";
-  if (pathname.startsWith("/super-admin")) return "admin";
+  if (pathname.startsWith("/super-admin")) return "super_admin";
   return userRole;
 }
 
@@ -220,7 +253,7 @@ export function Sidebar() {
   const activeRole = detectActiveRole(pathname, role);
   const config = NAV_CONFIG[activeRole] ?? NAV_CONFIG.staff;
   // If admin is acting as CEO, use the golden CEO theme
-  const themeKey = (activeRole === "admin" && actingAsCeo) ? "admin_ceo" : activeRole;
+  const themeKey = ((activeRole === "admin" || activeRole === "super_admin") && actingAsCeo) ? "admin_ceo" : activeRole;
   const theme = ROLE_THEMES[themeKey] ?? ROLE_THEMES.staff;
   const BrandIcon = theme.brandIcon;
 
@@ -337,8 +370,8 @@ export function Sidebar() {
             </Link>
           )}
 
-          {/* Admin shortcut — only on staff sidebar when user is admin or ceo */}
-          {activeRole === "staff" && isAtLeast("admin") && (
+          {/* Admin Panel shortcut — only for super_admin or ceo */}
+          {activeRole === "staff" && isAtLeast("super_admin") && (
             <Link
               href="/super-admin"
               className="flex items-center gap-2.5 rounded-lg border border-violet-200/60 bg-violet-50/50 px-2.5 py-2 text-[13px] font-medium text-violet-700 transition hover:bg-violet-50"

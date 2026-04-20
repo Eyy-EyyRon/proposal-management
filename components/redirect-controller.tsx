@@ -6,13 +6,15 @@ import { useAuth, useRole, type UserRole } from "@/contexts/auth-context";
 
 const ROLE_HOME: Record<UserRole, string> = {
   staff: "/dashboard",
-  admin: "/super-admin",
+  admin: "/dashboard",
+  super_admin: "/super-admin",
   ceo: "/ceo-dashboard",
 };
 
 const ROLE_PREFIXES: Record<UserRole, string[]> = {
   staff: ["/dashboard"],
-  admin: ["/super-admin", "/dashboard"],
+  admin: ["/dashboard"],
+  super_admin: ["/super-admin", "/dashboard"],
   ceo: ["/ceo-dashboard", "/super-admin", "/dashboard"],
 };
 

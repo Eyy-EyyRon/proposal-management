@@ -17,17 +17,22 @@ import {
 } from "@/lib/firestore";
 
 type FilterMode = "all" | "by-department";
-type UserRole = "staff" | "admin" | "ceo";
+type UserRole = "staff" | "admin" | "super_admin" | "ceo";
 
 const ROLE_BADGES: Record<UserRole, { label: string; className: string; icon: typeof Crown }> = {
-  ceo: { 
-    label: "CEO", 
+  ceo: {
+    label: "CEO",
+    className: "bg-amber-100 text-amber-700 border-amber-200",
+    icon: Crown
+  },
+  super_admin: {
+    label: "Super Admin",
     className: "bg-violet-100 text-violet-700 border-violet-200",
-    icon: Crown 
+    icon: Shield
   },
   admin: { 
-    label: "Admin", 
-    className: "bg-amber-100 text-amber-700 border-amber-200",
+    label: "Dept Admin", 
+    className: "bg-indigo-100 text-indigo-700 border-indigo-200",
     icon: Shield 
   },
   staff: { 
@@ -87,7 +92,7 @@ export default function TeamManagementPage() {
   const filteredUsers = useMemo(() => {
     let result = users;
     
-    // Exclude CEO from all views (as per requirements)
+    // Exclude CEO from all views (super_admin manages system, not CEO)
     result = result.filter((u) => u.role !== "ceo");
     
     // Apply filter mode
@@ -206,7 +211,7 @@ export default function TeamManagementPage() {
           <Users className="h-4 w-4" />
           All Users
           <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-            {users.filter((u) => u.role !== "ceo").length}
+            {users.filter((u) => u.role !== "ceo" && u.role !== "super_admin").length}
           </span>
         </button>
         

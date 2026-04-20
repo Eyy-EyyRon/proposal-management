@@ -1292,7 +1292,7 @@ export interface TeamMember {
   email: string;
   firstName: string;
   lastName: string;
-  role: "staff" | "admin" | "ceo";
+  role: "staff" | "admin" | "super_admin" | "ceo";
   department: string | null; // Legacy single department (for backward compatibility)
   departments?: string[]; // NEW: Multiple departments for staff
   jobTitle?: string; // NEW: Job title (e.g., "IT Specialist")
@@ -1312,7 +1312,7 @@ export async function getDelegatableUsers(): Promise<TeamMember[]> {
   const snapshot = await getDocs(collection(db, "users"));
   return snapshot.docs
     .map((d) => ({ id: d.id, ...d.data() }) as TeamMember)
-    .filter((u) => u.role === "staff" || u.role === "admin");
+    .filter((u) => u.role === "staff" || u.role === "admin" || u.role === "super_admin");
 }
 
 // Get delegation settings for a CEO
