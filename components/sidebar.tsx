@@ -27,6 +27,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   ShieldCheck,
+  ShieldAlert,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -60,7 +61,8 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Task Center",       href: "/ceo-dashboard/tasks",      icon: ClipboardCheck },
       { label: "Contracts",         href: "/ceo-dashboard/documents",  icon: FolderOpen },
       { label: "Trash",             href: "/ceo-dashboard/trash",      icon: Trash2 },
-      { label: "Settings",          href: "/ceo-dashboard/settings", icon: Settings },
+      { label: "Settings",          href: "/ceo-dashboard/settings",   icon: Settings },
+      { label: "Security Monitor",  href: "/ceo-dashboard/security",   icon: ShieldAlert },
     ],
   },
   super_admin: {

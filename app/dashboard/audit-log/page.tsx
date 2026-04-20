@@ -30,6 +30,7 @@ const ACTION_COLORS: Record<string, string> = {
   jit_elevation_revoked:     "bg-slate-100 text-slate-600",
   jit_elevation_approved:    "bg-emerald-100 text-emerald-800",
   jit_elevation_denied:      "bg-rose-100 text-rose-800",
+  emergency_brake_activated: "bg-red-200 text-red-900",
 };
 
 function formatTs(ts: unknown): string {
@@ -111,6 +112,7 @@ export default function AuditLogPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.015 }}
                     className={`border-b border-slate-100/60 last:border-0 ${
+                      log.action === "emergency_brake_activated" ? "bg-red-50/60" :
                       log.action === "jit_elevation_requested" ? "bg-orange-50/40" :
                       log.action === "jit_elevation_approved" ? "bg-emerald-50/40" :
                       log.action === "jit_elevation_denied"   ? "bg-rose-50/30" :
@@ -146,6 +148,11 @@ export default function AuditLogPage() {
                       {log.action === "jit_elevation_denied" && (
                         <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-700">
                           <ShieldAlert className="h-2.5 w-2.5" /> CEO Denied
+                        </span>
+                      )}
+                      {log.action === "emergency_brake_activated" && (
+                        <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-red-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red-800">
+                          <ShieldAlert className="h-2.5 w-2.5" /> Emergency Brake
                         </span>
                       )}
                     </td>

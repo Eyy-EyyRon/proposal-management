@@ -21,7 +21,8 @@ import {
   arrayRemove,
   type Timestamp,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, functions } from "./firebase";
+import { httpsCallable } from "firebase/functions";
 
 // ─── TYPES ───────────────────────────────────────────────────
 export interface TemplateField {
@@ -1863,7 +1864,8 @@ export type AuditAction =
   | "jit_elevation_requested"
   | "jit_elevation_revoked"
   | "jit_elevation_approved"
-  | "jit_elevation_denied";
+  | "jit_elevation_denied"
+  | "emergency_brake_activated";
 
 export interface AuditLogEntry {
   id?: string;
@@ -2040,6 +2042,27 @@ export async function revokeElevation(
     description: `${actorName} Super Admin elevation revoked (by: ${revokedBy}).`,
     metadata: { revokedBy },
   });
+}
+
+// CEO live monitor: real-time list of ALL elevation docs
+export function subscribeToAllElevations(
+  callback: (elevations: JitElevation[]) => void
+): () => void {
+  return onSnapshot(
+    collection(db, "elevations"),
+    (snap) => callback(snap.docs.map((d) => ({ ...d.data(), uid: d.id }) as JitElevation)),
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+// Client-side callable wrapper for the Emergency Brake Cloud Function
+export async function callRevokeAllElevations(): Promise<{ revokedCount: number; elevationsWiped: number }> {
+  const fn = httpsCallable<void, { revokedCount: number; elevationsWiped: number }>(
+    functions,
+    "revokeAllElevations"
+  );
+  const result = await fn();
+  return result.data;
 }
 
 export function subscribeToElevation(

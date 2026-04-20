@@ -53,6 +53,26 @@ service cloud.firestore {
       return getUserDept() != null && deptField == getUserDept();
     }
 
+    // ── GHOST-SESSION GUARD ───────────────────────────────────────────────
+    // Blocks requests from sessions that were force-logged-out by the CEO's
+    // Emergency Brake. If forceLogoutTimestamp exists and is NEWER than the
+    // elevation's requestedAt, the session is considered dead.
+    function notForcedOut() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let elevPath = /databases/$(database)/documents/elevations/$(request.auth.uid);
+      // If no forceLogoutTimestamp exists, session is clean
+      if (!exists(userPath) || !get(userPath).data.keys().hasAll(["forceLogoutTimestamp"])) {
+        return true;
+      }
+      let flt = get(userPath).data.forceLogoutTimestamp;
+      // If no elevation doc, check against request time
+      if (!exists(elevPath)) {
+        return flt == null || flt < request.time;
+      }
+      // Elevation must have been requested AFTER the force-logout
+      return get(elevPath).data.requestedAt > flt;
+    }
+
     // ── JIT ELEVATION GATE — TIERED ─────────────────────────────────────
     // Operational: auto-approved; gates staff deactivation & dept deletion.
     // Critical:    CEO-approved; gates role changes & system settings edits.
@@ -81,13 +101,15 @@ service cloud.firestore {
     }
 
     // ── DESTRUCTIVE ACTION GATES ──────────────────────────────────────────
+    // notForcedOut() prevents ghost sessions where the CEO hit Emergency Brake
+    // but the client hasn't refreshed yet.
     function superAdminCanDestroy() {
-      return getUserRole() == "super_admin" && hasActiveElevation();
+      return getUserRole() == "super_admin" && hasActiveElevation() && notForcedOut();
     }
 
     // Critical-tier gate: role changes, system settings.
     function superAdminCanEdit() {
-      return getUserRole() == "super_admin" && hasCriticalElevation();
+      return getUserRole() == "super_admin" && hasCriticalElevation() && notForcedOut();
     }
 
     // ABAC: check if user's dept is in the document's sharedWith array

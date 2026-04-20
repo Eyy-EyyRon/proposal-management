@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -20,6 +21,7 @@ import {
   type JitElevation,
   type ElevationTier,
 } from "@/lib/firestore";
+import { signOut } from "firebase/auth";
 
 // ─── TYPES ───────────────────────────────────────────────────
 export type UserRole = "staff" | "admin" | "super_admin" | "ceo";
@@ -166,6 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── JIT Elevation state ──
   const [elevation, setElevation] = useState<JitElevation | null>(null);
   const [elevationCountdown, setElevationCountdown] = useState("");
+  // ── Security Sentry: record when this session started ──
+  const sessionStartedAt = useRef<number>(Date.now());
 
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
@@ -205,6 +209,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 updatedAt: data.updatedAt,
               };
               setProfile(newProfile);
+
+              // ── SECURITY SENTRY: force-logout if CEO hit Emergency Brake ──
+              const flt = data.forceLogoutTimestamp as { seconds: number } | null | undefined;
+              if (flt && flt.seconds * 1000 > sessionStartedAt.current) {
+                // Revocation happened after this session started — kick out
+                signOut(auth).catch(() => {});
+                if (typeof window !== "undefined") {
+                  window.location.replace("/login?reason=security_reset");
+                }
+                return;
+              }
             } else {
               // User doc not yet created (e.g. just registered)
               setProfile(null);

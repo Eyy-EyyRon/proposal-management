@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { signIn, signUp, signInWithGoogle, resetPassword } from "@/lib/auth";
 import Image from "next/image";
@@ -33,7 +33,9 @@ function friendlyError(err: unknown): string {
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
+  const securityReset = searchParams?.get("reason") === "security_reset";
 
   // Upgraded state to handle all three views
   const [view, setView] = useState<"login" | "signup" | "forgot">("login");
@@ -214,6 +216,19 @@ export default function Home() {
         {/* RIGHT SECTION (Forms Panel) */}
         <section className="relative flex flex-col items-center justify-center overflow-hidden bg-slate-50 p-6 sm:p-12">
           <div className="z-10 w-full max-w-md">
+            {/* Security reset banner — shown when CEO forced logout */}
+            {securityReset && (
+              <div className="mb-6 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3.5 shadow-sm">
+                <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+                <div>
+                  <p className="text-[13px] font-bold text-rose-800">Session Terminated by CEO</p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-rose-700">
+                    An Emergency Security Reset was executed. All elevated sessions have been revoked. Please sign in again to continue.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Sliding Tab Switcher (Fades out seamlessly during forgot password) */}
             <div className={`mb-8 relative flex w-full rounded-2xl bg-slate-200/50 p-1 backdrop-blur-sm transition-all duration-500 ease-in-out ${
               view === "forgot" ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"

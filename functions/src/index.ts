@@ -8,10 +8,12 @@
  */
 
 import {setGlobalOptions} from "firebase-functions";
+import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onDocumentCreated, onDocumentUpdated} from "firebase-functions/v2/firestore";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
+import {getAuth} from "firebase-admin/auth";
 import {initializeApp} from "firebase-admin/app";
 
 initializeApp();
@@ -231,6 +233,90 @@ export const onElevationCreate = onDocumentCreated(
       `"${actorName} elevated to Super Admin for ${durationLabel}. Reason: ${justification}"`,
       {uid, ceoId}
     );
+  }
+);
+
+// ─── EMERGENCY BRAKE: revokeAllElevations ───────────────────
+// CEO-only callable that:
+//   1. Revokes Firebase Auth refresh tokens for every super_admin
+//   2. Stamps forceLogoutTimestamp on every super_admin user doc
+//   3. Deletes all documents in the elevations collection
+//   4. Writes an audit log entry
+export const revokeAllElevations = onCall(
+  {enforceAppCheck: false},
+  async (request) => {
+    // Verify caller is authenticated
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in.");
+    }
+
+    // Verify caller is the root CEO
+    const callerDoc = await db.collection("users").doc(request.auth.uid).get();
+    if (!callerDoc.exists) {
+      throw new HttpsError("permission-denied", "Caller user doc not found.");
+    }
+    const callerData = callerDoc.data() as {role?: string; isRootCEO?: boolean};
+    if (callerData.role !== "ceo" || !callerData.isRootCEO) {
+      throw new HttpsError("permission-denied", "Only the root CEO may execute the Emergency Brake.");
+    }
+
+    logger.warn("🚨 Emergency Brake activated by CEO.", {callerUid: request.auth.uid});
+
+    const auth = getAuth();
+    const now = FieldValue.serverTimestamp();
+
+    // 1. Find all super_admins
+    const adminSnap = await db.collection("users")
+      .where("role", "==", "super_admin")
+      .get();
+
+    // 2. Revoke tokens + stamp forceLogoutTimestamp in parallel batches
+    const userBatch = db.batch();
+    const tokenRevocations: Promise<void>[] = [];
+
+    for (const userDoc of adminSnap.docs) {
+      // Stamp forceLogoutTimestamp so the client sentry fires
+      userBatch.update(userDoc.ref, {forceLogoutTimestamp: now});
+      // Revoke Firebase Auth refresh token (server-side)
+      tokenRevocations.push(
+        auth.revokeRefreshTokens(userDoc.id).catch((err) => {
+          logger.error(`Failed to revoke token for ${userDoc.id}:`, err);
+        })
+      );
+    }
+
+    await Promise.all([
+      userBatch.commit(),
+      ...tokenRevocations,
+    ]);
+
+    // 3. Wipe elevations collection
+    const elevSnap = await db.collection("elevations").get();
+    if (!elevSnap.empty) {
+      const elevBatch = db.batch();
+      elevSnap.docs.forEach((d) => elevBatch.delete(d.ref));
+      await elevBatch.commit();
+    }
+
+    // 4. Audit log
+    const callerName = `${(callerData as {firstName?: string}).firstName ?? ""} ${
+      (callerData as {lastName?: string}).lastName ?? "CEO"
+    }`.trim();
+    await db.collection("logs").add({
+      action: "emergency_brake_activated",
+      actorId: request.auth.uid,
+      actorName: callerName,
+      actorRole: "ceo",
+      description: `CEO executed Emergency Brake: revoked tokens for ${adminSnap.size} super admin(s) and wiped all elevation sessions.`,
+      metadata: {
+        affectedUids: adminSnap.docs.map((d) => d.id),
+        elevationsWiped: elevSnap.size,
+      },
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.warn(`Emergency Brake complete: ${adminSnap.size} admins revoked, ${elevSnap.size} elevations wiped.`);
+    return {revokedCount: adminSnap.size, elevationsWiped: elevSnap.size};
   }
 );
 
