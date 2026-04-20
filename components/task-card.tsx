@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { ArrowRight, User, Building2, FileText } from "lucide-react";
 import { UrgencyBadge } from "./urgency-badge";
-import { SlaCountdown } from "./sla-countdown";
+import { SlaCountdown, type DueAtValue } from "./sla-countdown";
 import { DepartmentBadge } from "./department-badge";
 import type { ProposalTask, TaskStatus } from "@/lib/firestore";
 
 const STATUS_LABELS: Record<TaskStatus, { label: string; color: string; bg: string }> = {
-  drafting:          { label: "Drafting",          color: "text-slate-600",  bg: "bg-slate-100" },
-  verifying:         { label: "Under Review",      color: "text-blue-700",   bg: "bg-blue-50" },
-  changes_requested: { label: "Changes Requested", color: "text-amber-700",  bg: "bg-amber-50" },
-  ready_to_send:     { label: "Ready to Send",     color: "text-emerald-700",bg: "bg-emerald-50" },
-  sent:              { label: "Sent",              color: "text-indigo-700", bg: "bg-indigo-50" },
-  cancelled:         { label: "Cancelled",         color: "text-slate-400",  bg: "bg-slate-50" },
+  drafting:           { label: "Drafting",           color: "text-slate-600",  bg: "bg-slate-100" },
+  verifying:          { label: "Under Review",       color: "text-blue-700",   bg: "bg-blue-50" },
+  changes_requested:  { label: "Changes Requested",  color: "text-amber-700",  bg: "bg-amber-50" },
+  revision_requested: { label: "Revision Requested", color: "text-amber-800",  bg: "bg-amber-100" },
+  ready_to_send:      { label: "Ready to Send",      color: "text-emerald-700",bg: "bg-emerald-50" },
+  sent:               { label: "Sent",               color: "text-indigo-700", bg: "bg-indigo-50" },
+  cancelled:          { label: "Cancelled",          color: "text-slate-400",  bg: "bg-slate-50" },
 };
 
 interface TaskCardProps {
@@ -49,7 +50,7 @@ export function TaskCard({ task, actions }: TaskCardProps) {
         <UrgencyBadge urgency={task.urgency} />
         <TaskStatusBadge status={task.status} />
         {task.status !== "sent" && task.status !== "cancelled" && (
-          <SlaCountdown dueAt={task.dueAt} urgency={task.urgency} compact />
+          <SlaCountdown dueAt={task.dueAt as DueAtValue} urgency={task.urgency} compact />
         )}
         <DepartmentBadge department={task.department} />
       </div>

@@ -3,13 +3,15 @@
 import { useState, useEffect } from "react";
 import { Clock, AlertTriangle } from "lucide-react";
 
+export type DueAtValue = Date | string | { seconds: number } | null | undefined;
+
 interface SlaCountdownProps {
-  dueAt: unknown; // Firestore Timestamp or Date or ISO string
+  dueAt: DueAtValue;
   urgency: "p1" | "p2" | "p3";
   compact?: boolean;
 }
 
-function toDueMs(dueAt: unknown): number {
+function toDueMs(dueAt: DueAtValue): number {
   if (!dueAt) return 0;
   if (dueAt instanceof Date) return dueAt.getTime();
   if (typeof dueAt === "string") return new Date(dueAt).getTime();

@@ -1,27 +1,42 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Topbar } from "@/components/topbar";
 import { TaskCard } from "@/components/task-card";
 import { AssignTaskModal } from "@/components/assign-task-modal";
 import { VerifyTaskModal } from "@/components/verify-task-modal";
+import { SlaCountdown } from "@/components/sla-countdown";
+import { UrgencyBadge } from "@/components/urgency-badge";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import {
   subscribeToAdminTasks,
   subscribeToDeptAdminTasks,
   subscribeToStaffTasks,
+  subscribeToVerificationQueue,
   submitTaskForReview,
   type ProposalTask,
 } from "@/lib/firestore";
 import { toast } from "@/components/providers/toast";
 import {
   Loader2, Inbox, UserPlus, CheckCircle, Send, AlertTriangle,
+  ShieldCheck, Clock, RefreshCw, Pin,
 } from "lucide-react";
+
+function toDueMs(dueAt: unknown): number {
+  if (!dueAt) return 0;
+  if (dueAt instanceof Date) return dueAt.getTime();
+  if (typeof dueAt === "string") return new Date(dueAt).getTime();
+  if (typeof dueAt === "object" && "seconds" in (dueAt as Record<string, unknown>)) {
+    return ((dueAt as { seconds: number }).seconds ?? 0) * 1000;
+  }
+  return 0;
+}
 
 export default function TasksPage() {
   const { user, profile } = useAuth();
-  const { isAdmin, isCeo, isStaff } = useRole();
+  const { isAdmin, isStaff } = useRole();
   const [tasks, setTasks] = useState<ProposalTask[]>([]);
+  const [verificationQueue, setVerificationQueue] = useState<ProposalTask[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Modals
@@ -29,37 +44,38 @@ export default function TasksPage() {
   const [verifyModal, setVerifyModal] = useState<ProposalTask | null>(null);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
+  // SLA breach toast refs (prevent duplicate toasts)
+  const warnedIds = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!user) return;
     const uid = user.uid;
 
-    // Admin: sees tasks assigned to them as adminId or deptAdminId
     if (isAdmin) {
       const unsub1 = subscribeToAdminTasks(uid, (adminTasks) => {
         setTasks((prev) => {
-          // Merge with dept admin tasks
           const ids = new Set(adminTasks.map((t) => t.id));
-          const kept = prev.filter((t) => !ids.has(t.id));
-          return [...adminTasks, ...kept];
+          return [...adminTasks, ...prev.filter((t) => !ids.has(t.id))];
         });
         setLoading(false);
       });
       const unsub2 = subscribeToDeptAdminTasks(uid, (deptTasks) => {
         setTasks((prev) => {
           const deptIds = new Set(deptTasks.map((t) => t.id));
-          const kept = prev.filter((t) => !deptIds.has(t.id));
-          return [...kept, ...deptTasks].sort((a, b) => {
-            const aMs = toDueMs(a.dueAt);
-            const bMs = toDueMs(b.dueAt);
-            return aMs - bMs;
-          });
+          return [...prev.filter((t) => !deptIds.has(t.id)), ...deptTasks].sort(
+            (a, b) => toDueMs(a.dueAt) - toDueMs(b.dueAt)
+          );
         });
         setLoading(false);
       });
-      return () => { unsub1(); unsub2(); };
+      // Dept-scoped verification queue
+      const dept = profile?.department ?? "";
+      const unsub3 = subscribeToVerificationQueue(uid, dept, (q) => {
+        setVerificationQueue(q);
+      });
+      return () => { unsub1(); unsub2(); unsub3(); };
     }
 
-    // Staff: sees tasks assigned to them
     if (isStaff) {
       const unsub = subscribeToStaffTasks(uid, (staffTasks) => {
         setTasks(staffTasks);
@@ -69,7 +85,21 @@ export default function TasksPage() {
     }
 
     setLoading(false);
-  }, [user, isAdmin, isStaff]);
+  }, [user, isAdmin, isStaff, profile?.department]);
+
+  // SLA breach watcher — toast when P1 within 30 min
+  useEffect(() => {
+    const allTasks = [...tasks, ...verificationQueue];
+    const now = Date.now();
+    allTasks.forEach((t) => {
+      if (t.urgency !== "p1" || warnedIds.current.has(t.id)) return;
+      const due = toDueMs(t.dueAt);
+      if (due > 0 && due - now <= 30 * 60 * 1000 && due - now > 0) {
+        warnedIds.current.add(t.id);
+        toast.error(`⚡ P1 SLA breach in <30 min — "${t.clientName}"`);
+      }
+    });
+  }, [tasks, verificationQueue]);
 
   const handleSubmitForReview = async (task: ProposalTask) => {
     if (!user || !profile) return;
@@ -85,6 +115,15 @@ export default function TasksPage() {
     }
   };
 
+  // ─── Derived sections ────────────────────────────────────────
+
+  // P1 critical tasks (admin view): pinned to top
+  const p1Critical = useMemo(
+    () => tasks.filter((t) => t.urgency === "p1" && t.status !== "ready_to_send" && t.status !== "sent"),
+    [tasks]
+  );
+
+  // Needs assignment (admin): drafting with incomplete chain
   const needsAssignment = useMemo(
     () => tasks.filter((t) =>
       isAdmin && t.status === "drafting" && (
@@ -95,21 +134,27 @@ export default function TasksPage() {
     [tasks, isAdmin, user?.uid]
   );
 
-  const needsVerification = useMemo(
-    () => tasks.filter((t) => t.status === "verifying" && (t.deptAdminId === user?.uid || t.adminId === user?.uid)),
+  // In-progress tasks (not p1-pinned, not needing assignment, not in verif queue)
+  const inProgressTasks = useMemo(
+    () => tasks.filter((t) =>
+      !p1Critical.some((p) => p.id === t.id) &&
+      !needsAssignment.some((n) => n.id === t.id) &&
+      !verificationQueue.some((v) => v.id === t.id) &&
+      t.status !== "ready_to_send" && t.status !== "sent"
+    ),
+    [tasks, p1Critical, needsAssignment, verificationQueue]
+  );
+
+  // Revision-requested tasks (staff view)
+  const revisionRequested = useMemo(
+    () => tasks.filter((t) => t.status === "revision_requested" && t.assigneeId === user?.uid),
     [tasks, user?.uid]
   );
 
-  const otherTasks = useMemo(
-    () => tasks.filter((t) =>
-      !needsAssignment.some((n) => n.id === t.id) && !needsVerification.some((n) => n.id === t.id)
-    ),
-    [tasks, needsAssignment, needsVerification]
-  );
+  // ─── Action renderers ────────────────────────────────────────
 
-  const renderTaskActions = (task: ProposalTask) => {
-    // Admin: needs to assign
-    if (isAdmin && task.status === "drafting" && task.adminId === user?.uid && !task.deptAdminId) {
+  const renderAdminActions = (task: ProposalTask) => {
+    if (task.status === "drafting" && task.adminId === user?.uid && !task.deptAdminId) {
       return (
         <button
           onClick={() => setAssignModal({ task, level: "deptAdmin" })}
@@ -119,8 +164,7 @@ export default function TasksPage() {
         </button>
       );
     }
-    // Dept Admin: needs to assign staff
-    if (isAdmin && task.status === "drafting" && task.deptAdminId === user?.uid && !task.assigneeId) {
+    if (task.status === "drafting" && task.deptAdminId === user?.uid && !task.assigneeId) {
       return (
         <button
           onClick={() => setAssignModal({ task, level: "staff" })}
@@ -130,92 +174,176 @@ export default function TasksPage() {
         </button>
       );
     }
-    // Dept Admin: needs to verify
-    if (isAdmin && task.status === "verifying" && (task.deptAdminId === user?.uid || task.adminId === user?.uid)) {
-      return (
-        <button
-          onClick={() => setVerifyModal(task)}
-          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-emerald-700 active:scale-95"
-        >
-          <CheckCircle className="h-3.5 w-3.5" /> Verify & Promote
-        </button>
-      );
-    }
-    // Staff: submit for review
-    if (isStaff && (task.status === "drafting" || task.status === "changes_requested") && task.assigneeId === user?.uid) {
-      return (
-        <button
-          onClick={() => handleSubmitForReview(task)}
-          disabled={submittingId === task.id}
-          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
-        >
-          {submittingId === task.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-          Submit for Review
-        </button>
-      );
-    }
     return null;
   };
 
+  const renderVerifyActions = (task: ProposalTask) => (
+    <button
+      onClick={() => setVerifyModal(task)}
+      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-emerald-700 active:scale-95"
+    >
+      <CheckCircle className="h-3.5 w-3.5" /> Verify & Promote
+    </button>
+  );
+
+  const renderStaffActions = (task: ProposalTask) => {
+    const canSubmit =
+      (task.status === "drafting" || task.status === "revision_requested") &&
+      task.assigneeId === user?.uid;
+    if (!canSubmit) return null;
+    return (
+      <button
+        onClick={() => handleSubmitForReview(task)}
+        disabled={submittingId === task.id}
+        className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
+      >
+        {submittingId === task.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+        Submit for Review
+      </button>
+    );
+  };
+
+  const allEmpty = tasks.length === 0 && verificationQueue.length === 0;
+
   return (
     <main className="flex min-h-screen flex-col">
-      <Topbar title="My Tasks" />
+      <Topbar title={isAdmin ? "Task Board" : "My Tasks"} />
 
-      <div className="flex flex-1 flex-col gap-5 p-6">
-        <div>
-          <h2 className="font-sans text-lg font-semibold text-slate-900">
-            {isAdmin ? "Task Board" : "My Tasks"}
-          </h2>
-          <p className="mt-0.5 text-[13px] text-slate-500">
-            {isAdmin
-              ? "Manage delegated tasks — assign to your team or verify proposals."
-              : "Build drafts and submit for admin review."}
-          </p>
+      <div className="flex flex-1 flex-col gap-6 p-6">
+        {/* Page header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              {isAdmin ? "Task Board — Command & Control" : "My Assigned Tasks"}
+            </h2>
+            <p className="mt-0.5 text-[13px] text-slate-500">
+              {isAdmin
+                ? "Route, verify, and escalate delegated proposals. CEO never sees unverified work."
+                : "Build drafts and submit for admin review. You cannot send directly to clients on tasked proposals."}
+            </p>
+          </div>
+          {isAdmin && verificationQueue.length > 0 && (
+            <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-[12px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {verificationQueue.length} pending verification
+            </span>
+          )}
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
           </div>
-        ) : tasks.length === 0 ? (
+        ) : allEmpty ? (
           <div className="flex flex-col items-center justify-center gap-3 py-20">
             <Inbox className="h-8 w-8 text-slate-300" />
             <p className="text-[14px] font-semibold text-slate-600">No tasks assigned</p>
-            <p className="text-[13px] text-slate-400">Tasks assigned to you will appear here.</p>
+            <p className="text-[13px] text-slate-400">Tasks delegated to you will appear here.</p>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Needs Action */}
-            {(needsAssignment.length > 0 || needsVerification.length > 0) && (
-              <section>
+          <div className="space-y-8">
+
+            {/* ── P1 CRITICAL PINNED SECTION ── */}
+            {isAdmin && p1Critical.length > 0 && (
+              <section className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4">
                 <div className="mb-3 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  <h3 className="text-sm font-semibold text-slate-900">Action Required</h3>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
-                    {needsAssignment.length + needsVerification.length}
+                  <Pin className="h-4 w-4 text-rose-500" />
+                  <h3 className="text-sm font-bold text-rose-700">P1 Critical — Pinned</h3>
+                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200">
+                    {p1Critical.length}
                   </span>
+                  <span className="ml-auto text-[11px] text-rose-500">SLA breach imminent — act now</span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {[...needsAssignment, ...needsVerification].map((task) => (
-                    <TaskCard key={task.id} task={task} actions={renderTaskActions(task)} />
+                  {p1Critical.map((task) => (
+                    <div key={task.id} className="relative">
+                      <div className="pointer-events-none absolute inset-0 rounded-xl ring-2 ring-rose-400 ring-offset-1 animate-pulse" />
+                      <TaskCard task={task} actions={isAdmin ? renderAdminActions(task) : renderStaffActions(task)} />
+                    </div>
                   ))}
                 </div>
               </section>
             )}
 
-            {/* Other tasks */}
-            {otherTasks.length > 0 && (
+            {/* ── VERIFICATION QUEUE (Dept Admin) ── */}
+            {isAdmin && verificationQueue.length > 0 && (
               <section>
-                <h3 className="mb-3 text-sm font-semibold text-slate-900">
-                  {isStaff ? "Your Tasks" : "Other Tasks"}
-                </h3>
+                <div className="mb-3 flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  <h3 className="text-sm font-semibold text-slate-900">Verification Queue</h3>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                    {verificationQueue.length}
+                  </span>
+                  <span className="ml-auto text-[11px] text-slate-400">
+                    Dept-locked · Only {profile?.department ?? "your dept"} proposals
+                  </span>
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {otherTasks.map((task) => (
-                    <TaskCard key={task.id} task={task} actions={renderTaskActions(task)} />
+                  {verificationQueue.map((task) => (
+                    <TaskCard key={task.id} task={task} actions={renderVerifyActions(task)} />
                   ))}
                 </div>
               </section>
             )}
+
+            {/* ── NEEDS ASSIGNMENT (Admin routing) ── */}
+            {isAdmin && needsAssignment.length > 0 && (
+              <section>
+                <div className="mb-3 flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-violet-500" />
+                  <h3 className="text-sm font-semibold text-slate-900">Needs Routing</h3>
+                  <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">
+                    {needsAssignment.length}
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {needsAssignment.map((task) => (
+                    <TaskCard key={task.id} task={task} actions={renderAdminActions(task)} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── REVISION REQUESTED (Staff view) ── */}
+            {isStaff && revisionRequested.length > 0 && (
+              <section>
+                <div className="mb-3 flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-amber-500" />
+                  <h3 className="text-sm font-semibold text-slate-900">Revision Requested</h3>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                    {revisionRequested.length}
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {revisionRequested.map((task) => (
+                    <TaskCard key={task.id} task={task} actions={renderStaffActions(task)} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── IN PROGRESS ── */}
+            {inProgressTasks.length > 0 && (
+              <section>
+                <div className="mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-slate-400" />
+                  <h3 className="text-sm font-semibold text-slate-900">In Progress</h3>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                    {inProgressTasks.length}
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {inProgressTasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      actions={isAdmin ? renderAdminActions(task) : renderStaffActions(task)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
           </div>
         )}
       </div>
@@ -237,14 +365,4 @@ export default function TasksPage() {
       )}
     </main>
   );
-}
-
-function toDueMs(dueAt: unknown): number {
-  if (!dueAt) return 0;
-  if (dueAt instanceof Date) return dueAt.getTime();
-  if (typeof dueAt === "string") return new Date(dueAt).getTime();
-  if (typeof dueAt === "object" && "seconds" in (dueAt as Record<string, unknown>)) {
-    return ((dueAt as { seconds: number }).seconds ?? 0) * 1000;
-  }
-  return 0;
 }

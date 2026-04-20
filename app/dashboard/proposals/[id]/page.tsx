@@ -10,7 +10,13 @@ import {
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { useAuth, useRole } from "@/contexts/auth-context";
-import { type Proposal, createProposalRevision, softDeleteComment, updateProposalPrivacy, writeAuditLog } from "@/lib/firestore";
+import {
+  type Proposal, createProposalRevision, softDeleteComment, updateProposalPrivacy, writeAuditLog,
+  submitProposalForVerification, requestProposalRevision, verifyAndPromoteProposal,
+  subscribeToInternalComments,
+} from "@/lib/firestore";
+import { SlaCountdown, type DueAtValue } from "@/components/sla-countdown";
+import { UrgencyBadge } from "@/components/urgency-badge";
 // renderProposalHtml is lazy-loaded to keep mammoth out of the initial bundle
 import { exportProposalPdf } from "@/lib/export-utils";
 import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
@@ -72,6 +78,22 @@ export default function ProposalDetailPage() {
   // isPrivate / sharedWith controls (CEO/Admin)
   const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+
+  // Task workflow
+  const isTasked = proposal?.proposalType === "tasked";
+  const [submittingVerification, setSubmittingVerification] = useState(false);
+  const [revisionModalOpen, setRevisionModalOpen] = useState(false);
+  const [revisionNote, setRevisionNote] = useState("");
+  const [requestingRevision, setRequestingRevision] = useState(false);
+  const [promotingProposal, setPromotingProposal] = useState(false);
+
+  // Internal comments (staff/admin only)
+  type InternalComment = { id: string; text: string; authorRole: string; authorName: string; authorId?: string; createdAt: unknown };
+  const [internalComments, setInternalComments] = useState<InternalComment[]>([]);
+  useEffect(() => {
+    if (!proposalId || (!isAdmin && profile?.role !== "staff")) return;
+    return subscribeToInternalComments(proposalId, setInternalComments);
+  }, [proposalId, isAdmin, profile?.role]);
 
   // Fetch proposal using real-time subscription
   useEffect(() => {
@@ -388,6 +410,81 @@ export default function ProposalDetailPage() {
     }
   };
 
+  // ─── Task workflow handlers ──────────────────────────────────
+
+  const handleSubmitForVerification = async () => {
+    if (!proposal || !user || !profile) return;
+    const ok = await confirm({
+      title: "Submit for Verification?",
+      description: "This will notify your admin to review the draft. You won't be able to edit until they respond.",
+      confirmText: "Submit",
+      actionType: "primary",
+    });
+    if (!ok) return;
+    setSubmittingVerification(true);
+    try {
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      await submitProposalForVerification(proposal.id, user.uid, name);
+      if (proposal.taskId) {
+        const { submitTaskForReview } = await import("@/lib/firestore");
+        await submitTaskForReview(proposal.taskId, user.uid, name);
+      }
+      toast.success("Draft submitted for admin review.");
+    } catch {
+      toast.error("Failed to submit for verification.");
+    } finally {
+      setSubmittingVerification(false);
+    }
+  };
+
+  const handleRequestRevision = async () => {
+    if (!proposal || !user || !profile || !revisionNote.trim()) {
+      toast.error("Please provide revision notes.");
+      return;
+    }
+    setRequestingRevision(true);
+    try {
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      await requestProposalRevision(proposal.id, user.uid, name, revisionNote.trim());
+      if (proposal.taskId) {
+        const { requestTaskChanges } = await import("@/lib/firestore");
+        await requestTaskChanges(proposal.taskId, user.uid, name, revisionNote.trim());
+      }
+      toast.success("Revision requested — staff has been notified.");
+      setRevisionModalOpen(false);
+      setRevisionNote("");
+    } catch {
+      toast.error("Failed to request revision.");
+    } finally {
+      setRequestingRevision(false);
+    }
+  };
+
+  const handleVerifyAndPromote = async () => {
+    if (!proposal || !user || !profile) return;
+    const ok = await confirm({
+      title: "Verify & Promote to CEO?",
+      description: `This proposal for "${proposal.clientName}" will appear in the CEO's Talking Inbox.`,
+      confirmText: "Verify & Promote",
+      actionType: "primary",
+    });
+    if (!ok) return;
+    setPromotingProposal(true);
+    try {
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      await verifyAndPromoteProposal(proposal.id, user.uid, name);
+      if (proposal.taskId) {
+        const { verifyAndPromoteTask } = await import("@/lib/firestore");
+        await verifyAndPromoteTask(proposal.taskId, user.uid, name);
+      }
+      toast.success("Proposal verified — CEO has been notified.");
+    } catch {
+      toast.error("Failed to promote proposal.");
+    } finally {
+      setPromotingProposal(false);
+    }
+  };
+
   const handleTogglePrivacy = async () => {
     if (!proposal) return;
     setSavingPrivacy(true);
@@ -441,9 +538,19 @@ export default function ProposalDetailPage() {
     );
   }
 
+  // P1 urgency pulse class
+  const p1Pulse = isTasked && proposal.urgency === "p1" && ["drafting", "revision_requested", "verifying"].includes(proposal.status ?? "");
+  const proposalDueAt = proposal.dueAt as DueAtValue;
+
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className={`flex min-h-screen flex-col ${p1Pulse ? "ring-4 ring-rose-300/60 ring-inset" : ""}`}>
       <Topbar title="Proposal Details" />
+      {p1Pulse && (
+        <div className="animate-pulse bg-rose-600/90 px-4 py-1.5 text-center text-[12px] font-bold tracking-wide text-white">
+          🔴 CRITICAL TASK — P1 SLA ACTIVE
+          {proposalDueAt && <span className="ml-3 font-normal opacity-90"><SlaCountdown dueAt={proposalDueAt} urgency="p1" compact /></span>}
+        </div>
+      )}
 
       <div className="flex flex-1 flex-col gap-6 p-6">
         {/* Header */}
@@ -456,11 +563,13 @@ export default function ProposalDetailPage() {
               <ArrowLeft className="h-4 w-4" />
               Back to Proposals
             </Link>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-slate-900">{proposal.templateName}</h1>
               <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-medium text-slate-600">
                 v{proposal.version || 1}
               </span>
+              {isTasked && proposal.urgency && <UrgencyBadge urgency={proposal.urgency} />}
+              {isTasked && proposalDueAt && !p1Pulse && <SlaCountdown dueAt={proposalDueAt} urgency={proposal.urgency ?? "p3"} compact />}
               {proposal.previousVersionId && (
                 <span className="text-[12px] text-slate-400">
                   (Revised)
@@ -501,6 +610,39 @@ export default function ProposalDetailPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* ── Task Workflow Actions ── */}
+            {/* Staff: Submit for Verification (replaces Send on tasked proposals) */}
+            {isTasked && !isCeo && !isAdmin && profile?.role === "staff" &&
+              (proposal.status === "drafting" || proposal.status === "revision_requested") && (
+              <button
+                onClick={handleSubmitForVerification}
+                disabled={submittingVerification}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
+              >
+                {submittingVerification ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Submit for Verification
+              </button>
+            )}
+            {/* Admin: Verify & Promote (only for verifying proposals in their dept) */}
+            {isTasked && isAdmin && proposal.status === "verifying" &&
+              (profile?.role === "ceo" || proposal.verifyingAdminId === user?.uid || proposal.department === profile?.department) && (
+              <>
+                <button
+                  onClick={handleVerifyAndPromote}
+                  disabled={promotingProposal}
+                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
+                >
+                  {promotingProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  Verify & Promote
+                </button>
+                <button
+                  onClick={() => setRevisionModalOpen(true)}
+                  className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] font-medium text-amber-700 transition hover:bg-amber-100 active:scale-95"
+                >
+                  <RefreshCw className="h-4 w-4" /> Request Revision
+                </button>
+              </>
+            )}
             {/* Privacy Toggle — CEO only */}
             {isCeo && (
               <button
@@ -594,6 +736,31 @@ export default function ProposalDetailPage() {
           </div>
         </div>
 
+        {/* Revision note banner — shown to staff when admin requests changes */}
+        {isTasked && proposal.status === "revision_requested" && proposal.revisionNote && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-400/30 text-amber-700">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold text-amber-800">Revision Requested</p>
+              <p className="mt-0.5 text-[13px] text-amber-700">{proposal.revisionNote}</p>
+            </div>
+          </div>
+        )}
+
+        {/* CEO Voice banner — staff working on a tasked proposal */}
+        {isTasked && profile?.role === "staff" && ["drafting", "revision_requested"].includes(proposal.status ?? "") && (
+          <div className="flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/50 px-4 py-3">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+              <PenTool className="h-4 w-4" />
+            </div>
+            <p className="text-[13px] font-medium text-violet-800">
+              <span className="font-semibold">CEO Voice Active.</span> Write this proposal as if the CEO is speaking directly to the client. Contact your admin for guidance — do not reach out to the client yourself.
+            </p>
+          </div>
+        )}
+
         {/* Gold identity banner — shows when CEO sent via delegation */}
         {proposal.isDelegated && profile?.role !== "ceo" && (
           <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3">
@@ -659,6 +826,25 @@ export default function ProposalDetailPage() {
             >
               <History className="h-4 w-4" />
               History
+            </button>
+          )}
+          {/* Internal Comments tab — staff & admin only, hidden from clients */}
+          {isTasked && (isAdmin || profile?.role === "staff") && (
+            <button
+              onClick={() => setActiveTab("internal" as typeof activeTab)}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition ${
+                activeTab === ("internal" as typeof activeTab)
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <MessageCircle className="h-4 w-4 text-violet-500" />
+              Internal
+              {internalComments.length > 0 && (
+                <span className="ml-1 rounded-full bg-violet-600 px-2 py-0.5 text-[10px] text-white">
+                  {internalComments.length}
+                </span>
+              )}
             </button>
           )}
         </div>
@@ -1055,6 +1241,87 @@ export default function ProposalDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Internal Comments Panel — shown when "internal" tab is active (staff/admin only) */}
+      {activeTab === ("internal" as typeof activeTab) && isTasked && (
+        <div className="mx-6 mb-6 flex flex-col rounded-2xl border border-violet-200/60 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-violet-100 px-5 py-3">
+            <MessageCircle className="h-4 w-4 text-violet-500" />
+            <span className="text-[13px] font-semibold text-slate-700">Internal Thread</span>
+            <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+              Staff & Admin Only — Hidden from Client
+            </span>
+          </div>
+          <div className="flex max-h-80 flex-col gap-2 overflow-y-auto px-5 py-4">
+            {internalComments.length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-slate-400">No internal notes yet.</p>
+            ) : (
+              internalComments.map((c) => (
+                <div key={c.id} className={`flex gap-2.5 ${c.authorRole === "admin" ? "flex-row-reverse" : ""}`}>
+                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                    c.authorRole === "system" ? "bg-slate-300" : c.authorRole === "admin" ? "bg-indigo-500" : "bg-violet-500"
+                  }`}>
+                    {c.authorRole === "system" ? "S" : c.authorName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className={`max-w-[80%] ${c.authorRole === "admin" ? "items-end" : ""} flex flex-col`}>
+                    <span className="mb-1 text-[10px] text-slate-400">{c.authorName}</span>
+                    <div className={`rounded-xl px-3 py-2 text-[13px] ${
+                      c.authorRole === "system"
+                        ? "bg-slate-50 text-slate-500 italic"
+                        : c.authorRole === "admin"
+                        ? "bg-indigo-50 text-indigo-800"
+                        : "bg-violet-50 text-violet-800"
+                    }`}>
+                      {c.text}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Revision Request Modal */}
+      {revisionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setRevisionModalOpen(false)}>
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div>
+                <h3 className="text-[15px] font-semibold text-slate-800">Request Revision</h3>
+                <p className="text-[12px] text-slate-400">{proposal?.clientName}</p>
+              </div>
+              <button onClick={() => setRevisionModalOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              <label className="mb-1.5 block text-[12px] font-medium text-slate-500">Revision notes for the staff member</label>
+              <textarea
+                value={revisionNote}
+                onChange={(e) => setRevisionNote(e.target.value)}
+                rows={4}
+                autoFocus
+                className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-700 focus:border-amber-300 focus:outline-none"
+                placeholder="Explain what needs to change — this will appear as a notification for the staff member..."
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-6 py-4">
+              <button onClick={() => setRevisionModalOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                onClick={handleRequestRevision}
+                disabled={requestingRevision || !revisionNote.trim()}
+                className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-amber-700 active:scale-95 disabled:opacity-50"
+              >
+                {requestingRevision ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Send Revision Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Animated Confirm Modal — handles all destructive/primary confirmations */}
       <ConfirmModal {...modalProps} isLoading={resending || voiding} />

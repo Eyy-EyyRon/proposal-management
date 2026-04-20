@@ -165,7 +165,17 @@ export async function saveOrgSettings(
 
 // ─── PROPOSAL TYPES ─────────────────────────────────────────
 
-export type ProposalStatus = "sent" | "viewed" | "accepted" | "rejected" | "archived" | "superseded" | "void" | "pending_ceo_approval";
+export type ProposalStatus =
+  | "sent" | "viewed" | "accepted" | "rejected" | "archived" | "superseded" | "void"
+  | "pending_ceo_approval"
+  // Task workflow states
+  | "tasked"            // CEO assigned to admin; no draft yet
+  | "drafting"          // Staff is building the document
+  | "verifying"         // Staff submitted; awaiting Dept Admin review
+  | "revision_requested"// Admin sent back for edits (replaces old changes_requested)
+  | "ready_to_send";    // Dept Admin verified; waiting in CEO Talking Inbox
+
+export type ProposalType = "direct" | "tasked"; // direct = normal send; tasked = part of delegation chain
 
 export interface Proposal {
   id: string;
@@ -223,6 +233,14 @@ export interface Proposal {
   holdTriggeredBy?: string | null;
   holdReleasedBy?: string | null;
   holdReleasedAt?: unknown | null;
+  // Task Workflow Linkage
+  proposalType?: ProposalType;       // "tasked" = part of delegation chain
+  taskId?: string | null;             // Reference to the parent tasks/{taskId} doc
+  urgency?: "p1" | "p2" | "p3" | null; // Inherited from task on creation
+  dueAt?: unknown | null;             // SLA deadline (inherited from task)
+  verifyingAdminId?: string | null;   // The DA who owns this verification
+  verifyingAdminName?: string | null;
+  revisionNote?: string | null;       // Admin's feedback when status = revision_requested
 }
 
 // ─── SEARCH KEYWORDS BUILDER ─────────────────────────────────
@@ -1004,6 +1022,99 @@ export async function createNewVersion(
     authorRole: "system",
     authorName: "System",
     createdAt: serverTimestamp(),
+  });
+}
+
+// ─── TASK WORKFLOW TRANSITIONS (Proposal-level) ─────────────
+
+// Staff → "Submit for Verification": moves proposal to verifying state
+export async function submitProposalForVerification(
+  proposalId: string,
+  staffId: string,
+  staffName: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "verifying",
+    updatedAt: serverTimestamp(),
+  });
+  // Internal system comment visible to admin only
+  await addDoc(collection(db, "proposals", proposalId, "internal_comments"), {
+    text: `${staffName} submitted this draft for admin verification.`,
+    authorRole: "system",
+    authorName: "System",
+    authorId: staffId,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Admin → "Request Revision": sends proposal back to staff with notes
+export async function requestProposalRevision(
+  proposalId: string,
+  adminId: string,
+  adminName: string,
+  note: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "revision_requested",
+    revisionNote: note,
+    updatedAt: serverTimestamp(),
+  });
+  await addDoc(collection(db, "proposals", proposalId, "internal_comments"), {
+    text: `${adminName} requested revision: "${note}"`,
+    authorRole: "admin",
+    authorName: adminName,
+    authorId: adminId,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Admin → "Verify & Promote": moves proposal to ready_to_send
+export async function verifyAndPromoteProposal(
+  proposalId: string,
+  adminId: string,
+  adminName: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    status: "ready_to_send",
+    verifyingAdminId: adminId,
+    verifyingAdminName: adminName,
+    revisionNote: null,
+    updatedAt: serverTimestamp(),
+  });
+  await addDoc(collection(db, "proposals", proposalId, "internal_comments"), {
+    text: `${adminName} verified this proposal — promoted to CEO's Talking Inbox.`,
+    authorRole: "system",
+    authorName: "System",
+    authorId: adminId,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Subscribe to internal comments for a proposal (staff/admin only)
+export function subscribeToInternalComments(
+  proposalId: string,
+  callback: (comments: Array<{
+    id: string;
+    text: string;
+    authorRole: string;
+    authorName: string;
+    authorId?: string;
+    createdAt: unknown;
+  }>) => void
+): () => void {
+  const q = query(
+    collection(db, "proposals", proposalId, "internal_comments"),
+    orderBy("createdAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as {
+      id: string;
+      text: string;
+      authorRole: string;
+      authorName: string;
+      authorId?: string;
+      createdAt: unknown;
+    }));
   });
 }
 
@@ -2115,7 +2226,7 @@ export async function getImmutableAnalytics(
 // ─── TIERED DELEGATION & VERIFICATION (TASK SYSTEM) ──────────
 // ═══════════════════════════════════════════════════════════════
 
-export type TaskStatus = "drafting" | "verifying" | "changes_requested" | "ready_to_send" | "sent" | "cancelled";
+export type TaskStatus = "drafting" | "verifying" | "changes_requested" | "revision_requested" | "ready_to_send" | "sent" | "cancelled";
 export type UrgencyLevel = "p1" | "p2" | "p3";
 
 // SLA windows per urgency (milliseconds)
@@ -2352,11 +2463,11 @@ export async function requestTaskChanges(
   const history = (task.history || []) as TaskHistoryEntry[];
 
   await updateDoc(doc(db, "tasks", taskId), {
-    status: "changes_requested",
+    status: "revision_requested",
     verificationNote: note,
     updatedAt: serverTimestamp(),
     history: [...history, {
-      action: "changes_requested",
+      action: "revision_requested",
       by: adminId,
       byName: adminName,
       note,
@@ -2486,7 +2597,24 @@ export function subscribeToAllActiveTasks(
 ): () => void {
   const q = query(
     collection(db, "tasks"),
-    where("status", "in", ["drafting", "verifying", "changes_requested", "ready_to_send"]),
+    where("status", "in", ["drafting", "verifying", "changes_requested", "revision_requested", "ready_to_send"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// Dept Admin: verification queue — tasks in verifying status for their dept
+export function subscribeToVerificationQueue(
+  deptAdminId: string,
+  department: string,
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("status", "==", "verifying"),
+    where("department", "==", department),
     orderBy("dueAt", "asc")
   );
   return onSnapshot(q, (snap) => {
@@ -2502,7 +2630,7 @@ export function subscribeToAdminTasks(
   const q = query(
     collection(db, "tasks"),
     where("adminId", "==", adminId),
-    where("status", "in", ["drafting", "verifying", "changes_requested", "ready_to_send"]),
+    where("status", "in", ["drafting", "verifying", "revision_requested", "ready_to_send"]),
     orderBy("dueAt", "asc")
   );
   return onSnapshot(q, (snap) => {
@@ -2518,7 +2646,7 @@ export function subscribeToDeptAdminTasks(
   const q = query(
     collection(db, "tasks"),
     where("deptAdminId", "==", deptAdminId),
-    where("status", "in", ["drafting", "verifying", "changes_requested"]),
+    where("status", "in", ["drafting", "verifying", "revision_requested"]),  
     orderBy("dueAt", "asc")
   );
   return onSnapshot(q, (snap) => {
@@ -2534,7 +2662,7 @@ export function subscribeToStaffTasks(
   const q = query(
     collection(db, "tasks"),
     where("assigneeId", "==", staffId),
-    where("status", "in", ["drafting", "changes_requested"]),
+    where("status", "in", ["drafting", "revision_requested"]),
     orderBy("dueAt", "asc")
   );
   return onSnapshot(q, (snap) => {

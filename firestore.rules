@@ -408,10 +408,10 @@ service cloud.firestore {
                 .hasAny(["status", "verificationNote", "history", "updatedAt", "assigneeId", "assigneeName"])
           )
           ||
-          // Staff assignee can submit for review (status: drafting/changes_requested → verifying)
+          // Staff assignee can submit for review (status: drafting/revision_requested → verifying)
           (
             resource.data.assigneeId == request.auth.uid
-            && resource.data.status in ["drafting", "changes_requested"]
+            && resource.data.status in ["drafting", "revision_requested"]
             && request.resource.data.status == "verifying"
           )
         );
