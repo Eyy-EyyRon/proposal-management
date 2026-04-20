@@ -1126,6 +1126,52 @@ export async function setUserDepartments(
   });
 }
 
+// ─── ORPHAN PROTECTION ───────────────────────────────────────
+// Returns active (non-superseded, non-archived, non-deleted) proposals
+// that are owned by or sent by the given user. Used to block staff deactivation.
+export async function checkOrphanProposals(
+  userId: string
+): Promise<{ count: number; proposals: Array<{ id: string; clientName: string; status: string }> }> {
+  const q = query(
+    collection(db, "proposals"),
+    where("isDeleted", "==", false)
+  );
+  const snap = await getDocs(q);
+  const active = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Proposal)
+    .filter(
+      (p) =>
+        (p.ownerId === userId || p.sentById === userId) &&
+        !["superseded", "archived", "void", "rejected"].includes(p.status)
+    );
+  return {
+    count: active.length,
+    proposals: active.map((p) => ({ id: p.id, clientName: p.clientName, status: p.status })),
+  };
+}
+
+// Soft-deactivate a user — sets isActive:false and strips delegation rights.
+// Throws OrphanError if the user has active proposals that need reassignment.
+export class OrphanError extends Error {
+  orphans: Array<{ id: string; clientName: string; status: string }>;
+  constructor(orphans: Array<{ id: string; clientName: string; status: string }>) {
+    super(`User has ${orphans.length} active proposal(s) that must be reassigned before deactivation.`);
+    this.name = "OrphanError";
+    this.orphans = orphans;
+  }
+}
+
+export async function deactivateUser(userId: string): Promise<void> {
+  const { count, proposals: orphans } = await checkOrphanProposals(userId);
+  if (count > 0) throw new OrphanError(orphans);
+  await updateDoc(doc(db, "users", userId), {
+    isActive: false,
+    canSendOnBehalfOf: [],
+    delegatedUserIds: [],
+    updatedAt: serverTimestamp(),
+  });
+}
+
 // Subscribe to all users with real-time updates
 export function subscribeToAllUsers(
   callback: (users: TeamMember[]) => void

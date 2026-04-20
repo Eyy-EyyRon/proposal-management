@@ -10,6 +10,8 @@ import {
   subscribeToAllUsers,
   subscribeToDepartmentsList,
   setUserDepartments,
+  deactivateUser,
+  OrphanError,
   type TeamMember,
   type FirestoreDepartment,
 } from "@/lib/firestore";
@@ -53,6 +55,13 @@ export default function TeamManagementPage() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Deactivate / Orphan protection
+  const [deactivating, setDeactivating] = useState<string | null>(null);
+  const [orphanModal, setOrphanModal] = useState<{
+    userName: string;
+    orphans: Array<{ id: string; clientName: string; status: string }>;
+  } | null>(null);
   
   // Subscribe to users and departments
   useEffect(() => {
@@ -126,6 +135,27 @@ export default function TeamManagementPage() {
     );
   };
   
+  // Deactivate user with orphan guard
+  const handleDeactivate = async (member: TeamMember) => {
+    if (!confirm(`Deactivate ${member.firstName} ${member.lastName}? They will lose all access.`)) return;
+    setDeactivating(member.id);
+    try {
+      await deactivateUser(member.id);
+      alert(`${member.firstName} ${member.lastName} has been deactivated.`);
+    } catch (err) {
+      if (err instanceof OrphanError) {
+        setOrphanModal({
+          userName: `${member.firstName} ${member.lastName}`,
+          orphans: err.orphans,
+        });
+      } else {
+        alert("Failed to deactivate user. Please try again.");
+      }
+    } finally {
+      setDeactivating(null);
+    }
+  };
+
   // Save department assignments
   const handleSaveDepartments = async () => {
     if (!selectedUser) return;
@@ -313,14 +343,29 @@ export default function TeamManagementPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-center">
-                      <button
-                        onClick={() => openAssignModal(member)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
-                      >
-                        <Building2 className="h-3.5 w-3.5" />
-                        Assign Dept
-                      </button>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => openAssignModal(member)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300 active:scale-95"
+                        >
+                          <Building2 className="h-3.5 w-3.5" />
+                          Assign Dept
+                        </button>
+                        <button
+                          onClick={() => handleDeactivate(member)}
+                          disabled={deactivating === member.id}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[12px] font-medium text-rose-600 transition hover:bg-rose-100 active:scale-95 disabled:opacity-50"
+                          title="Deactivate user (blocked if active proposals exist)"
+                        >
+                          {deactivating === member.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <X className="h-3.5 w-3.5" />
+                          )}
+                          Deactivate
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -433,6 +478,44 @@ export default function TeamManagementPage() {
                 ) : (
                   "Save Changes"
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Orphan Protection Modal — blocks deactivation when active proposals exist */}
+      {orphanModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-50">
+                <AlertCircle className="h-5 w-5 text-rose-500" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-semibold text-slate-900">Cannot Deactivate</h3>
+                <p className="mt-1 text-[13px] text-slate-500">
+                  <strong>{orphanModal.userName}</strong> has {orphanModal.orphans.length} active proposal{orphanModal.orphans.length !== 1 ? "s" : ""} that must be reassigned or resolved before deactivation.
+                </p>
+              </div>
+            </div>
+            <div className="mb-5 max-h-40 overflow-y-auto rounded-lg border border-rose-100 bg-rose-50/60 divide-y divide-rose-100">
+              {orphanModal.orphans.map((o) => (
+                <div key={o.id} className="flex items-center justify-between px-3 py-2">
+                  <span className="text-[12px] font-medium text-slate-700">{o.clientName}</span>
+                  <span className="text-[11px] capitalize text-rose-600">{o.status}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mb-4 text-[12px] text-slate-500">
+              Reassign or close these proposals first, then retry deactivation.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setOrphanModal(null)}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-700 active:scale-95"
+              >
+                Understood
               </button>
             </div>
           </div>
