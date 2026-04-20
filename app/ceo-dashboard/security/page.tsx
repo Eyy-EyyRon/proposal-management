@@ -8,6 +8,8 @@ import { useAuth } from "@/contexts/auth-context";
 import {
   subscribeToAllElevations,
   revokeElevation,
+  approveCriticalElevation,
+  denyCriticalElevation,
   callRevokeAllElevations,
   type JitElevation,
 } from "@/lib/firestore";
@@ -45,6 +47,7 @@ export default function CeoSecurityPage() {
   const { user, profile } = useAuth();
   const [elevations, setElevations] = useState<JitElevation[]>([]);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [approving, setApproving] = useState<string | null>(null);
   const [brakeOpen, setBrakeOpen] = useState(false);
   const [brakeConfirm, setBrakeConfirm] = useState("");
   const [brakeFiring, setBrakeFiring] = useState(false);
@@ -65,6 +68,32 @@ export default function CeoSecurityPage() {
     (e) => e.status === "active" && e.expiresAt && new Date((e.expiresAt as Timestamp).seconds * 1000) > new Date()
   );
   const pendingSessions = elevations.filter((e) => e.status === "pending_approval");
+
+  const handleApproveOne = async (uid: string) => {
+    if (!user) return;
+    setApproving(uid);
+    try {
+      await approveCriticalElevation(uid, user.uid);
+      toast.success("Critical elevation approved.");
+    } catch {
+      toast.error("Failed to approve elevation.");
+    } finally {
+      setApproving(null);
+    }
+  };
+
+  const handleDenyOne = async (uid: string, actorName: string) => {
+    if (!user || !profile) return;
+    setRevoking(uid);
+    try {
+      await denyCriticalElevation(uid, user.uid, `${profile.firstName} ${profile.lastName}`);
+      toast.success(`Critical elevation denied for ${actorName}.`);
+    } catch {
+      toast.error("Failed to deny elevation.");
+    } finally {
+      setRevoking(null);
+    }
+  };
 
   const handleRevokeOne = async (uid: string, actorName: string) => {
     if (!user || !profile) return;
@@ -242,14 +271,24 @@ export default function CeoSecurityPage() {
                       <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">{e.justification}</p>
                       <p className="text-[10px] text-slate-400">Requested: {formatRequested(e.requestedAt as Timestamp)}</p>
                     </div>
-                    <button
-                      onClick={() => handleRevokeOne(e.uid, e.actorName)}
-                      disabled={revoking === e.uid}
-                      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {revoking === e.uid ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
-                      Dismiss
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        onClick={() => handleApproveOne(e.uid)}
+                        disabled={approving === e.uid || revoking === e.uid}
+                        className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {approving === e.uid ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleDenyOne(e.uid, e.actorName)}
+                        disabled={approving === e.uid || revoking === e.uid}
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {revoking === e.uid ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                        Deny
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

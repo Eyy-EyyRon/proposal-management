@@ -11,6 +11,8 @@ interface JitElevationModalProps {
   onClose: () => void;
 }
 
+const MIN_JUSTIFICATION_LENGTH = 10;
+
 const TIER_CONFIG = {
   operational: {
     label: "Operational JIT",
@@ -59,8 +61,8 @@ export function JitElevationModal({ isOpen, onClose }: JitElevationModalProps) {
   const cfg = TIER_CONFIG[tier];
 
   const handleSubmit = async () => {
-    if (!justification.trim()) {
-      toast.error("A justification is required.");
+    if (justification.trim().length < MIN_JUSTIFICATION_LENGTH) {
+      toast.error(`Justification must be at least ${MIN_JUSTIFICATION_LENGTH} characters.`);
       return;
     }
     setSaving(true);
@@ -117,7 +119,7 @@ export function JitElevationModal({ isOpen, onClose }: JitElevationModalProps) {
           </div>
           <div>
             <h2 className="text-[15px] font-semibold text-slate-900">Request Elevated Access</h2>
-            <p className="text-[12px] text-slate-500">Vault Protocol — JIT Super Admin</p>
+            <p className="text-[12px] text-slate-500">Temporary elevated session — you are already Super Admin</p>
           </div>
           <button onClick={onClose} className="ml-auto rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">
             <X className="h-4 w-4" />
@@ -200,7 +202,17 @@ export function JitElevationModal({ isOpen, onClose }: JitElevationModalProps) {
               placeholder={tier === "critical" ? "e.g., Promoting John Smith to Super Admin per CEO instruction" : "e.g., Deactivating ex-employee account for John Smith"}
               className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-300/40"
             />
-            <p className="mt-1 text-[11px] text-slate-400">Recorded in the audit log and sent to the CEO.</p>
+            <div className="mt-1 flex items-center justify-between">
+              <span className={`text-[11px] ${
+                justification.trim().length === 0 ? "text-slate-400" :
+                justification.trim().length < MIN_JUSTIFICATION_LENGTH ? "text-rose-500" : "text-emerald-600"
+              }`}>
+                {justification.trim().length < MIN_JUSTIFICATION_LENGTH
+                  ? `${MIN_JUSTIFICATION_LENGTH - justification.trim().length} more character${MIN_JUSTIFICATION_LENGTH - justification.trim().length !== 1 ? "s" : ""} required`
+                  : "✓ Justification accepted"}
+              </span>
+              <span className="text-[11px] text-slate-400">{justification.trim().length} / {MIN_JUSTIFICATION_LENGTH}+</span>
+            </div>
           </div>
         </div>
 
@@ -211,7 +223,7 @@ export function JitElevationModal({ isOpen, onClose }: JitElevationModalProps) {
           </button>
           <button
             onClick={handleSubmit}
-            disabled={saving || !justification.trim()}
+            disabled={saving || justification.trim().length < MIN_JUSTIFICATION_LENGTH}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium text-white transition disabled:opacity-50 active:scale-95 ${
               tier === "critical" ? "bg-rose-600 hover:bg-rose-700" : "bg-orange-500 hover:bg-orange-600"
             }`}

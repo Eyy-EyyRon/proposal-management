@@ -244,6 +244,8 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
 function detectActiveRole(pathname: string, userRole: UserRole): string {
   if (pathname.startsWith("/ceo-dashboard")) return "ceo";
   if (pathname.startsWith("/super-admin")) return "super_admin";
+  // super_admin visiting /dashboard paths still gets the super_admin sidebar
+  if (userRole === "super_admin") return "super_admin";
   return userRole;
 }
 
@@ -436,7 +438,10 @@ export function Sidebar() {
                 className="flex w-full items-center gap-2.5 rounded-lg border border-violet-200/60 bg-violet-50/50 px-2.5 py-2 text-[13px] font-medium text-violet-700 transition hover:bg-violet-100"
               >
                 <Shield className="h-4 w-4 shrink-0 text-violet-600" />
-                Request Super Admin Power
+                <div className="flex flex-col items-start">
+                  <span className="text-[12px] font-semibold leading-tight">Request Elevated Access</span>
+                  <span className="text-[10px] font-normal text-violet-500 leading-tight">Temporary session for admin actions</span>
+                </div>
               </button>
             )
           )}

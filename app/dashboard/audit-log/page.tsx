@@ -44,20 +44,21 @@ function formatTs(ts: unknown): string {
 }
 
 export default function AuditLogPage() {
-  const { isAdmin, isCeo } = useRole();
+  const { isAdmin, isSuperAdmin, isCeo } = useRole();
+  const canAccess = isAdmin || isSuperAdmin || isCeo;
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAdmin && !isCeo) return;
+    if (!canAccess) return;
     const unsub = subscribeToAuditLogs((data) => {
       setLogs(data);
       setLoading(false);
     }, 200);
     return unsub;
-  }, [isAdmin, isCeo]);
+  }, [canAccess]);
 
-  if (!isAdmin && !isCeo) {
+  if (!canAccess) {
     return (
       <main className="flex min-h-screen flex-col">
         <Topbar title="Audit Log" />

@@ -2050,7 +2050,18 @@ export function subscribeToAllElevations(
 ): () => void {
   return onSnapshot(
     collection(db, "elevations"),
-    (snap) => callback(snap.docs.map((d) => ({ ...d.data(), uid: d.id }) as JitElevation)),
+    (snap) => {
+      const now = new Date();
+      const live = snap.docs
+        .map((d) => ({ ...d.data(), uid: d.id }) as JitElevation)
+        .filter((e) => {
+          if (e.status === "pending_approval") return true;
+          if (e.status !== "active") return false;
+          const exp = (e.expiresAt as unknown as { toDate?: () => Date })?.toDate?.();
+          return exp ? exp > now : false;
+        });
+      callback(live);
+    },
     (err) => { if (err.code !== "permission-denied") console.error(err); }
   );
 }

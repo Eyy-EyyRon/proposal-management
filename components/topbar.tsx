@@ -278,7 +278,13 @@ export function Topbar({ title }: TopbarProps) {
                     const Icon = cfg.icon;
                     return (
                       <Link
-                        href={n.proposalId ? `/dashboard/proposals/${n.proposalId}` : `/dashboard/proposals`}
+                        href={
+                          n.type === "jit_elevation"
+                            ? "/ceo-dashboard/security"
+                            : n.proposalId
+                            ? `/dashboard/proposals/${n.proposalId}`
+                            : `/dashboard/proposals`
+                        }
                         key={n.id}
                         onClick={() => { handleNotificationClick(n); setOpen(false); }}
                         className={`flex items-start gap-3 px-4 py-3 transition hover:bg-slate-50 ${

@@ -176,12 +176,15 @@ export const onElevationCreate = onDocumentCreated(
     const data = event.data?.data();
     if (!data) return;
 
-    const {uid, actorName, justification, durationMs} = data as {
+    const {uid, actorName, justification, durationMs, tier} = data as {
       uid: string;
       actorName: string;
       justification: string;
       durationMs: number;
+      tier?: string;
     };
+    const elevationTier = tier ?? "operational";
+    const isOperational = elevationTier === "operational";
 
     const durationMin = Math.round(durationMs / 60000);
     const durationLabel = durationMin >= 60
@@ -205,10 +208,14 @@ export const onElevationCreate = onDocumentCreated(
     const ceoId = ceoDoc.id;
 
     // In-app notification to CEO
+    const notifMessage = isOperational
+      ? `🔐 ${actorName} requested Operational elevation for ${durationLabel}. Reason: ${justification}`
+      : `� ${actorName} requested Critical elevation for ${durationLabel} — awaiting your approval. Reason: ${justification}`;
+
     await db.collection("notifications").add({
       userId: ceoId,
       type: "jit_elevation",
-      message: `🔐 ${actorName} elevated to Super Admin for ${durationLabel}. Reason: ${justification}`,
+      message: notifMessage,
       actorRole: "system",
       actorName,
       read: false,
@@ -221,16 +228,15 @@ export const onElevationCreate = onDocumentCreated(
       actorId: uid,
       actorName,
       actorRole: "super_admin",
-      description: `${actorName} activated Super Admin mode for ${durationLabel}. Reason: ${justification}`,
-      metadata: {justification, durationMs},
+      description: `${actorName} requested ${elevationTier} JIT elevation for ${durationLabel}. Reason: ${justification}`,
+      metadata: {justification, durationMs, tier: elevationTier},
       createdAt: FieldValue.serverTimestamp(),
     });
 
     // EMAIL HOOK — replace with Resend/SendGrid
     const ceoEmail = ceoDoc.data().email as string | undefined;
     logger.info(
-      `📧 [EMAIL HOOK] CEO ${ceoEmail ?? ceoId} should be emailed: ` +
-      `"${actorName} elevated to Super Admin for ${durationLabel}. Reason: ${justification}"`,
+      `📧 [EMAIL HOOK] CEO ${ceoEmail ?? ceoId} should be emailed: "${notifMessage}"`,
       {uid, ceoId}
     );
   }

@@ -17,7 +17,6 @@ import {
   subscribeToElevation,
   revokeElevation as firestoreRevokeElevation,
   requestElevation as firestoreRequestElevation,
-  notifyCeoOfElevation,
   type JitElevation,
   type ElevationTier,
 } from "@/lib/firestore";
@@ -338,19 +337,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     durationMs,
     durationLabel,
     tier,
-  }: { justification: string; durationMs: number; durationLabel: string; tier: ElevationTier }) => {
+  }: { justification: string; durationMs: number; durationLabel: string; tier: ElevationTier }) => { // eslint-disable-line @typescript-eslint/no-unused-vars
     if (!user || !profile) return;
     const actorName = `${profile.firstName} ${profile.lastName}`;
     await firestoreRequestElevation({ uid: user.uid, actorName, justification, durationMs, tier });
-    // Notify CEO (find root CEO by isRootCEO flag)
-    try {
-      const { getDocs: gd, collection: col, query: q, where: w } = await import("firebase/firestore");
-      const ceoSnaps = await gd(q(col(db, "users"), w("isRootCEO", "==", true)));
-      if (!ceoSnaps.empty) {
-        const ceoUid = ceoSnaps.docs[0].id;
-        await notifyCeoOfElevation({ ceoId: ceoUid, actorName, justification, durationLabel, tier, elevationUid: user.uid });
-      }
-    } catch { /* non-critical */ }
+    // CEO notification is handled server-side by the onElevationCreate Cloud Function
   }, [user, profile]);
 
   const handleRevokeElevation = useCallback(async (revokedBy = "self") => {

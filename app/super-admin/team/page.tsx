@@ -172,9 +172,14 @@ export default function TeamManagementPage() {
   // Save department assignments + role
   const handleSaveDepartments = async () => {
     if (!selectedUser) return;
+    // Hard guard: role change requires critical elevation even if UI somehow bypassed
+    const roleChanging = selectedRole !== selectedUser.role && selectedUser.role !== "ceo";
+    if (roleChanging && !isCriticallyElevated) {
+      setShowElevationModal(true);
+      return;
+    }
     setSaving(true);
     try {
-      // Resolve the primary departmentId from the departments list
       const primaryDeptName = selectedDepartments[0] ?? null;
       const primaryDept = primaryDeptName
         ? departments.find((d) => d.name === primaryDeptName)
@@ -183,8 +188,7 @@ export default function TeamManagementPage() {
 
       await setUserDepartments(selectedUser.id, selectedDepartments, departmentId);
 
-      // Role change — only reaches here if isCriticallyElevated (JITGuard enforces this)
-      if (selectedRole !== selectedUser.role && selectedUser.role !== "ceo") {
+      if (roleChanging) {
         await setUserRole(selectedUser.id, selectedRole);
       }
 
@@ -341,7 +345,7 @@ export default function TeamManagementPage() {
                             {member.firstName} {member.lastName}
                           </p>
                           <p className="text-[12px] text-slate-400">
-                            {member.email}
+                            {member.jobTitle || "—"}
                           </p>
                         </div>
                       </div>
@@ -376,7 +380,7 @@ export default function TeamManagementPage() {
                           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300 active:scale-95"
                         >
                           <Building2 className="h-3.5 w-3.5" />
-                          Assign Dept
+                          Manage
                         </button>
                         <JITGuard
                           actionLabel={`Deactivate ${member.firstName} ${member.lastName}`}
@@ -431,9 +435,12 @@ export default function TeamManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Assign Role & Department
-              </h3>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Manage Member
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Change role or assign departments</p>
+              </div>
               <button
                 onClick={() => setIsAssignModalOpen(false)}
                 className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
@@ -443,7 +450,8 @@ export default function TeamManagementPage() {
             </div>
 
             <p className="mb-3 text-[13px] text-slate-500">
-              Configure <strong>{selectedUser.firstName} {selectedUser.lastName}</strong>:
+              Editing <strong>{selectedUser.firstName} {selectedUser.lastName}</strong>
+              {selectedUser.jobTitle ? <span className="text-slate-400"> · {selectedUser.jobTitle}</span> : ""}
             </p>
 
             {/* Role picker */}
@@ -485,7 +493,10 @@ export default function TeamManagementPage() {
               </div>
             )}
 
-            <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Departments</p>
+            <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+              Departments
+              {selectedRole === "admin" && <span className="ml-2 font-normal normal-case text-indigo-500">(required for Dept Admin)</span>}
+            </p>
 
             <div className="space-y-2 max-h-64 overflow-y-auto mb-6">
               {departments.map((dept) => (
@@ -538,20 +549,32 @@ export default function TeamManagementPage() {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleSaveDepartments}
-                disabled={saving || departments.length === 0}
-                className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] disabled:opacity-50"
+              <JITGuard
+                actionLabel={
+                  selectedUser && selectedRole !== selectedUser.role
+                    ? `Change role of ${selectedUser.firstName} ${selectedUser.lastName} to ${selectedRole}`
+                    : `Assign departments for ${selectedUser?.firstName} ${selectedUser?.lastName}`
+                }
+                requiresCritical={!!(selectedUser && selectedRole !== selectedUser.role && selectedUser.role !== "ceo")}
+                onElevationNeeded={() => setShowElevationModal(true)}
               >
-                {saving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  "Save Changes"
+                {({ trigger }) => (
+                  <button
+                    onClick={() => trigger(handleSaveDepartments)}
+                    disabled={saving || departments.length === 0}
+                    className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] disabled:opacity-50"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </button>
                 )}
-              </button>
+              </JITGuard>
             </div>
           </div>
         </div>

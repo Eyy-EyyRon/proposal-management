@@ -12,6 +12,7 @@ body{font-family:'Inter',sans-serif;scroll-behavior:smooth;}
 .role-admin{border-left:4px solid #6366F1;}
 .role-staff{border-left:4px solid #64748B;}
 .role-client{border-left:4px solid #10B981;}
+.role-superadmin{border-left:4px solid #7C3AED;}
 .p1-pulse{animation:pulse-red 2s infinite;}
 @keyframes pulse-red{0%{box-shadow:0 0 0 0 rgba(239,68,68,.7);}70%{box-shadow:0 0 0 10px rgba(239,68,68,0);}100%{box-shadow:0 0 0 0 rgba(239,68,68,0);}}
 .sidebar-link.active{color:#6366F1;font-weight:700;border-right:2px solid #6366F1;}
@@ -56,6 +57,7 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Role Guides</p>
       <ul class="space-y-0.5 text-slate-600">
         <li><a href="#ceo-guide"       class="sidebar-link block py-1.5 px-2 rounded hover:bg-yellow-50">👑 CEO</a></li>
+        <li><a href="#superadmin-guide" class="sidebar-link block py-1.5 px-2 rounded hover:bg-violet-50">🔐 Super Admin</a></li>
         <li><a href="#admin-guide"     class="sidebar-link block py-1.5 px-2 rounded hover:bg-indigo-50">🛡 General Admin</a></li>
         <li><a href="#deptadmin-guide" class="sidebar-link block py-1.5 px-2 rounded hover:bg-indigo-50">🏢 Dept Admin</a></li>
         <li><a href="#staff-guide"     class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">⚙️ Staff</a></li>
@@ -72,6 +74,9 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
         <li><a href="#audit-trail"    class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Audit Trail &amp; Certificates</a></li>
         <li><a href="#urgency-editor" class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Inline Urgency Editor</a></li>
         <li><a href="#pipeline-bar"   class="sidebar-link block py-1.5 px-2 rounded hover:bg-slate-100">Pipeline Progress Bar</a></li>
+        <li><a href="#jit-elevation"  class="sidebar-link block py-1.5 px-2 rounded hover:bg-violet-50 text-violet-700">🔐 JIT Elevation</a></li>
+        <li><a href="#emergency-brake" class="sidebar-link block py-1.5 px-2 rounded hover:bg-rose-50 text-rose-700">🚨 Emergency Brake</a></li>
+        <li><a href="#black-box"      class="sidebar-link block py-1.5 px-2 rounded hover:bg-rose-50 text-rose-700">📦 Black Box Logs</a></li>
       </ul>
     </div>
     <div>
@@ -98,6 +103,7 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
     <a href="#client-guide"    class="bg-emerald-400/20 hover:bg-emerald-400/30 border border-emerald-300/30 text-emerald-200 text-xs font-bold px-4 py-2 rounded-lg transition">🤝 Client Guide</a>
     <a href="#urgency-editor"  class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-lg transition">⚡ Urgency Editor</a>
     <a href="#audit-trail"     class="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold px-4 py-2 rounded-lg transition">🔒 Audit Certificates</a>
+    <a href="#jit-elevation"   class="bg-violet-400/20 hover:bg-violet-400/30 border border-violet-300/30 text-violet-200 text-xs font-bold px-4 py-2 rounded-lg transition">🔐 JIT &amp; Security</a>
   </div>
 </div>
 
@@ -282,6 +288,7 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
       <thead class="bg-slate-900 text-white text-[12px]"><tr><th class="text-left px-5 py-4">Role</th><th class="text-left px-5 py-4">Primary Job</th><th class="text-left px-5 py-4">Can Send to Client?</th><th class="text-left px-5 py-4">Dashboard</th></tr></thead>
       <tbody class="divide-y divide-slate-100">
         <tr class="hover:bg-yellow-50"><td class="px-5 py-4 font-bold text-yellow-700">👑 CEO</td><td class="px-5 py-4 text-slate-600">Strategy, task creation, final send</td><td class="px-5 py-4"><span class="badge bg-emerald-100 text-emerald-700">Yes — always</span></td><td class="px-5 py-4 text-slate-500"><code>/ceo-dashboard</code></td></tr>
+        <tr class="hover:bg-violet-50"><td class="px-5 py-4 font-bold text-violet-700">🔐 Super Admin</td><td class="px-5 py-4 text-slate-600">System-wide destructive ops (via JIT elevation)</td><td class="px-5 py-4"><span class="badge bg-slate-100 text-slate-600">Direct proposals only</span></td><td class="px-5 py-4 text-slate-500"><code>/super-admin</code></td></tr>
         <tr class="hover:bg-indigo-50"><td class="px-5 py-4 font-bold text-indigo-700">🛡 General Admin</td><td class="px-5 py-4 text-slate-600">Route tasks to departments</td><td class="px-5 py-4"><span class="badge bg-slate-100 text-slate-600">Direct proposals only</span></td><td class="px-5 py-4 text-slate-500"><code>/dashboard</code></td></tr>
         <tr class="hover:bg-indigo-50"><td class="px-5 py-4 font-bold text-violet-700">🏢 Dept Admin</td><td class="px-5 py-4 text-slate-600">Assign staff, verify drafts</td><td class="px-5 py-4"><span class="badge bg-slate-100 text-slate-600">Direct proposals only</span></td><td class="px-5 py-4 text-slate-500"><code>/dashboard</code></td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-4 font-bold text-slate-700">⚙️ Staff</td><td class="px-5 py-4 text-slate-600">Build proposals, submit for review</td><td class="px-5 py-4"><span class="badge bg-rose-100 text-rose-700">No — tasked proposals</span></td><td class="px-5 py-4 text-slate-500"><code>/dashboard</code></td></tr>
@@ -329,6 +336,48 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
   </div>
   <div class="callout callout-info"><p class="text-sm text-indigo-800"><strong>Talking Inbox:</strong> Only <code>ready_to_send</code> proposals appear here. Drafting and verifying proposals are intentionally hidden to prevent CEO overload.</p></div>
   <div class="callout callout-warn"><p class="text-sm font-semibold text-amber-800">Changing Urgency</p><p class="text-sm text-amber-700 mt-1">Click the urgency badge on any task card (P1/P2/P3) to open the inline urgency editor. Selecting P1 resets the SLA timer to 2 hours from now and immediately notifies the team. The change is recorded in task history.</p></div>
+
+  <h3 class="font-bold text-slate-800 mb-4">Security Monitor &amp; Emergency Controls</h3>
+  <p class="text-sm text-slate-600 mb-4">Navigate to <code>/ceo-dashboard/security</code> to see all active and pending Super Admin elevation sessions in real-time.</p>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+    <div class="bg-white border border-yellow-100 rounded-xl p-5 shadow-sm"><p class="font-bold text-yellow-800 mb-1">👁 Live Elevation Feed</p><p class="text-sm text-slate-600">See every active and pending-approval elevation: who requested it, what tier, the justification, and time remaining.</p></div>
+    <div class="bg-white border border-yellow-100 rounded-xl p-5 shadow-sm"><p class="font-bold text-yellow-800 mb-1">🎯 Individual Revoke</p><p class="text-sm text-slate-600">Click <strong>Revoke</strong> on any session card to immediately terminate that Super Admin's elevation without affecting others.</p></div>
+    <div class="bg-white border border-rose-100 rounded-xl p-5 shadow-sm"><p class="font-bold text-rose-800 mb-1">🚨 Emergency Brake</p><p class="text-sm text-slate-600">Nuclear option — type <code>REVOKE</code> and confirm to instantly terminate <em>all</em> Super Admin sessions and revoke Firebase auth tokens system-wide.</p></div>
+  </div>
+  <div class="callout callout-danger"><p class="text-sm font-semibold text-red-800">After Emergency Brake</p><p class="text-sm text-red-700 mt-1">A success toast displays the <strong>Log ID</strong> of the purge event (e.g. <code>abc123xyz</code>). View the full immutable record at <code>/ceo-dashboard/security/logs</code>. All Super Admins are redirected to login with a security reset banner.</p></div>
+</section>
+
+<!-- ═══ SUPER ADMIN GUIDE ═══ -->
+<section id="superadmin-guide" class="role-superadmin pl-8">
+  <h2 class="text-2xl font-extrabold mb-2">🔐 Super Admin Guide — Elevated Operator</h2>
+  <p class="text-slate-500 mb-6 max-w-2xl leading-relaxed">Super Admins have access to system-wide operations — but every destructive action requires a temporary, time-limited <strong>JIT Elevation</strong>. No standing privileges. Every action is logged.</p>
+
+  <h3 class="font-bold text-slate-800 mb-4">Your Dashboard</h3>
+  <p class="text-sm text-slate-600 mb-4">Navigate to <code>/super-admin</code>. The dashboard shows system-wide overview, all users, all proposals, and a team management panel. Sensitive actions (deactivate user, change role) are locked until you request elevation.</p>
+
+  <h3 class="font-bold text-slate-800 mb-4">Requesting JIT Elevation</h3>
+  <div class="space-y-3 mb-6">
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-violet-500 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span><div><p class="font-semibold text-slate-800 text-sm">Click any locked (greyed) action button</p><p class="text-xs text-slate-500 mt-0.5">A lock badge appears on guarded buttons. Clicking it opens the Elevation Request modal automatically.</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-violet-500 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span><div><p class="font-semibold text-slate-800 text-sm">Select Tier &amp; Duration</p><p class="text-xs text-slate-500 mt-0.5"><strong>Operational</strong> (auto-approved, 30 min–4 h): for deactivation, department assignment. <strong>Critical</strong> (requires CEO approval): for role changes promoting to Super Admin.</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-violet-500 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span><div><p class="font-semibold text-slate-800 text-sm">Write a Justification (min 10 characters)</p><p class="text-xs text-slate-500 mt-0.5">Required. Attached to every action audit log entry for the duration of the session.</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-violet-500 text-white font-bold text-xs flex items-center justify-center shrink-0">4</span><div><p class="font-semibold text-slate-800 text-sm">Active Banner Appears</p><p class="text-xs text-slate-500 mt-0.5">An orange (<em>Operational</em>) or red (<em>Critical</em>) pulsing banner appears at the top of every page for the session duration. The live countdown is always visible.</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-violet-500 text-white font-bold text-xs flex items-center justify-center shrink-0">5</span><div><p class="font-semibold text-slate-800 text-sm">Confirm Each Destructive Action</p><p class="text-xs text-slate-500 mt-0.5">Every guarded button opens a <strong>JIT Guard confirmation dialog</strong>: state a per-action reason (min 10 chars), then click <strong>Confirm &amp; Execute</strong>.</p></div></div>
+  </div>
+
+  <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm mb-6">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-900 text-white text-[12px]"><tr><th class="text-left px-4 py-3">Action</th><th class="text-left px-4 py-3">Elevation Required</th><th class="text-left px-4 py-3">CEO Notified?</th></tr></thead>
+      <tbody class="divide-y divide-slate-100">
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Deactivate a user</td><td class="px-4 py-3"><span class="badge bg-orange-100 text-orange-700 border border-orange-200">Operational</span></td><td class="px-4 py-3 text-slate-500">No</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Assign department</td><td class="px-4 py-3"><span class="badge bg-orange-100 text-orange-700 border border-orange-200">Operational</span></td><td class="px-4 py-3 text-slate-500">No</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Change user role</td><td class="px-4 py-3"><span class="badge bg-rose-100 text-rose-700 border border-rose-200">Critical (CEO approval)</span></td><td class="px-4 py-3 text-slate-500">Yes — approval request sent</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Access audit log</td><td class="px-4 py-3"><span class="badge bg-slate-100 text-slate-600 border border-slate-200">None required</span></td><td class="px-4 py-3 text-slate-500">No</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-danger"><p class="text-sm font-semibold text-red-800">Ghost Session Protection</p><p class="text-sm text-red-700 mt-1">If the CEO triggers the Emergency Brake, your session is force-terminated immediately — even mid-action. All Firestore write attempts from a ghost session are rejected at the security rules level via the <code>notForcedOut()</code> guard. You will be redirected to the login page with a security reset notice.</p></div>
+  <div class="callout callout-warn"><p class="text-sm font-semibold text-amber-800">Elevation Auto-Expiry</p><p class="text-sm text-amber-700 mt-1">When the countdown reaches zero, elevation is revoked automatically. Locked buttons return to their greyed state. Any in-flight destructive action will be rejected by Firestore rules once the elevation document expires.</p></div>
 </section>
 
 <!-- ═══ GENERAL ADMIN ═══ -->
@@ -525,6 +574,126 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
   <div class="callout callout-info"><p class="text-sm text-indigo-800">When a task is in <code>revision_requested</code> or <code>changes_requested</code>, the bar turns amber and the active stage label reads <strong>Revision</strong>. Cancelled tasks do not show the pipeline bar.</p></div>
 </section>
 
+<!-- ═══ JIT ELEVATION ═══ -->
+<section id="jit-elevation">
+  <h2 class="text-2xl font-extrabold mb-2">🔐 Just-In-Time (JIT) Elevation System</h2>
+  <p class="text-slate-500 mb-6 max-w-2xl leading-relaxed">The JIT system enforces the principle of least privilege. Super Admins have <em>no standing destructive access</em> — they must formally request it, justify it, and accept a time limit. Every elevated session is fully audited.</p>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+    <div class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6">
+      <p class="font-extrabold text-orange-900 mb-2">⚡ Operational Tier</p>
+      <ul class="text-sm text-orange-800 space-y-1.5 list-disc list-inside">
+        <li>Auto-approved immediately</li>
+        <li>Duration: 30 min, 1 hour, or 4 hours</li>
+        <li>Unlocks: user deactivation, department assignment</li>
+        <li>Orange pulsing banner shown during session</li>
+        <li>CEO notified in Security Feed</li>
+      </ul>
+    </div>
+    <div class="bg-rose-50 border-2 border-rose-200 rounded-2xl p-6">
+      <p class="font-extrabold text-rose-900 mb-2">🔴 Critical Tier</p>
+      <ul class="text-sm text-rose-800 space-y-1.5 list-disc list-inside">
+        <li>Requires CEO approval before activation</li>
+        <li>Amber "Pending" banner shown while waiting</li>
+        <li>CEO receives in-app notification to approve/deny</li>
+        <li>Unlocks: role changes (promotes to Super Admin)</li>
+        <li>Red pulsing banner once approved</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 class="font-bold text-slate-800 mb-3">The Elevation Modal</h3>
+  <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm mb-6">
+    <ol class="space-y-3 text-sm text-slate-600 list-decimal list-inside">
+      <li>Click a locked action button — the Elevation Request modal opens.</li>
+      <li>Select <strong>Operational</strong> or <strong>Critical</strong> tier.</li>
+      <li>Choose duration (30 min / 1 h / 4 h).</li>
+      <li>Enter a justification (<strong>minimum 10 characters</strong> — enforced).</li>
+      <li>Click <strong>Request Access</strong>. Operational activates instantly; Critical enters pending state.</li>
+    </ol>
+    <div class="mt-4 rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-[12px] text-slate-500">
+      ⚠ Safety notice displayed in modal: <em>"All actions performed during this session will be logged and tied to your IP address."</em>
+    </div>
+  </div>
+
+  <h3 class="font-bold text-slate-800 mb-3">The Active Power Banner</h3>
+  <p class="text-sm text-slate-600 mb-4">Once elevation is active, a persistent banner appears at the top of every page for the session duration:</p>
+  <div class="space-y-2 mb-6">
+    <div class="flex items-center gap-3 rounded-xl bg-orange-500 px-4 py-3 text-white text-sm font-semibold shadow-md"><span class="relative flex h-2.5 w-2.5 shrink-0"><span class="absolute animate-ping rounded-full h-full w-full bg-white opacity-75"></span><span class="relative rounded-full h-2.5 w-2.5 bg-white"></span></span>Active Admin Mode &nbsp;·&nbsp; Operational &nbsp;·&nbsp; 47m 12s remaining &nbsp;<button class="ml-auto text-orange-100 text-xs border border-orange-300/50 px-2 py-0.5 rounded">Revoke</button></div>
+    <div class="flex items-center gap-3 rounded-xl bg-rose-600 px-4 py-3 text-white text-sm font-semibold shadow-md"><span class="relative flex h-2.5 w-2.5 shrink-0"><span class="absolute animate-ping rounded-full h-full w-full bg-white opacity-75"></span><span class="relative rounded-full h-2.5 w-2.5 bg-white"></span></span>Critical Admin Mode &nbsp;·&nbsp; CEO-Approved &nbsp;·&nbsp; 23m 05s remaining &nbsp;<button class="ml-auto text-rose-100 text-xs border border-rose-300/50 px-2 py-0.5 rounded">Revoke</button></div>
+  </div>
+
+  <h3 class="font-bold text-slate-800 mb-3">The JIT Guard — Destructive Action Wrapper</h3>
+  <p class="text-sm text-slate-600 mb-4">Every destructive button (Deactivate, Change Role) is wrapped in a <strong>JIT Guard</strong>. When elevation is not active:</p>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">🔒 Locked State</p><p class="text-sm text-slate-600">Button is greyed out with a <code>🔒 Elevate</code> or <code>🔒 Critical</code> badge overlay. Clicking opens the elevation modal — not a tooltip, a real prompt.</p></div>
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">✅ Elevated State</p><p class="text-sm text-slate-600">Button is fully clickable. On click, a <strong>per-action confirmation dialog</strong> appears requiring a separate reason (min 10 chars) and Confirm &amp; Execute.</p></div>
+  </div>
+  <div class="callout callout-tip"><p class="text-sm font-semibold text-emerald-800">Audit Log Integration</p><p class="text-sm text-emerald-700 mt-1">Every <code>jit_elevation_requested</code>, <code>jit_elevation_approved</code>, <code>jit_elevation_denied</code>, and <code>jit_elevation_revoked</code> event is recorded in the <code>logs</code> collection and visible on the Audit Log page at <code>/dashboard/audit-log</code>.</p></div>
+</section>
+
+<!-- ═══ EMERGENCY BRAKE ═══ -->
+<section id="emergency-brake">
+  <h2 class="text-2xl font-extrabold mb-2">🚨 Emergency Brake — Nuclear Option</h2>
+  <p class="text-slate-500 mb-6 max-w-2xl leading-relaxed">The CEO's last line of defence. One action simultaneously revokes all Super Admin elevation sessions, invalidates their Firebase auth tokens, force-logs them out of every device, and writes an immutable audit record.</p>
+
+  <div class="bg-rose-50 border-2 border-rose-300 rounded-2xl p-6 mb-6">
+    <p class="font-extrabold text-rose-900 text-lg mb-4">What It Does (in one atomic operation)</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+      <div class="flex items-start gap-2"><span class="text-rose-500 font-bold mt-0.5">1.</span><span class="text-rose-800">Wipes all documents in the <code>elevations</code> collection</span></div>
+      <div class="flex items-start gap-2"><span class="text-rose-500 font-bold mt-0.5">2.</span><span class="text-rose-800">Sets <code>forceLogoutTimestamp</code> on every Super Admin user document</span></div>
+      <div class="flex items-start gap-2"><span class="text-rose-500 font-bold mt-0.5">3.</span><span class="text-rose-800">Revokes Firebase auth tokens — ends all active sessions on all devices</span></div>
+      <div class="flex items-start gap-2"><span class="text-rose-500 font-bold mt-0.5">4.</span><span class="text-rose-800">Writes an immutable Black Box record to <code>system_purge_logs</code> with IP + User Agent captured</span></div>
+      <div class="flex items-start gap-2"><span class="text-rose-500 font-bold mt-0.5">5.</span><span class="text-rose-800">Writes an <code>emergency_brake_activated</code> entry to the standard <code>logs</code> audit collection</span></div>
+      <div class="flex items-start gap-2"><span class="text-rose-500 font-bold mt-0.5">6.</span><span class="text-rose-800">Returns a <code>logId</code> shown immediately in the CEO's success toast</span></div>
+    </div>
+  </div>
+
+  <h3 class="font-bold text-slate-800 mb-3">How to Trigger</h3>
+  <div class="space-y-3 mb-6">
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span><div><p class="font-semibold text-slate-800 text-sm">Navigate to <code>/ceo-dashboard/security</code></p><p class="text-xs text-slate-500 mt-0.5">Click <strong>Emergency Brake</strong> (red button, top-right).</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span><div><p class="font-semibold text-slate-800 text-sm">Read the consequences dialog</p><p class="text-xs text-slate-500 mt-0.5">Lists how many active sessions will be terminated.</p></div></div>
+    <div class="flex gap-4 items-start bg-white border border-rose-200 bg-rose-50/30 rounded-xl p-4 shadow-sm"><span class="w-7 h-7 rounded-full bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span><div><p class="font-semibold text-slate-800 text-sm">Type <code>REVOKE</code> and click <strong>Execute Emergency Brake</strong></p><p class="text-xs text-slate-500 mt-0.5">The confirmation word prevents accidental triggers. This cannot be undone.</p></div></div>
+  </div>
+
+  <h3 class="font-bold text-slate-800 mb-3">Security Sentry — Client-Side Detection</h3>
+  <p class="text-sm text-slate-600 mb-4">Every Super Admin's browser continuously watches their own user document. When <code>forceLogoutTimestamp</code> is updated to a time <em>after</em> their session started, the Security Sentry triggers an automatic signout and redirects to the login page with a <code>?reason=security_reset</code> banner.</p>
+  <div class="callout callout-danger"><p class="text-sm font-semibold text-red-800">Ghost Session Guard (Firestore Rules)</p><p class="text-sm text-red-700 mt-1">Even if a Super Admin has an active session that isn't caught client-side, all Firestore write operations check <code>notForcedOut()</code> in security rules. Any write from an auth token issued before the <code>forceLogoutTimestamp</code> is silently rejected at the database level.</p></div>
+</section>
+
+<!-- ═══ BLACK BOX LOGS ═══ -->
+<section id="black-box">
+  <h2 class="text-2xl font-extrabold mb-2">📦 Black Box — System Purge Logs</h2>
+  <p class="text-slate-500 mb-6 max-w-2xl leading-relaxed">Every Emergency Brake event writes an immutable, append-only record to a dedicated <code>system_purge_logs</code> Firestore collection. No one — not even the CEO — can edit or delete these records.</p>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">🌐 Network Metadata</p><p class="text-sm text-slate-600">CEO's IP address (captured from request headers) and full User Agent string recorded at the exact moment of trigger.</p></div>
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">🔢 Scope Data</p><p class="text-sm text-slate-600">Number of admins revoked, number of elevation sessions wiped, list of affected UIDs — all stored in the log document.</p></div>
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><p class="font-bold text-slate-800 mb-2">🔗 Cross-Reference</p><p class="text-sm text-slate-600">The standard <code>logs</code> audit entry references the <code>purgeLogId</code>, linking the general audit trail to the black box record.</p></div>
+  </div>
+
+  <h3 class="font-bold text-slate-800 mb-3">Viewing Purge Logs (CEO Only)</h3>
+  <p class="text-sm text-slate-600 mb-4">Navigate to <code>/ceo-dashboard/security/logs</code> or click <strong>Purge Logs</strong> in the Security Monitor header or CEO sidebar. Each log entry shows:</p>
+  <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm mb-6">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-900 text-white text-[12px]"><tr><th class="text-left px-4 py-3">Field</th><th class="text-left px-4 py-3">Description</th></tr></thead>
+      <tbody class="divide-y divide-slate-100">
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Log ID</td><td class="px-4 py-3 text-slate-600">Unique Firestore document ID — shown in success toast immediately after brake fires</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Timestamp</td><td class="px-4 py-3 text-slate-600">Exact server time of the purge event</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Actor</td><td class="px-4 py-3 text-slate-600">CEO's name and UID who triggered the brake</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">IP Address</td><td class="px-4 py-3 text-slate-600">CEO's IP at time of trigger (expandable detail panel)</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">User Agent</td><td class="px-4 py-3 text-slate-600">Browser/OS string (expandable detail panel)</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Revoked Count</td><td class="px-4 py-3 text-slate-600">Number of Super Admins whose tokens were revoked</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Elevations Wiped</td><td class="px-4 py-3 text-slate-600">Number of active elevation documents deleted</td></tr>
+        <tr class="hover:bg-slate-50"><td class="px-4 py-3 font-medium">Affected UIDs</td><td class="px-4 py-3 text-slate-600">List of Super Admin user IDs who were force-logged out</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-danger"><p class="text-sm font-semibold text-red-800">Immutability Enforced at Database Level</p><p class="text-sm text-red-700 mt-1">Firestore security rules on <code>system_purge_logs</code> allow <code>create</code> only (CEO, via Cloud Function) and <code>read</code> (CEO only). <code>update</code> and <code>delete</code> return <code>false</code> for every user including the CEO. These records cannot be altered by anyone after creation.</p></div>
+  <div class="callout callout-info"><p class="text-sm text-indigo-800"><strong>Notifications for JIT Elevation (CEO)</strong><br>When a Super Admin requests Critical elevation, an in-app notification appears on the CEO's notification bell. Click <strong>Approve</strong> or <strong>Deny</strong> directly from the notification card — no need to navigate to the Security Monitor.</p></div>
+</section>
+
 <!-- ═══ FAQ ═══ -->
 <section id="faq">
   <h2 class="text-2xl font-extrabold mb-6">❓ Frequently Asked Questions</h2>
@@ -577,6 +746,30 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
       <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-slate-50 transition text-sm"><span>How do I download a signed proposal certificate? (CEO)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
       <div class="hidden p-5 bg-slate-50 text-slate-600 border-t border-slate-200 text-sm">Open the accepted proposal from <code>/ceo-dashboard/proposals/[id]</code> → click <strong>Download Certificate</strong> in the Audit Seal panel. This generates a signed HTML snapshot with the proposal body, signer name, timestamp, IP address, and SHA-256 hash of the original signed content.</div>
     </div>
+    <div class="bg-white border border-violet-100 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-violet-50 transition text-sm"><span>🔐 Why are my Deactivate / Change Role buttons greyed out? (Super Admin)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-violet-50 text-slate-600 border-t border-violet-100 text-sm">Those buttons are wrapped in a <strong>JIT Guard</strong>. You need an active elevation session to use them. Click the lock badge on the button to open the Elevation Request modal, choose a tier and duration, write a justification (min 10 chars), and submit. The buttons unlock immediately for Operational tier.</div>
+    </div>
+    <div class="bg-white border border-violet-100 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-violet-50 transition text-sm"><span>🔐 My elevation expired mid-task. What happened? (Super Admin)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-violet-50 text-slate-600 border-t border-violet-100 text-sm">Elevation sessions have a hard time limit. When the countdown hits zero, the session is revoked automatically — the orange/red banner disappears and guarded buttons lock again. Any Firestore write from an expired elevation is rejected by security rules. Simply request a new elevation session to continue.</div>
+    </div>
+    <div class="bg-white border border-rose-100 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-rose-50 transition text-sm"><span>🚨 I got logged out with a "Security Reset" banner. What happened? (Super Admin)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-rose-50 text-slate-600 border-t border-rose-100 text-sm">The CEO triggered the <strong>Emergency Brake</strong>. All Super Admin sessions were force-terminated and Firebase auth tokens invalidated. Contact your CEO for context. You can log back in, but you will need to request a new JIT elevation before performing any guarded actions.</div>
+    </div>
+    <div class="bg-white border border-rose-100 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-rose-50 transition text-sm"><span>🚨 What does the Emergency Brake actually do — is it reversible? (CEO)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-rose-50 text-slate-600 border-t border-rose-100 text-sm">The Emergency Brake immediately: wipes all elevation sessions, sets <code>forceLogoutTimestamp</code> on every Super Admin, revokes their Firebase auth tokens, and writes an immutable purge log. It is <strong>not reversible</strong> — the purge log cannot be deleted. Super Admins must log back in and request fresh elevation. The action is designed to be a last resort for security incidents.</div>
+    </div>
+    <div class="bg-white border border-rose-100 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-rose-50 transition text-sm"><span>🚨 Where do I see the log after the Emergency Brake fires? (CEO)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-rose-50 text-slate-600 border-t border-rose-100 text-sm">The success toast shows the <strong>Log ID</strong> (e.g. <code class="text-rose-700">abc123xyz</code>) which you can copy. Navigate to <code>/ceo-dashboard/security/logs</code> (or click <strong>Purge Logs</strong> in the Security Monitor header) to view the full immutable record: timestamp, your IP, User Agent, number of sessions revoked, and list of affected UIDs.</div>
+    </div>
+    <div class="bg-white border border-violet-100 rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(this)" class="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-violet-50 transition text-sm"><span>🔐 A Super Admin requested Critical elevation. How do I approve it? (CEO)</span><svg class="w-4 h-4 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></button>
+      <div class="hidden p-5 bg-violet-50 text-slate-600 border-t border-violet-100 text-sm">You'll receive an in-app notification on the bell icon. Open the notification card to see the justification and requested duration. Click <strong>Approve</strong> to grant access or <strong>Deny</strong> to reject it. You can also approve/deny from the Security Monitor at <code>/ceo-dashboard/security</code>.</div>
+    </div>
   </div>
 </section>
 
@@ -603,6 +796,18 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Content Hash</td><td class="px-5 py-3 text-slate-600">SHA-256 hash of the proposal HTML computed at sign-time. Used to detect post-signing tampering; displayed on the CEO proposal detail page.</td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Audit Seal</td><td class="px-5 py-3 text-slate-600">Immutable record written at sign-time: signer name, timestamp, IP address, and content hash. Cannot be edited after creation.</td></tr>
         <tr class="hover:bg-slate-50"><td class="px-5 py-3 font-semibold">Signed Certificate</td><td class="px-5 py-3 text-slate-600">Downloadable HTML snapshot of the signed proposal including full audit seal. Available to CEO and client after acceptance.</td></tr>
+        <tr class="hover:bg-violet-50"><td class="px-5 py-3 font-semibold">JIT Elevation</td><td class="px-5 py-3 text-slate-600">Just-In-Time Elevation. Temporary, time-limited access to destructive operations. Must be explicitly requested with a justification; auto-expires and is audit-logged.</td></tr>
+        <tr class="hover:bg-violet-50"><td class="px-5 py-3 font-semibold">Operational Tier</td><td class="px-5 py-3 text-slate-600">JIT elevation tier that is auto-approved instantly. Unlocks user deactivation and department assignment. Max 4 hours. Shown as orange banner.</td></tr>
+        <tr class="hover:bg-violet-50"><td class="px-5 py-3 font-semibold">Critical Tier</td><td class="px-5 py-3 text-slate-600">JIT elevation tier requiring CEO approval before activation. Unlocks role changes. Pending state shown as amber banner; active state shown as red banner.</td></tr>
+        <tr class="hover:bg-violet-50"><td class="px-5 py-3 font-semibold">JIT Guard</td><td class="px-5 py-3 text-slate-600">React component wrapping destructive buttons. Shows a locked state with a 🔒 badge when elevation is inactive; clicking the badge opens the elevation modal.</td></tr>
+        <tr class="hover:bg-violet-50"><td class="px-5 py-3 font-semibold">Elevation Modal</td><td class="px-5 py-3 text-slate-600">The formal gateway for requesting JIT access. Requires tier selection, duration, and a justification of at least 10 characters.</td></tr>
+        <tr class="hover:bg-rose-50"><td class="px-5 py-3 font-semibold">Emergency Brake</td><td class="px-5 py-3 text-slate-600">CEO-only nuclear action. Atomically wipes all elevation sessions, force-logs out all Super Admins, revokes Firebase tokens, and writes an immutable Black Box record.</td></tr>
+        <tr class="hover:bg-rose-50"><td class="px-5 py-3 font-semibold">Black Box Log</td><td class="px-5 py-3 text-slate-600">Immutable record in <code>system_purge_logs</code> written by the Emergency Brake Cloud Function. Contains IP, User Agent, scope, and affected UIDs. Cannot be edited or deleted by anyone.</td></tr>
+        <tr class="hover:bg-rose-50"><td class="px-5 py-3 font-semibold">Security Sentry</td><td class="px-5 py-3 text-slate-600">Client-side Firestore listener on each Super Admin's user doc. Detects <code>forceLogoutTimestamp</code> updates and triggers automatic sign-out + redirect to login with a security reset notice.</td></tr>
+        <tr class="hover:bg-rose-50"><td class="px-5 py-3 font-semibold">notForcedOut()</td><td class="px-5 py-3 text-slate-600">Firestore security rule function. Rejects any write operation whose auth token was issued before the user's <code>forceLogoutTimestamp</code> — the last line of defence against ghost sessions.</td></tr>
+        <tr class="hover:bg-rose-50"><td class="px-5 py-3 font-semibold">Ghost Session</td><td class="px-5 py-3 text-slate-600">A Super Admin browser session that remains open after the Emergency Brake fires. Blocked at database level by <code>notForcedOut()</code> even if client-side detection is delayed.</td></tr>
+        <tr class="hover:bg-rose-50"><td class="px-5 py-3 font-semibold">Security Monitor</td><td class="px-5 py-3 text-slate-600">CEO-only page at <code>/ceo-dashboard/security</code> showing all active/pending elevation sessions in real-time with individual revoke and Emergency Brake controls.</td></tr>
+        <tr class="hover:bg-rose-50"><td class="px-5 py-3 font-semibold">Purge Log Viewer</td><td class="px-5 py-3 text-slate-600">CEO-only page at <code>/ceo-dashboard/security/logs</code> listing all historical Emergency Brake events with expandable IP/UA detail panels.</td></tr>
       </tbody>
     </table>
   </div>
@@ -610,7 +815,7 @@ code{background:#f1f5f9;border-radius:4px;padding:1px 6px;font-size:12px;color:#
 
 <!-- Footer -->
 <div class="border-t border-slate-200 pt-8 pb-4 text-center text-xs text-slate-400">
-  ProposalMS Enterprise User Manual · 2026 · v2 — Task Delegation, Urgency Editor, CEO Push-Back, Audit Certificates
+  ProposalMS Enterprise User Manual · 2026 · v3 — Task Delegation · Urgency Editor · CEO Push-Back · Audit Certificates · JIT Elevation · Emergency Brake · Black Box Logs
 </div>
 
 </main>

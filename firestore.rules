@@ -231,8 +231,12 @@ service cloud.firestore {
     // ─── DEPARTMENTS ────────────────────────────────────────
     match /departments/{deptId} {
       allow read: if isSignedIn();
-      allow create, delete: if isAdminOrCeo();
+      allow create: if isAdminOrCeo();
       allow update: if isAdminOrCeo();
+      // Delete: CEO unrestricted; super_admin requires active elevation (Vault Protocol)
+      allow delete: if
+        isCeo()
+        || (getUserRole() == "super_admin" && superAdminCanDestroy());
     }
 
     // ─── ORGANIZATION SETTINGS ───────────────────────────────

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { Building2, ChevronRight, Loader2, Sparkles, LogOut } from "lucide-react";
-import { useAuth, useRole } from "@/contexts/auth-context";
+import { useAuth, useRole, type UserRole } from "@/contexts/auth-context";
 import { auth } from "@/lib/firebase";
 import {
   subscribeToDepartmentsList,
@@ -30,7 +30,8 @@ export default function OnboardingPage() {
       return;
     }
     if (isCeo || (profile && profile.department)) {
-      const dest = isCeo ? "/ceo-dashboard" : role === "admin" ? "/super-admin" : "/dashboard";
+      const ROLE_HOME: Record<UserRole, string> = { ceo: "/ceo-dashboard", super_admin: "/super-admin", admin: "/dashboard", staff: "/dashboard" };
+      const dest = ROLE_HOME[role as UserRole] ?? "/dashboard";
       router.replace(dest);
     }
   }, [user, profile, authLoading, isCeo, role, router]);

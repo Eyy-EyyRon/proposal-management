@@ -14,6 +14,8 @@ import {
   Lock,
 } from "lucide-react";
 import { useIsElevated } from "@/contexts/auth-context";
+import { JITGuard } from "@/components/jit-guard";
+import { JitElevationModal } from "@/components/jit-elevation-modal";
 import {
   subscribeToDepartmentsList,
   subscribeToAllUsers,
@@ -41,6 +43,7 @@ export default function DepartmentsPage() {
   
   // Delete state
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [showElevationModal, setShowElevationModal] = useState(false);
 
   useEffect(() => {
     const unsubDepts = subscribeToDepartmentsList((data) => {
@@ -84,12 +87,7 @@ export default function DepartmentsPage() {
     }
   };
 
-  const handleDeleteDepartment = async (id: string) => {
-    if (!isElevated) {
-      alert("Elevation required. Go to Settings → Security to request temporary elevated access.");
-      return;
-    }
-    if (!confirm("Delete this department? Users will need to be reassigned.")) return;
+  const doDeleteDepartment = async (id: string) => {
     setDeleting(id);
     try {
       await deleteDepartment(id);
@@ -195,27 +193,34 @@ export default function DepartmentsPage() {
                       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#800020]/10">
                         <Building2 className="h-6 w-6 text-[#800020]" />
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteDepartment(dept.id);
-                        }}
-                        disabled={deleting === dept.id}
-                        className={`flex h-8 w-8 items-center justify-center rounded-lg opacity-0 transition-all group-hover:opacity-100 ${
-                          isElevated
-                            ? "text-slate-300 hover:bg-rose-50 hover:text-rose-500"
-                            : "cursor-not-allowed text-slate-300 hover:bg-slate-50 hover:text-slate-400"
-                        }`}
-                        title={isElevated ? "Delete department" : "Requires elevation — go to Settings → Security"}
+                      <JITGuard
+                        actionLabel={`Delete department: ${dept.name}`}
+                        onElevationNeeded={() => setShowElevationModal(true)}
                       >
-                        {deleting === dept.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : isElevated ? (
-                          <Trash2 className="h-4 w-4" />
-                        ) : (
-                          <Lock className="h-4 w-4" />
+                        {({ trigger }) => (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              trigger(() => doDeleteDepartment(dept.id));
+                            }}
+                            disabled={deleting === dept.id}
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg opacity-0 transition-all group-hover:opacity-100 disabled:opacity-50 ${
+                              isElevated
+                                ? "text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                                : "cursor-not-allowed text-slate-300 hover:bg-slate-50 hover:text-slate-400"
+                            }`}
+                            title={isElevated ? "Delete department" : "Requires elevation"}
+                          >
+                            {deleting === dept.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : isElevated ? (
+                              <Trash2 className="h-4 w-4" />
+                            ) : (
+                              <Lock className="h-4 w-4" />
+                            )}
+                          </button>
                         )}
-                      </button>
+                      </JITGuard>
                     </div>
 
                     <h3 className="mt-4 text-lg font-semibold text-slate-900">
@@ -424,6 +429,11 @@ export default function DepartmentsPage() {
           </div>
         </div>
       )}
+      {/* JIT Elevation Modal */}
+      <JitElevationModal
+        isOpen={showElevationModal}
+        onClose={() => setShowElevationModal(false)}
+      />
     </div>
   );
 }
