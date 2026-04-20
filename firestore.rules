@@ -631,12 +631,11 @@ service cloud.firestore {
           )
         );
 
-      // Super Admin can delete their own expired/denied doc to re-request
+      // Super Admin can delete their own elevation doc to re-request a new session.
+      // Covers: expired, denied, or any doc where expiresAt is in the past.
       allow delete: if
         isOwner(uid)
-        && getUserRole() == "super_admin"
-        && resource.data.status in ["expired", "pending_approval"]
-        && resource.data.approvalStatus in ["auto_approved", "denied", "pending"];
+        && getUserRole() == "super_admin";
     }
 
     // ─── SYSTEM PURGE LOGS (Black Box — Immutable) ───────────

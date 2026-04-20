@@ -1943,15 +1943,12 @@ export async function requestElevation({
     metadata.language  = navigator.language ?? "unknown";
   }
 
-  // Delete any stale elevation doc first so the subsequent setDoc always
-  // triggers the Firestore 'create' rule, not the restrictive 'update' rule.
+  // Always delete any existing elevation doc first so the subsequent setDoc
+  // always triggers Firestore's 'create' rule (not the restrictive 'update' rule).
   const elevRef = doc(db, "elevations", uid);
   const existing = await getDoc(elevRef);
   if (existing.exists()) {
-    const d = existing.data() as JitElevation;
-    if (d.status === "expired" || d.approvalStatus === "denied") {
-      await deleteDoc(elevRef);
-    }
+    await deleteDoc(elevRef);
   }
 
   await setDoc(doc(db, "elevations", uid), {

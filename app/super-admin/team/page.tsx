@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { 
-  Users, Plus, Search, MoreHorizontal, Building2, X, Check, ChevronDown, 
+  Users, Search, MoreHorizontal, Building2, X, Check, ChevronDown, 
   Filter, Crown, Shield, User, Loader2, AlertCircle, Lock 
 } from "lucide-react";
 import { useIsElevated, useIsCriticallyElevated, useElevation, useAuth } from "@/contexts/auth-context";
@@ -288,10 +288,6 @@ export default function TeamManagementPage() {
           )}
         </div>
         
-        <button className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018]">
-          <Plus className="h-4 w-4" />
-          Add Member
-        </button>
       </div>
 
       {/* Info Banner */}

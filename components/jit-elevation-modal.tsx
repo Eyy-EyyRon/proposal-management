@@ -80,7 +80,8 @@ export function JitElevationModal({ isOpen, onClose }: JitElevationModalProps) {
       } else {
         setSubmitted(true);
       }
-    } catch {
+    } catch (err) {
+      console.error("[JitElevationModal] requestElevation failed:", err);
       toast.error("Failed to request elevation. Try again.");
     } finally {
       setSaving(false);
