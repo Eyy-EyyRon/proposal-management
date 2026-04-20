@@ -3,32 +3,21 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
-  FileText,
-  ArrowLeft,
-  Loader2,
-  Send,
-  MessageCircle,
-  Quote,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Download,
-  User,
-  Edit3,
-  RefreshCw,
-  PenTool,
-  History,
-  AlertTriangle, Trash2,
+  FileText, ArrowLeft, Loader2, Send, MessageCircle, Quote,
+  CheckCircle, XCircle, Clock, Download, User, Edit3, RefreshCw,
+  PenTool, History, AlertTriangle, Trash2, Link2, UploadCloud, X,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
 import { type Proposal, createProposalRevision, softDeleteComment } from "@/lib/firestore";
 import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { exportProposalPdf } from "@/lib/export-utils";
+import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
+import { toast } from "@/components/providers/toast";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 interface Comment {
   id: string;
@@ -60,12 +49,20 @@ export default function ProposalDetailPage() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<"document" | "discuss" | "signature" | "history">("document");
+
+  // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
   const [editedFieldValues, setEditedFieldValues] = useState<Record<string, string>>({});
+  const [editNewFileUrl, setEditNewFileUrl] = useState<string | null>(null);
+  const [editGdocUrl, setEditGdocUrl] = useState<string>("");
+  const [editFileUploading, setEditFileUploading] = useState(false);
+  const editFileRef = useRef<HTMLInputElement>(null);
+
   const [resending, setResending] = useState(false);
-  // Void & Revise confirm modal
-  const [showVoidConfirm, setShowVoidConfirm] = useState(false);
   const [voiding, setVoiding] = useState(false);
+
+  // Animated confirm modal
+  const { confirm, modalProps } = useConfirmModal();
 
   // Fetch proposal using real-time subscription
   useEffect(() => {
@@ -217,21 +214,117 @@ export default function ProposalDetailPage() {
     return labels[status] || status;
   };
 
+  const handleFileUpload = async (file: File) => {
+    if (!proposal) return;
+    setEditFileUploading(true);
+    try {
+      const storage = getStorage();
+      const storageRef = ref(storage, `templates/${proposal.id}_v${(proposal.version || 1) + 1}_${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      setEditNewFileUrl(url);
+      toast.success(`File "${file.name}" uploaded successfully.`);
+    } catch {
+      toast.error("File upload failed. Please try again.");
+    } finally {
+      setEditFileUploading(false);
+    }
+  };
+
   const handleVoidAndRevise = async () => {
     if (!proposal || !user || !profile) return;
+    const confirmed = await confirm({
+      title: "Void Signature & Create Revision?",
+      description: `This will permanently void ${proposal.clientName}'s accepted signature and create v${(proposal.version || 1) + 1}. The client must review and sign again. This cannot be undone.`,
+      actionType: "destructive",
+      confirmText: "Void & Revise",
+    });
+    if (!confirmed) return;
     setVoiding(true);
     try {
       const newProposalId = `${proposal.id.split("_v")[0]}_v${(proposal.version || 1) + 1}`;
       await createProposalRevision(newProposalId, proposal, {
         fieldValues: proposal.fieldValues,
       });
-      toast.success("Signature voided. New revision created.");
-      setShowVoidConfirm(false);
+      toast.success(`Signature voided. Revision v${(proposal.version || 1) + 1} created.`);
       router.push(`/dashboard/proposals/${newProposalId}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create revision.");
     } finally {
       setVoiding(false);
+    }
+  };
+
+  const handleSaveRevision = async () => {
+    if (!proposal || !user || !profile) return;
+    const confirmed = await confirm({
+      title: `Create v${(proposal.version || 1) + 1} & Resend?`,
+      description: `The current version will be marked as superseded. A new version will be sent to ${proposal.clientName} (${proposal.clientEmail}).`,
+      actionType: "primary",
+      confirmText: `Send v${(proposal.version || 1) + 1}`,
+    });
+    if (!confirmed) return;
+    setResending(true);
+    try {
+      const newVersion = (proposal.version || 1) + 1;
+      const newProposalId = `${proposal.id.split("_v")[0]}_v${newVersion}`;
+      await createProposalRevision(newProposalId, proposal, {
+        fieldValues: editedFieldValues,
+        templateFileUrl: editNewFileUrl ?? proposal.templateFileUrl,
+        templateGdocUrl: editGdocUrl || proposal.templateGdocUrl,
+      });
+
+      // Fetch orgSettings for branding
+      let companyName = "";
+      let companyLogoUrl: string | null = null;
+      let emailSignature = "";
+      try {
+        const ownerUid = proposal.ownerId || proposal.userId;
+        const settingsSnap = await getDoc(doc(db, "orgSettings", ownerUid));
+        if (settingsSnap.exists()) {
+          const s = settingsSnap.data();
+          companyName = s.companyName || "";
+          companyLogoUrl = s.logoUrl || null;
+          emailSignature = s.emailSignature || "";
+        }
+      } catch { /* non-fatal */ }
+
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      await fetch("/api/send-proposal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: proposal.clientEmail,
+          clientName: proposal.clientName,
+          proposalUrl: `${appUrl}/p/${newProposalId}`,
+          templateName: proposal.templateName,
+          senderName: `${profile.firstName} ${profile.lastName}`,
+          companyName,
+          emailSignature,
+          companyLogoUrl,
+        }),
+      }).catch(() => {});
+
+      // In-app notification for delegation stakeholders
+      fetch("/api/notify-delegation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId: newProposalId,
+          ceoId: proposal.ownerId,
+          staffName: `${profile.firstName} ${profile.lastName}`,
+          clientName: proposal.clientName,
+          templateName: proposal.templateName,
+        }),
+      }).catch(() => {});
+
+      toast.success(`v${newVersion} sent to ${proposal.clientName}.`);
+      setIsEditing(false);
+      router.push(`/dashboard/proposals/${newProposalId}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create new version.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -318,10 +411,11 @@ export default function ProposalDetailPage() {
             {/* Void & Revise — only for accepted proposals */}
             {proposal.status === "accepted" && (
               <button
-                onClick={() => setShowVoidConfirm(true)}
-                className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-[13px] font-medium text-rose-700 transition hover:bg-rose-100"
+                onClick={handleVoidAndRevise}
+                disabled={voiding}
+                className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-[13px] font-medium text-rose-700 transition hover:bg-rose-100 active:scale-95 disabled:opacity-50"
               >
-                <AlertTriangle className="h-4 w-4" />
+                {voiding ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
                 Void Signature & Revise
               </button>
             )}
@@ -332,9 +426,11 @@ export default function ProposalDetailPage() {
                   <button
                     onClick={() => {
                       setIsEditing(true);
-                      setEditedFieldValues(proposal.fieldValues);
+                      setEditedFieldValues({ ...proposal.fieldValues });
+                      setEditNewFileUrl(null);
+                      setEditGdocUrl(proposal.templateGdocUrl || "");
                     }}
-                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 active:scale-95"
                   >
                     <Edit3 className="h-4 w-4" />
                     Edit
@@ -343,54 +439,19 @@ export default function ProposalDetailPage() {
                   <>
                     <button
                       onClick={() => setIsEditing(false)}
-                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 active:scale-95"
                     >
                       Cancel
                     </button>
                     <button
-                      onClick={async () => {
-                        if (!user || !profile) return;
-                        setResending(true);
-                        try {
-                          const newProposalId = `${proposal.id}_v${(proposal.version || 1) + 1}`;
-                          await createProposalRevision(newProposalId, proposal, {
-                            fieldValues: editedFieldValues,
-                          });
-                          // Notify client about new version
-                          await fetch("/api/send-proposal", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              proposalId: newProposalId,
-                              clientEmail: proposal.clientEmail,
-                              clientName: proposal.clientName,
-                              proposalTitle: proposal.templateName,
-                              senderName: `${profile.firstName} ${profile.lastName}`,
-                              isNewVersion: true,
-                              version: (proposal.version || 1) + 1,
-                            }),
-                          }).catch(() => {});
-                          router.push(`/dashboard/proposals/${newProposalId}`);
-                        } catch (err) {
-                          console.error("Failed to create revision:", err);
-                          toast.error("Failed to create new version. Please try again.");
-                        } finally {
-                          setResending(false);
-                        }
-                      }}
+                      onClick={handleSaveRevision}
                       disabled={resending}
-                      className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] disabled:opacity-50"
+                      className="flex items-center gap-2 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] active:scale-95 disabled:opacity-50"
                     >
                       {resending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Resending...
-                        </>
+                        <><Loader2 className="h-4 w-4 animate-spin" />Sending...</>
                       ) : (
-                        <>
-                          <RefreshCw className="h-4 w-4" />
-                          Resend as v{(proposal.version || 1) + 1}
-                        </>
+                        <><RefreshCw className="h-4 w-4" />Send v{(proposal.version || 1) + 1}</>
                       )}
                     </button>
                   </>
@@ -483,35 +544,108 @@ export default function ProposalDetailPage() {
             {activeTab === "document" && (
               <>
                 {isEditing ? (
-                  /* Edit Mode */
-                  <div className="p-6">
-                    <div className="mb-4 rounded-lg bg-amber-50 p-3">
-                      <p className="text-[13px] font-medium text-amber-800">
-                        Edit Mode
-                      </p>
-                      <p className="text-[12px] text-amber-600">
-                        Make corrections to the field values below. When you resend, a new version (v{(proposal.version || 1) + 1}) will be created.
+                  /* ── Dynamic Edit Mode ── */
+                  <div className="p-6 space-y-6">
+                    {/* Banner */}
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <p className="text-[13px] font-semibold text-amber-800">Edit Mode — v{(proposal.version || 1) + 1} Preview</p>
+                      <p className="mt-0.5 text-[12px] text-amber-600">
+                        Saving will supersede the current version and send a fresh copy to the client.
                       </p>
                     </div>
-                    <div className="space-y-4">
-                      {Object.entries(editedFieldValues).map(([key, value]) => (
-                        <div key={key}>
-                          <label className="mb-1 block text-[13px] font-medium text-slate-700">
-                            {key}
-                          </label>
-                          <input
-                            type="text"
-                            value={value}
-                            onChange={(e) =>
-                              setEditedFieldValues((prev) => ({
-                                ...prev,
-                                [key]: e.target.value,
-                              }))
-                            }
-                            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
-                          />
+
+                    {/* Dynamic field inputs — renders ALL keys from fieldValues */}
+                    {Object.keys(editedFieldValues).length > 0 && (
+                      <div>
+                        <h4 className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Proposal Fields</h4>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          {Object.entries(editedFieldValues).map(([key, value]) => {
+                            const isMultiline = value.length > 80 || key.toLowerCase().includes("description") || key.toLowerCase().includes("scope") || key.toLowerCase().includes("note");
+                            return (
+                              <div key={key} className={isMultiline ? "sm:col-span-2" : ""}>
+                                <label className="mb-1 block text-[12px] font-medium capitalize text-slate-600">
+                                  {key.replace(/_/g, " ")}
+                                </label>
+                                {isMultiline ? (
+                                  <textarea
+                                    rows={3}
+                                    value={value}
+                                    onChange={(e) => setEditedFieldValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20 resize-none"
+                                  />
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={value}
+                                    onChange={(e) => setEditedFieldValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
+                      </div>
+                    )}
+
+                    {/* Document source — file or Google Docs URL */}
+                    <div>
+                      <h4 className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Document Source (Optional)</h4>
+                      <p className="mb-3 text-[12px] text-slate-500">Replace the document template for this revision. Leave blank to keep the existing file.</p>
+
+                      {/* File Upload Zone */}
+                      <div
+                        onClick={() => editFileRef.current?.click()}
+                        className="group relative mb-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 py-8 transition hover:border-[#800020]/40 hover:bg-[#800020]/5"
+                      >
+                        <input
+                          ref={editFileRef}
+                          type="file"
+                          accept=".docx,.pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleFileUpload(f);
+                          }}
+                        />
+                        {editFileUploading ? (
+                          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                        ) : editNewFileUrl ? (
+                          <>
+                            <CheckCircle className="h-6 w-6 text-emerald-500" />
+                            <p className="text-[12px] font-medium text-emerald-600">New file uploaded</p>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setEditNewFileUrl(null); }}
+                              className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-rose-500"
+                            >
+                              <X className="h-3 w-3" /> Remove
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <UploadCloud className="h-6 w-6 text-slate-300 group-hover:text-[#800020]/60 transition" />
+                            <p className="text-[13px] font-medium text-slate-500">Upload DOCX or PDF</p>
+                            <p className="text-[11px] text-slate-400">Click to browse files</p>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Google Docs URL */}
+                      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Link2 className="h-4 w-4 shrink-0 text-slate-400" />
+                        <input
+                          type="url"
+                          value={editGdocUrl}
+                          onChange={(e) => setEditGdocUrl(e.target.value)}
+                          placeholder="Google Docs URL (optional)"
+                          className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
+                        />
+                        {editGdocUrl && (
+                          <button onClick={() => setEditGdocUrl("")}>
+                            <X className="h-3.5 w-3.5 text-slate-400 hover:text-rose-500" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ) : documentHtml ? (
@@ -770,46 +904,8 @@ export default function ProposalDetailPage() {
         </div>
       </div>
 
-      {/* Void Signature & Revise — Confirmation Modal */}
-      {showVoidConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-2xl border border-rose-200 bg-white p-8 shadow-2xl">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50">
-              <AlertTriangle className="h-6 w-6 text-rose-600" />
-            </div>
-            <h2 className="mt-4 text-lg font-semibold text-slate-900">
-              Void Signature & Create Revision?
-            </h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
-              This will <strong>permanently void</strong> the client&apos;s accepted signature and create a new version (v{(proposal.version || 1) + 1}) of this proposal. The client will need to review and sign again.
-            </p>
-            <p className="mt-2 text-[12px] font-medium text-rose-600">
-              This action cannot be undone.
-            </p>
-            <div className="mt-6 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowVoidConfirm(false)}
-                disabled={voiding}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleVoidAndRevise}
-                disabled={voiding}
-                className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
-              >
-                {voiding ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <AlertTriangle className="h-4 w-4" />
-                )}
-                {voiding ? "Voiding..." : "Void & Create Revision"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Animated Confirm Modal — handles all destructive/primary confirmations */}
+      <ConfirmModal {...modalProps} isLoading={resending || voiding} />
     </main>
   );
 }

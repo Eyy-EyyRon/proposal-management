@@ -689,8 +689,10 @@ export interface TeamMember {
   departments?: string[]; // NEW: Multiple departments for staff
   jobTitle?: string; // NEW: Job title (e.g., "IT Specialist")
   avatarUrl?: string; // NEW: User avatar/profile picture URL
-  delegatedUserIds?: string[]; // For CEO: stores UIDs of authorized staff who can send on their behalf
+  delegatedUserIds?: string[]; // For CEO: stores UIDs of authorized staff who can send on their behalf (Level 1)
+  executiveAdminIds?: string[]; // For CEO: stores UIDs granted Full Authority / Executive Admin (Level 2)
   canSendOnBehalfOf?: string[]; // For staff: stores CEO UIDs they can send on behalf of
+  isExecutiveAdmin?: boolean; // For staff: true if granted Full Authority by CEO
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -755,6 +757,37 @@ export async function updateDelegationSettings(
     }
   });
   
+  await Promise.all(batchUpdates);
+}
+
+// Update CEO's Level 2 (Full Authority / Executive Admin) settings
+export async function updateExecutiveAdminSettings(
+  ceoId: string,
+  executiveAdminIds: string[]
+): Promise<void> {
+  await updateDoc(doc(db, "users", ceoId), {
+    executiveAdminIds,
+    updatedAt: serverTimestamp(),
+  });
+
+  const allUsersSnap = await getDocs(collection(db, "users"));
+  const batchUpdates: Promise<void>[] = [];
+
+  allUsersSnap.docs.forEach((userDoc) => {
+    const userId = userDoc.id;
+    if (userId === ceoId) return;
+    const isExec = executiveAdminIds.includes(userId);
+    const currentFlag = userDoc.data().isExecutiveAdmin ?? false;
+    if (isExec !== currentFlag) {
+      batchUpdates.push(
+        updateDoc(doc(db, "users", userId), {
+          isExecutiveAdmin: isExec,
+          updatedAt: serverTimestamp(),
+        })
+      );
+    }
+  });
+
   await Promise.all(batchUpdates);
 }
 
