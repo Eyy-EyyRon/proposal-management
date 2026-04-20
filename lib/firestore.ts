@@ -1861,7 +1861,9 @@ export type AuditAction =
   | "template_published"
   | "template_unpublished"
   | "jit_elevation_requested"
-  | "jit_elevation_revoked";
+  | "jit_elevation_revoked"
+  | "jit_elevation_approved"
+  | "jit_elevation_denied";
 
 export interface AuditLogEntry {
   id?: string;
@@ -1881,14 +1883,24 @@ export interface AuditLogEntry {
 // ─── JIT ELEVATION ──────────────────────────────────────────
 // Stored at /elevations/{uid} — one active record per user.
 
+// Elevation tiers
+// - operational: auto-approved; allows staff deactivation, dept deletion.
+// - critical:     requires CEO approval; allows role changes, settings edits.
+export type ElevationTier = "operational" | "critical";
+export type ElevationApprovalStatus = "auto_approved" | "pending" | "approved" | "denied";
+
 export interface JitElevation {
   uid: string;          // The super_admin who elevated
   actorName: string;
   justification: string;
   durationMs: number;   // e.g. 30 * 60 * 1000
   requestedAt: Timestamp;
-  expiresAt: Timestamp; // requestedAt + durationMs
-  status: "active" | "expired";
+  expiresAt: Timestamp; // requestedAt + durationMs (only valid once approved)
+  status: "active" | "expired" | "pending_approval";
+  tier: ElevationTier;
+  approvalStatus: ElevationApprovalStatus;
+  approvedAt?: Timestamp;
+  approvedBy?: string;  // CEO UID
   metadata?: {          // Browser context captured at request time
     userAgent?: string;
     platform?: string;
@@ -1908,13 +1920,17 @@ export async function requestElevation({
   actorName,
   justification,
   durationMs,
+  tier = "operational",
 }: {
   uid: string;
   actorName: string;
   justification: string;
   durationMs: number;
+  tier?: ElevationTier;
 }): Promise<void> {
   const now = Date.now();
+  // Operational: active immediately. Critical: pending until CEO approves.
+  const isOperational = tier === "operational";
   const expiresAt = new Date(now + durationMs);
 
   // Collect browser metadata for audit trail
@@ -1930,9 +1946,12 @@ export async function requestElevation({
     actorName,
     justification,
     durationMs,
+    tier,
     requestedAt: serverTimestamp(),
-    expiresAt,
-    status: "active",
+    // expiresAt is set immediately for operational; critical starts on approval
+    expiresAt: isOperational ? expiresAt : null,
+    status: isOperational ? "active" : "pending_approval",
+    approvalStatus: isOperational ? "auto_approved" : "pending",
     metadata,
   });
 
@@ -1941,8 +1960,66 @@ export async function requestElevation({
     actorId: uid,
     actorName,
     actorRole: "super_admin",
-    description: `${actorName} requested Super Admin elevation for ${Math.round(durationMs / 60000)} min. Reason: ${justification}`,
-    metadata: { justification, durationMs, expiresAt: expiresAt.toISOString() },
+    description: `${actorName} requested ${tier} elevation for ${Math.round(durationMs / 60000)} min. Reason: ${justification}`,
+    metadata: { justification, durationMs, tier, expiresAt: isOperational ? expiresAt.toISOString() : "pending" },
+  });
+}
+
+// CEO approves a pending Critical elevation.
+// Sets status=active, expiresAt = now+durationMs, approvalStatus=approved.
+export async function approveCriticalElevation(
+  elevationUid: string,
+  ceoUid: string
+): Promise<void> {
+  const elevRef = doc(db, "elevations", elevationUid);
+  const snap = await getDoc(elevRef);
+  if (!snap.exists()) throw new Error("Elevation record not found.");
+  const data = snap.data() as JitElevation;
+  if (data.status !== "pending_approval") throw new Error("Elevation is not pending approval.");
+
+  const expiresAt = new Date(Date.now() + data.durationMs);
+  await updateDoc(elevRef, {
+    status: "active",
+    approvalStatus: "approved",
+    approvedAt: serverTimestamp(),
+    approvedBy: ceoUid,
+    expiresAt,
+  });
+
+  await writeAuditLog({
+    action: "jit_elevation_approved",
+    actorId: ceoUid,
+    actorName: "CEO",
+    actorRole: "ceo",
+    description: `CEO approved Critical elevation for ${data.actorName}. Session active for ${Math.round(data.durationMs / 60000)} min.`,
+    metadata: { elevationUid, tier: "critical" },
+  });
+}
+
+// CEO denies a pending Critical elevation.
+export async function denyCriticalElevation(
+  elevationUid: string,
+  ceoUid: string,
+  ceoName: string
+): Promise<void> {
+  const elevRef = doc(db, "elevations", elevationUid);
+  const snap = await getDoc(elevRef);
+  if (!snap.exists()) throw new Error("Elevation record not found.");
+  const data = snap.data() as JitElevation;
+
+  await updateDoc(elevRef, {
+    status: "expired",
+    approvalStatus: "denied",
+    approvedBy: ceoUid,
+  });
+
+  await writeAuditLog({
+    action: "jit_elevation_denied",
+    actorId: ceoUid,
+    actorName: ceoName,
+    actorRole: "ceo",
+    description: `CEO denied Critical elevation request from ${data.actorName}.`,
+    metadata: { elevationUid, tier: "critical" },
   });
 }
 
@@ -1991,19 +2068,29 @@ export async function notifyCeoOfElevation({
   actorName,
   justification,
   durationLabel,
+  tier = "operational",
+  elevationUid,
 }: {
   ceoId: string;
   actorName: string;
   justification: string;
   durationLabel: string;
+  tier?: ElevationTier;
+  elevationUid?: string;
 }): Promise<void> {
   const { createInAppNotification } = await import("./notifications");
+  const isOperational = tier === "operational";
+  const prefix = isOperational ? "🔐" : "🔴";
+  const suffix = isOperational
+    ? `(auto-approved — log only)`
+    : `— ⚠️ CEO Approval Required`;
   await createInAppNotification({
     userId: ceoId,
     type: "jit_elevation",
-    message: `🔐 ${actorName} elevated to Super Admin for ${durationLabel}. Reason: ${justification}`,
+    message: `${prefix} ${actorName} requested ${tier} elevation for ${durationLabel}. ${suffix}. Reason: ${justification}`,
     actorRole: "system",
     actorName,
+    metadata: { tier, elevationUid: elevationUid ?? "", requiresApproval: !isOperational },
   });
 }
 

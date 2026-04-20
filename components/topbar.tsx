@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase, ShieldAlert, ToggleLeft, ToggleRight, Lock } from "lucide-react";
+import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase, ShieldAlert, ToggleLeft, ToggleRight, Lock, Clock } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useAuth, useRole, useActingAsCeo, useElevation } from "@/contexts/auth-context";
@@ -48,7 +48,7 @@ export function Topbar({ title }: TopbarProps) {
   const { user, profile } = useAuth();
   const { role } = useRole();
   const { actingAsCeo, toggleActingAsCeo, canActAsCeo } = useActingAsCeo();
-  const { isElevated, revokeElevation: endElevation, elevationCountdown } = useElevation();
+  const { isElevated, elevation, elevationTier, revokeElevation: endElevation, elevationCountdown } = useElevation();
 
   const initials = profile
     ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
@@ -98,25 +98,60 @@ export function Topbar({ title }: TopbarProps) {
 
   return (
     <div>
-      {/* JIT Elevation Active Banner — pulsing orange */}
-      {isElevated && (
-        <div className="flex items-center justify-between border-b border-orange-300 bg-gradient-to-r from-orange-400 to-amber-400 px-6 py-1.5">
+      {/* JIT Elevation — Pending Critical (awaiting CEO) */}
+      {!isElevated && elevation?.status === "pending_approval" && (
+        <div className="flex items-center justify-between border-b border-amber-300 bg-gradient-to-r from-amber-100 to-amber-200 px-6 py-1.5">
           <div className="flex items-center gap-2.5">
-            {/* Pulsing dot */}
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+            <Clock className="h-3.5 w-3.5 animate-pulse text-amber-700" />
+            <span className="text-[12px] font-semibold text-amber-900">
+              Critical Elevation Pending
             </span>
-            <span className="text-[12px] font-bold text-orange-950">
-              Active Admin Mode
-            </span>
-            <span className="rounded-full bg-orange-900/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-orange-950">
-              {elevationCountdown} remaining
+            <span className="rounded-full bg-amber-300/50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+              Awaiting CEO Approval
             </span>
           </div>
           <button
             onClick={() => endElevation("self")}
-            className="text-[11px] font-semibold text-orange-900 underline-offset-2 hover:underline"
+            className="text-[11px] font-semibold text-amber-800 underline-offset-2 hover:underline"
+          >
+            Cancel Request
+          </button>
+        </div>
+      )}
+
+      {/* JIT Elevation Active Banner */}
+      {isElevated && (
+        <div className={`flex items-center justify-between border-b px-6 py-1.5 ${
+          elevationTier === "critical"
+            ? "border-rose-300 bg-gradient-to-r from-rose-500 to-rose-600"
+            : "border-orange-300 bg-gradient-to-r from-orange-400 to-amber-400"
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+            </span>
+            <span className={`text-[12px] font-bold ${
+              elevationTier === "critical" ? "text-white" : "text-orange-950"
+            }`}>
+              {elevationTier === "critical" ? "Critical Admin Mode" : "Active Admin Mode"}
+            </span>
+            <span className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold ${
+              elevationTier === "critical" ? "bg-white/20 text-white" : "bg-orange-900/20 text-orange-950"
+            }`}>
+              {elevationCountdown} remaining
+            </span>
+            {elevationTier === "critical" && (
+              <span className="rounded-full bg-rose-700/40 px-2 py-0.5 text-[10px] font-bold text-rose-100">
+                CEO-Approved
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => endElevation("self")}
+            className={`text-[11px] font-semibold underline-offset-2 hover:underline ${
+              elevationTier === "critical" ? "text-rose-100" : "text-orange-900"
+            }`}
           >
             Revoke Now
           </button>

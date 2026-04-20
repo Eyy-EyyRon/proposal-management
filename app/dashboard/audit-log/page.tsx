@@ -28,6 +28,8 @@ const ACTION_COLORS: Record<string, string> = {
   status_changed:            "bg-slate-50 text-slate-600",
   jit_elevation_requested:   "bg-orange-100 text-orange-800",
   jit_elevation_revoked:     "bg-slate-100 text-slate-600",
+  jit_elevation_approved:    "bg-emerald-100 text-emerald-800",
+  jit_elevation_denied:      "bg-rose-100 text-rose-800",
 };
 
 function formatTs(ts: unknown): string {
@@ -110,6 +112,8 @@ export default function AuditLogPage() {
                     transition={{ delay: i * 0.015 }}
                     className={`border-b border-slate-100/60 last:border-0 ${
                       log.action === "jit_elevation_requested" ? "bg-orange-50/40" :
+                      log.action === "jit_elevation_approved" ? "bg-emerald-50/40" :
+                      log.action === "jit_elevation_denied"   ? "bg-rose-50/30" :
                       log.actingAsCeo ? "bg-amber-50/30" : ""
                     }`}
                   >
@@ -132,6 +136,16 @@ export default function AuditLogPage() {
                       {log.action === "jit_elevation_revoked" && (
                         <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
                           <ShieldCheck className="h-2.5 w-2.5" /> Revoked
+                        </span>
+                      )}
+                      {log.action === "jit_elevation_approved" && (
+                        <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                          <ShieldCheck className="h-2.5 w-2.5" /> CEO Approved
+                        </span>
+                      )}
+                      {log.action === "jit_elevation_denied" && (
+                        <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-700">
+                          <ShieldAlert className="h-2.5 w-2.5" /> CEO Denied
                         </span>
                       )}
                     </td>

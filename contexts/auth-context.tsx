@@ -18,6 +18,7 @@ import {
   requestElevation as firestoreRequestElevation,
   notifyCeoOfElevation,
   type JitElevation,
+  type ElevationTier,
 } from "@/lib/firestore";
 
 // ─── TYPES ───────────────────────────────────────────────────
@@ -66,11 +67,14 @@ interface ActingAsCeoContextValue {
 }
 
 interface ElevationContextValue {
-  isElevated: boolean;                   // true when active elevation exists
+  isElevated: boolean;                   // true when any active elevation exists
+  isOperationallyElevated: boolean;      // operational tier active
+  isCriticallyElevated: boolean;         // critical tier active + CEO-approved
+  elevationTier: ElevationTier | null;   // which tier is active
   elevation: JitElevation | null;        // full elevation record
   elevationExpiresAt: Date | null;       // parsed JS Date
   elevationCountdown: string;            // human-readable "1h 23m 45s"
-  requestElevation: (params: { justification: string; durationMs: number; durationLabel: string }) => Promise<void>;
+  requestElevation: (params: { justification: string; durationMs: number; durationLabel: string; tier: ElevationTier }) => Promise<void>;
   revokeElevation: (revokedBy?: string) => Promise<void>;
 }
 
@@ -91,6 +95,9 @@ const ActingAsCeoContext = createContext<ActingAsCeoContextValue>({
 
 const ElevationContext = createContext<ElevationContextValue>({
   isElevated: false,
+  isOperationallyElevated: false,
+  isCriticallyElevated: false,
+  elevationTier: null,
   elevation: null,
   elevationExpiresAt: null,
   elevationCountdown: "",
@@ -112,6 +119,14 @@ export function useElevation() {
 
 export function useIsElevated() {
   return useContext(ElevationContext).isElevated;
+}
+
+export function useIsOperationallyElevated() {
+  return useContext(ElevationContext).isOperationallyElevated;
+}
+
+export function useIsCriticallyElevated() {
+  return useContext(ElevationContext).isCriticallyElevated;
 }
 
 export function useRole() {
@@ -307,17 +322,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     justification,
     durationMs,
     durationLabel,
-  }: { justification: string; durationMs: number; durationLabel: string }) => {
+    tier,
+  }: { justification: string; durationMs: number; durationLabel: string; tier: ElevationTier }) => {
     if (!user || !profile) return;
     const actorName = `${profile.firstName} ${profile.lastName}`;
-    await firestoreRequestElevation({ uid: user.uid, actorName, justification, durationMs });
+    await firestoreRequestElevation({ uid: user.uid, actorName, justification, durationMs, tier });
     // Notify CEO (find root CEO by isRootCEO flag)
     try {
       const { getDocs: gd, collection: col, query: q, where: w } = await import("firebase/firestore");
       const ceoSnaps = await gd(q(col(db, "users"), w("isRootCEO", "==", true)));
       if (!ceoSnaps.empty) {
         const ceoUid = ceoSnaps.docs[0].id;
-        await notifyCeoOfElevation({ ceoId: ceoUid, actorName, justification, durationLabel });
+        await notifyCeoOfElevation({ ceoId: ceoUid, actorName, justification, durationLabel, tier, elevationUid: user.uid });
       }
     } catch { /* non-critical */ }
   }, [user, profile]);
@@ -347,8 +363,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     canActAsCeo,
   };
 
+  const isActive = elevation?.status === "active" && !!elevationExpiresAt && elevationExpiresAt > new Date();
+  const isOperationallyElevated = isActive && elevation?.tier === "operational";
+  const isCriticallyElevated = isActive && elevation?.tier === "critical" && elevation?.approvalStatus === "approved";
+
   const elevationValue: ElevationContextValue = {
-    isElevated: elevation?.status === "active" && !!elevationExpiresAt && elevationExpiresAt > new Date(),
+    isElevated: isActive,
+    isOperationallyElevated,
+    isCriticallyElevated,
+    elevationTier: isActive ? (elevation?.tier ?? null) : null,
     elevation,
     elevationExpiresAt,
     elevationCountdown,

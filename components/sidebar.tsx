@@ -251,7 +251,7 @@ export function Sidebar() {
   const { profile } = useAuth();
   const { role, isCeo, isAtLeast } = useRole();
   const { actingAsCeo } = useActingAsCeo();
-  const { isElevated, elevationCountdown } = useElevation();
+  const { isElevated, elevation, elevationTier, elevationCountdown } = useElevation();
   const [showElevationModal, setShowElevationModal] = useState(false);
 
   // Determine which nav set based on current folder
@@ -390,17 +390,42 @@ export function Sidebar() {
           {/* JIT Elevation — shown in super_admin sidebar */}
           {activeRole === "super_admin" && (
             isElevated ? (
-              <div className="relative flex items-center gap-2.5 rounded-lg border border-orange-300 bg-gradient-to-r from-orange-50 to-amber-50 px-3 py-2.5 shadow-sm ring-1 ring-orange-200">
-                {/* Pulsing dot */}
+              // Active elevation — colour by tier
+              <div className={`relative flex items-center gap-2.5 rounded-lg border px-3 py-2.5 shadow-sm ring-1 ${
+                elevationTier === "critical"
+                  ? "border-rose-300 bg-gradient-to-r from-rose-50 to-rose-100 ring-rose-200"
+                  : "border-orange-300 bg-gradient-to-r from-orange-50 to-amber-50 ring-orange-200"
+              }`}>
                 <span className="relative flex h-2.5 w-2.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-orange-500" />
+                  <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
+                    elevationTier === "critical" ? "bg-rose-400" : "bg-orange-400"
+                  }`} />
+                  <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                    elevationTier === "critical" ? "bg-rose-500" : "bg-orange-500"
+                  }`} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-bold text-orange-800">Active Admin Mode</p>
-                  <p className="font-mono text-[10px] font-medium text-orange-600">{elevationCountdown} remaining</p>
+                  <p className={`truncate text-[11px] font-bold ${
+                    elevationTier === "critical" ? "text-rose-800" : "text-orange-800"
+                  }`}>
+                    {elevationTier === "critical" ? "Critical Admin Mode" : "Active Admin Mode"}
+                  </p>
+                  <p className={`font-mono text-[10px] font-medium ${
+                    elevationTier === "critical" ? "text-rose-600" : "text-orange-600"
+                  }`}>{elevationCountdown} remaining</p>
                 </div>
-                <ShieldCheck className="h-4 w-4 shrink-0 text-orange-500" />
+                <ShieldCheck className={`h-4 w-4 shrink-0 ${
+                  elevationTier === "critical" ? "text-rose-500" : "text-orange-500"
+                }`} />
+              </div>
+            ) : elevation?.status === "pending_approval" ? (
+              // Critical elevation awaiting CEO
+              <div className="relative flex items-center gap-2.5 rounded-lg border border-amber-300 bg-amber-50/60 px-3 py-2.5 shadow-sm ring-1 ring-amber-200">
+                <Shield className="h-4 w-4 shrink-0 animate-pulse text-amber-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold text-amber-800">Awaiting CEO Approval</p>
+                  <p className="text-[10px] text-amber-600">Critical elevation pending</p>
+                </div>
               </div>
             ) : (
               <button

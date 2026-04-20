@@ -6,7 +6,7 @@ import {
   Users, Plus, Search, MoreHorizontal, Building2, X, Check, ChevronDown, 
   Filter, Crown, Shield, User, Loader2, AlertCircle, Lock 
 } from "lucide-react";
-import { useIsElevated } from "@/contexts/auth-context";
+import { useIsElevated, useIsCriticallyElevated } from "@/contexts/auth-context";
 import {
   subscribeToAllUsers,
   subscribeToDepartmentsList,
@@ -47,6 +47,7 @@ const ROLE_BADGES: Record<UserRole, { label: string; className: string; icon: ty
 export default function TeamManagementPage() {
   const router = useRouter();
   const isElevated = useIsElevated();
+  const isCriticallyElevated = useIsCriticallyElevated();
   
   // Data states
   const [users, setUsers] = useState<TeamMember[]>([]);
@@ -185,10 +186,10 @@ export default function TeamManagementPage() {
 
       await setUserDepartments(selectedUser.id, selectedDepartments, departmentId);
 
-      // Role change is a destructive action — requires elevation
+      // Role change requires Critical elevation (CEO-approved)
       if (selectedRole !== selectedUser.role && selectedUser.role !== "ceo") {
-        if (!isElevated) {
-          alert("Role changes require elevation. Go to Settings \u2192 Security to request temporary elevated access.");
+        if (!isCriticallyElevated) {
+          alert("Role changes require Critical Elevation (CEO-approved). Go to Settings \u2192 Security and select \u2018Critical JIT\u2019.");
           setSaving(false);
           return;
         }
@@ -458,9 +459,9 @@ export default function TeamManagementPage() {
               <div className="mb-5">
                 <div className="mb-2 flex items-center gap-2">
                   <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
-                  {!isElevated && (
-                    <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-400">
-                      <Lock className="h-2.5 w-2.5" /> Elevation required to change
+                  {!isCriticallyElevated && (
+                    <span className="flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-500">
+                      <Lock className="h-2.5 w-2.5" /> Critical elevation required
                     </span>
                   )}
                 </div>
@@ -469,7 +470,7 @@ export default function TeamManagementPage() {
                     const labels: Record<string, string> = { staff: "Staff", admin: "Dept Admin", super_admin: "Super Admin" };
                     const isCurrentRole = r === selectedUser.role;
                     const isSelected = selectedRole === r;
-                    const canChange = isElevated || isCurrentRole;
+                    const canChange = isCriticallyElevated || isCurrentRole;
                     const colors: Record<string, string> = {
                       staff: isSelected ? "border-slate-500 bg-slate-50 text-slate-700" : "border-slate-200 text-slate-400",
                       admin: isSelected ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-400",
@@ -480,7 +481,7 @@ export default function TeamManagementPage() {
                         key={r}
                         onClick={() => canChange && setSelectedRole(r)}
                         disabled={!canChange}
-                        title={!canChange ? "Requires elevation to change role" : undefined}
+                        title={!canChange ? "Requires Critical Elevation (CEO-approved) to change role" : undefined}
                         className={`rounded-lg border px-3 py-2 text-[12px] font-medium transition ${colors[r]} ${!canChange && !isSelected ? "cursor-not-allowed opacity-50" : ""}`}
                       >
                         {labels[r]}

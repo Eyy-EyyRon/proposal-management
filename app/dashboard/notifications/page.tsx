@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useEffect, type MouseEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Bell, Eye, CheckCircle, XCircle, Check, Loader2,
-  Users, LayoutTemplate, Trophy, Info, MessageCircle, Crown, UserCheck, ShieldAlert,
+  Users, LayoutTemplate, Trophy, Info, MessageCircle, Crown, UserCheck, ShieldAlert, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Topbar } from "@/components/topbar";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/auth-context";
+import { approveCriticalElevation, denyCriticalElevation } from "@/lib/firestore";
+import { toast } from "sonner";
 import {
   subscribeToNotifications,
   markNotificationRead,
@@ -69,12 +70,14 @@ function SwingingBell() {
 }
 
 export default function NotificationsPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { role } = useRole();
   const router = useRouter();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [markingAll, setMarkingAll] = useState(false);
   const [fadingId, setFadingId] = useState<string | null>(null);
+  const [actingOnId, setActingOnId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -92,6 +95,41 @@ export default function NotificationsPage() {
     setMarkingAll(true);
     await markAllNotificationsRead(user.uid);
     setMarkingAll(false);
+  };
+
+  const handleApproveElevation = async (n: AppNotification) => {
+    if (!user || !profile) return;
+    const elevationUid = n.metadata?.elevationUid as string | undefined;
+    if (!elevationUid) return;
+    setActingOnId(n.id);
+    try {
+      await approveCriticalElevation(elevationUid, user.uid);
+      await markNotificationRead(n.id);
+      toast.success(`Critical elevation for ${n.actorName ?? "Super Admin"} approved.`);
+    } catch (err) {
+      toast.error("Failed to approve elevation.");
+      console.error(err);
+    } finally {
+      setActingOnId(null);
+    }
+  };
+
+  const handleDenyElevation = async (n: AppNotification) => {
+    if (!user || !profile) return;
+    const elevationUid = n.metadata?.elevationUid as string | undefined;
+    if (!elevationUid) return;
+    setActingOnId(n.id);
+    try {
+      const ceoName = `${profile.firstName} ${profile.lastName}`;
+      await denyCriticalElevation(elevationUid, user.uid, ceoName);
+      await markNotificationRead(n.id);
+      toast(`Critical elevation for ${n.actorName ?? "Super Admin"} denied.`);
+    } catch (err) {
+      toast.error("Failed to deny elevation.");
+      console.error(err);
+    } finally {
+      setActingOnId(null);
+    }
   };
 
   const getNotificationHref = (notification: AppNotification) =>
@@ -180,15 +218,16 @@ export default function NotificationsPage() {
               {notifications.map((n, i) => {
                 const cfg = iconConfig[n.type] ?? iconConfig.viewed;
                 const Icon = cfg.icon;
-                const isFading = fadingId === n.id;
                 return (
-                  <Link
-                    href="/dashboard/proposals"
+                  <div
                     key={n.id}
-                    onClick={(event) => { void handleNotificationClick(event, n); }}
-                    className={`group flex items-start gap-4 px-5 py-4 transition hover:bg-slate-50/80 ${
+                    className={`group flex items-start gap-4 px-5 py-4 ${
                       i !== notifications.length - 1 ? "border-b border-slate-100/60" : ""
-                    } ${!n.read ? "bg-[#780116]/[0.03]" : ""}`}
+                    } ${
+                      n.type === "jit_elevation" && n.metadata?.requiresApproval
+                        ? "bg-rose-50/40"
+                        : !n.read ? "bg-[#780116]/[0.03]" : ""
+                    }`}
                   >
                     <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${cfg.bg}`}>
                       <Icon className={`h-4 w-4 ${cfg.color}`} />
@@ -203,15 +242,39 @@ export default function NotificationsPage() {
                       <p className="mt-0.5 text-[11px] text-slate-400">
                         {timeAgo(n.createdAt as unknown as { seconds: number })}
                       </p>
+
+                      {/* CEO: Approve / Deny buttons for pending critical elevation */}
+                      {role === "ceo" && n.type === "jit_elevation" && !!n.metadata?.requiresApproval && (
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            onClick={() => handleApproveElevation(n)}
+                            disabled={actingOnId === n.id}
+                            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            {actingOnId === n.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsUp className="h-3 w-3" />}
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleDenyElevation(n)}
+                            disabled={actingOnId === n.id}
+                            className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            {actingOnId === n.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsDown className="h-3 w-3" />}
+                            Deny
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    {!n.read && (
+
+                    {/* Unread dot — only for non-elevation notifs or non-CEO */}
+                    {!n.read && !(role === "ceo" && n.type === "jit_elevation" && !!n.metadata?.requiresApproval) && (
                       <span
                         className={`mt-2 h-2 w-2 shrink-0 rounded-full bg-[#780116] transition-all duration-300 ${
-                          isFading ? "opacity-0 scale-0" : "opacity-100 scale-100"
+                          fadingId === n.id ? "opacity-0 scale-0" : "opacity-100 scale-100"
                         }`}
                       />
                     )}
-                  </Link>
+                  </div>
                 );
               })}
             </div>

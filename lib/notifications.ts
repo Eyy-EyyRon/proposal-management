@@ -44,6 +44,7 @@ export interface AppNotification {
   department?: string;
   actorRole?: "client" | "ceo" | "staff" | "system"; // Who performed the action
   actorName?: string; // Name of the person who performed the action
+  metadata?: Record<string, unknown>; // Extra payload (e.g. elevationUid, tier, requiresApproval)
 }
 
 // ─── NOTIFICATION TYPES PER ROLE ────────────────────────────
@@ -112,6 +113,7 @@ export async function createInAppNotification(payload: {
   department?: string;
   actorRole?: AppNotification["actorRole"];
   actorName?: string;
+  metadata?: Record<string, unknown>;
 }): Promise<void> {
   await addDoc(collection(db, "notifications"), {
     userId: payload.userId,
@@ -121,6 +123,7 @@ export async function createInAppNotification(payload: {
     department: payload.department ?? null,
     actorRole: payload.actorRole ?? null,
     actorName: payload.actorName ?? null,
+    metadata: payload.metadata ?? null,
     read: false,
     createdAt: serverTimestamp(),
   });

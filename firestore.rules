@@ -53,23 +53,41 @@ service cloud.firestore {
       return getUserDept() != null && deptField == getUserDept();
     }
 
-    // ── JIT ELEVATION GATE ─────────────────────────────────────────────
-    // Returns true if the calling super_admin has an unexpired, active elevation
-    // record in /elevations/{uid}. Evaluated entirely server-side — the client
-    // cannot fake this by passing a flag in the request.
-    function hasActiveElevation() {
+    // ── JIT ELEVATION GATE — TIERED ─────────────────────────────────────
+    // Operational: auto-approved; gates staff deactivation & dept deletion.
+    // Critical:    CEO-approved; gates role changes & system settings edits.
+    // Both check server-side — clients cannot spoof these.
+
+    function hasOperationalElevation() {
       let elev = /databases/$(database)/documents/elevations/$(request.auth.uid);
       return exists(elev)
         && get(elev).data.status == "active"
-        && get(elev).data.expiresAt > request.time;
+        && get(elev).data.expiresAt > request.time
+        && get(elev).data.tier == "operational";
     }
 
-    // ── DESTRUCTIVE ACTION GATE ───────────────────────────────────────────
-    // A super_admin can perform a destructive action only when both conditions
-    // are true simultaneously: (1) they ARE a super_admin AND (2) they hold an
-    // unexpired elevation session right now.
+    function hasCriticalElevation() {
+      let elev = /databases/$(database)/documents/elevations/$(request.auth.uid);
+      return exists(elev)
+        && get(elev).data.status == "active"
+        && get(elev).data.expiresAt > request.time
+        && get(elev).data.tier == "critical"
+        && get(elev).data.approvalStatus == "approved";
+    }
+
+    // Either tier suffices for general destructive actions (operational is the minimum).
+    function hasActiveElevation() {
+      return hasOperationalElevation() || hasCriticalElevation();
+    }
+
+    // ── DESTRUCTIVE ACTION GATES ──────────────────────────────────────────
     function superAdminCanDestroy() {
       return getUserRole() == "super_admin" && hasActiveElevation();
+    }
+
+    // Critical-tier gate: role changes, system settings.
+    function superAdminCanEdit() {
+      return getUserRole() == "super_admin" && hasCriticalElevation();
     }
 
     // ABAC: check if user's dept is in the document's sharedWith array
@@ -141,10 +159,14 @@ service cloud.firestore {
                 .hasOnly(["departments", "department", "departmentId", "updatedAt"])
           )
           ||
-          // CEO / super-admin: can assign role + isDeptAdmin via setUserRole
+          // CEO / super-admin (with Critical elevation): assign role + isDeptAdmin.
+          // Role changes require Critical elevation — this is the peer-lock + tier gate.
           // isDeptAdmin is NOT self-writable — only this path stamps it.
           (
-            isSuperAdmin()
+            (
+              isCeo()
+              || (isSuperAdmin() && hasCriticalElevation())
+            )
             && !isRootCeo(userId)
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["role", "isDeptAdmin", "updatedAt"])
@@ -192,8 +214,20 @@ service cloud.firestore {
     }
 
     // ─── ORGANIZATION SETTINGS ───────────────────────────────
+    // Reading own settings is always allowed.
+    // Writing (changing system config) requires Critical elevation for super_admin.
     match /orgSettings/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow write: if
+        isOwner(userId)
+        && (
+          // CEO can always edit their own settings
+          isCeo()
+          // Admin/staff editing their own settings (non-system config)
+          || (isAdmin() || getUserRole() == "staff")
+          // Super Admin: requires Critical elevation to modify system settings
+          || (isSuperAdmin() && hasCriticalElevation())
+        );
     }
 
     // ─── TEMPLATES ───────────────────────────────────────────
@@ -524,29 +558,52 @@ service cloud.firestore {
       allow list: if isCeo();
 
       // Super Admin can create their own elevation (request elevation).
-      // Optional fields: metadata (device/IP), reason (alias for justification).
+      // Operational: status must be "active". Critical: status "pending_approval".
       allow create: if
         isSignedIn()
         && request.auth.uid == uid
         && getUserRole() == "super_admin"
-        && request.resource.data.status == "active"
         && request.resource.data.uid == uid
-        && request.resource.data.expiresAt > request.time
+        && request.resource.data.status in ["active", "pending_approval"]
+        && request.resource.data.tier in ["operational", "critical"]
         && request.resource.data.keys().hasOnly([
-             "uid", "actorName", "justification", "durationMs",
-             "requestedAt", "expiresAt", "status", "metadata"
+             "uid", "actorName", "justification", "durationMs", "tier",
+             "requestedAt", "expiresAt", "status", "approvalStatus", "metadata"
            ]);
 
-      // Super Admin (self) or CEO can mark the record as expired (revoke).
-      // Status transition is one-way only: active → expired.
+      // Revoke: Super Admin (self) or CEO can mark active → expired.
       allow update: if
         isSignedIn()
-        && (request.auth.uid == uid || isCeo())
-        // Can only flip status active → expired; no re-activating via update
-        && resource.data.status == "active"
-        && request.resource.data.status == "expired"
-        // All other fields are immutable after creation
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"]);
+        && (
+          // Self-revoke or CEO revoke: active/pending → expired
+          (
+            (request.auth.uid == uid || isCeo())
+            && resource.data.status in ["active", "pending_approval"]
+            && request.resource.data.status == "expired"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"])
+          )
+          ||
+          // CEO approves a pending_approval critical elevation:
+          // stamps status=active, approvalStatus=approved, approvedAt, approvedBy, expiresAt
+          (
+            isCeo()
+            && resource.data.status == "pending_approval"
+            && request.resource.data.status == "active"
+            && request.resource.data.approvalStatus == "approved"
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["status", "approvalStatus", "approvedAt", "approvedBy", "expiresAt"])
+          )
+          ||
+          // CEO denies: pending_approval → expired, approvalStatus=denied
+          (
+            isCeo()
+            && resource.data.status == "pending_approval"
+            && request.resource.data.status == "expired"
+            && request.resource.data.approvalStatus == "denied"
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["status", "approvalStatus", "approvedBy"])
+          )
+        );
 
       allow delete: if false;
     }
