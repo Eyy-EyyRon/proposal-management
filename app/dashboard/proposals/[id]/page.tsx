@@ -11,9 +11,10 @@ import {
 import { Topbar } from "@/components/topbar";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import {
-  type Proposal, createProposalRevision, softDeleteComment, updateProposalPrivacy, writeAuditLog,
-  submitProposalForVerification, requestProposalRevision, verifyAndPromoteProposal,
-  subscribeToInternalComments,
+  type Proposal, createProposalRevision, softDeleteComment, updateProposalPrivacy,
+  grantPrivateAccess, revokePrivateAccess, getAdminUsers, type TeamMember,
+  writeAuditLog, submitProposalForVerification, requestProposalRevision,
+  verifyAndPromoteProposal, subscribeToInternalComments,
 } from "@/lib/firestore";
 import { SlaCountdown, type DueAtValue } from "@/components/sla-countdown";
 import { UrgencyBadge } from "@/components/urgency-badge";
@@ -78,6 +79,12 @@ export default function ProposalDetailPage() {
   // isPrivate / sharedWith controls (CEO/Admin)
   const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+
+  // Grant Authority (Double-Key delegate management)
+  const [showGrantPanel, setShowGrantPanel] = useState(false);
+  const [delegates, setDelegates] = useState<TeamMember[]>([]);
+  const [delegatesLoading, setDelegatesLoading] = useState(false);
+  const [savingDelegate, setSavingDelegate] = useState<string | null>(null);
 
   // Task workflow
   const isTasked = proposal?.proposalType === "tasked";
@@ -498,6 +505,37 @@ export default function ProposalDetailPage() {
     }
   };
 
+  const handleOpenGrantPanel = async () => {
+    setShowGrantPanel(true);
+    setDelegatesLoading(true);
+    try {
+      const admins = await getAdminUsers();
+      setDelegates(admins.filter((a) => a.role === "super_admin"));
+    } catch {
+      toast.error("Failed to load admins.");
+    } finally {
+      setDelegatesLoading(false);
+    }
+  };
+
+  const handleToggleDelegate = async (uid: string, isGranted: boolean) => {
+    if (!proposal) return;
+    setSavingDelegate(uid);
+    try {
+      if (isGranted) {
+        await revokePrivateAccess(proposal.id, uid);
+        toast.success("Access revoked.");
+      } else {
+        await grantPrivateAccess(proposal.id, uid);
+        toast.success("Authority granted.");
+      }
+    } catch {
+      toast.error("Failed to update access.");
+    } finally {
+      setSavingDelegate(null);
+    }
+  };
+
   const handleSoftDeleteComment = async (commentId: string) => {
     if (!proposal) return;
     try {
@@ -657,6 +695,16 @@ export default function ProposalDetailPage() {
               >
                 {savingPrivacy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
                 {proposal.isPrivate ? "Private" : "Set Private"}
+              </button>
+            )}
+            {/* Grant Authority — CEO only, only when isPrivate */}
+            {isCeo && proposal.isPrivate && (
+              <button
+                onClick={handleOpenGrantPanel}
+                className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700 transition hover:bg-amber-100 active:scale-95"
+              >
+                <User className="h-3.5 w-3.5" />
+                Grant Authority
               </button>
             )}
             {/* Sharing Modal — CEO/Admin */}
@@ -1337,6 +1385,98 @@ export default function ProposalDetailPage() {
           currentAccessLevel={proposal.accessLevel ?? "view_only"}
           originDepartmentId={proposal.originDepartmentId ?? proposal.department}
         />
+      )}
+
+      {/* Grant Authority — Double-Key delegate management (CEO only) */}
+      {showGrantPanel && proposal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowGrantPanel(false)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl border border-amber-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-amber-100 px-6 py-4">
+              <div>
+                <h3 className="text-[15px] font-semibold text-slate-800">Grant Authority</h3>
+                <p className="text-[12px] text-slate-400">
+                  Select Super Admins who may access this private proposal.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowGrantPanel(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4">
+              {/* Warning banner */}
+              <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <span>
+                  Authorized delegates can read and act on this private proposal.
+                  Only grant access to trusted Super Admins.
+                </span>
+              </div>
+
+              {delegatesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                </div>
+              ) : delegates.length === 0 ? (
+                <p className="py-6 text-center text-[13px] text-slate-400">
+                  No Super Admin users found.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {delegates.map((admin) => {
+                    const isGranted = (proposal.authorizedDelegates ?? []).includes(admin.id);
+                    const isSaving = savingDelegate === admin.id;
+                    return (
+                      <li
+                        key={admin.id}
+                        className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">
+                            {admin.firstName?.[0]}{admin.lastName?.[0]}
+                          </div>
+                          <div>
+                            <p className="text-[13px] font-medium text-slate-800">
+                              {admin.firstName} {admin.lastName}
+                            </p>
+                            <p className="text-[11px] text-slate-400">{admin.email}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleToggleDelegate(admin.id, isGranted)}
+                          disabled={isSaving}
+                          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${
+                            isGranted
+                              ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                              : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          }`}
+                        >
+                          {isSaving ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : isGranted ? (
+                            <XCircle className="h-3 w-3" />
+                          ) : (
+                            <CheckCircle className="h-3 w-3" />
+                          )}
+                          {isGranted ? "Revoke" : "Grant"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

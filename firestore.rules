@@ -59,6 +59,16 @@ service cloud.firestore {
         && resource.data.get('sharedWith', []).hasAny([getUserDept()]);
     }
 
+    // ── DOUBLE-KEY PRIVACY GATE ──────────────────────────────────────────
+    // Returns true if the document is NOT private, OR if it IS private and
+    // the caller is either the root CEO OR explicitly listed in authorizedDelegates.
+    // Super Admins and all other roles are denied unless delegated.
+    function passesPrivacyGate() {
+      return !resource.data.get('isPrivate', false)
+        || isCeo()
+        || resource.data.get('authorizedDelegates', []).hasAny([request.auth.uid]);
+    }
+
     // ─── USERS ───────────────────────────────────────────────
     match /users/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
@@ -153,30 +163,29 @@ service cloud.firestore {
     match /proposals/{proposalId} {
 
       // ABAC-based get: allow read if
-      //   1. Owner/sender (ownerId or sentById matches auth UID)
-      //   2. Same department (departmentId match)
-      //   3. Shared collaborator (user's dept is in sharedWith array)
-      //   4. CEO/Super-Admin (Global Oversight)
-      //   5. Unauthenticated client portal (public share link)
-      // Sensitivity Shield: isPrivate proposals readable only by CEO
+      //   1. Unauthenticated client portal (public share link)
+      //   2. CEO: always (Double-Key owner)
+      //   3. Any signed-in user — BUT only if document passes the privacy gate.
+      //      isPrivate=true blocks everyone except CEO and authorizedDelegates.
       allow get: if
         request.auth == null // unauthenticated client portal
-        || isCeo()           // CEO: Global Oversight
+        || isCeo()           // CEO: always (Double-Key owner)
         || (
           isSignedIn()
-          && !resource.data.get('isPrivate', false)
+          && passesPrivacyGate()
           && (
             resource.data.ownerId == request.auth.uid
             || resource.data.sentById == request.auth.uid
             || isSameDept(resource.data.department)
             || isSharedWithUser()
+            || isAdminOrCeo()
           )
         );
 
       // List: resource.data is NOT available on list queries in Firestore rules.
-      // Filtering (isPrivate, dept, ownerId, sharedWith) is enforced at the query
-      // layer via where() clauses in the app — the rule gates authentication.
-      // CEO sees all; Admin and Staff are constrained by app-layer where() filters.
+      // isPrivate filtering MUST be enforced at the app-query layer (where isPrivate==false).
+      // Non-CEO users must always include where("isPrivate","==",false) in their queries.
+      // CEO sees all; Super Admin / Admin / Staff are constrained by app-layer filters.
       allow list: if isSignedIn();
 
       // Create: Allow if authenticated, and ownerId/sentById are properly set
@@ -191,8 +200,9 @@ service cloud.firestore {
           || isSameDept(request.resource.data.department)
         );
 
-      // Delete: Allow if owner, sender, or Admin/CEO
+      // Delete: owner/sender always; others only if privacy gate passes
       allow delete: if isSignedIn()
+        && passesPrivacyGate()
         && (
           resource.data.ownerId == request.auth.uid
           || resource.data.sentById == request.auth.uid
@@ -211,9 +221,18 @@ service cloud.firestore {
           // Path 2: Authenticated sender (actual sender) — unrestricted
           (isSignedIn() && resource.data.sentById == request.auth.uid)
           ||
-          // Path 3: Admin/CEO — unrestricted (trash, restore, etc.)
-          // isPrivate toggling is CEO-only; sharedWith is admin+CEO
-          isAdminOrCeo()
+          // Path 3: Admin/CEO — allowed only if privacy gate passes.
+          // isPrivate + authorizedDelegates fields are CEO-only writes.
+          // Super Admins / Dept Admins cannot touch private proposals unless delegated.
+          (
+            isAdminOrCeo()
+            && passesPrivacyGate()
+            && (
+              isCeo()
+              || !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(["isPrivate", "authorizedDelegates"])
+            )
+          )
           ||
           // Path 4: Public (unauthenticated) client actions only
           // Self-sign block: only unauthenticated sessions can accept/reject

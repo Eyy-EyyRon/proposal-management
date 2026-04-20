@@ -17,6 +17,8 @@ import {
   type DocumentData,
   increment,
   serverTimestamp,
+  arrayUnion,
+  arrayRemove,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -222,7 +224,8 @@ export interface Proposal {
   // Versioning Engine (Enterprise Overhaul)
   isLatest: boolean;         // true only on the head version; false on all superseded/voided versions
   // Sensitivity Shield (CEO Scenario)
-  isPrivate: boolean;        // true = only root CEO can see; overrides sharedWith
+  isPrivate: boolean;        // true = only root CEO (and authorizedDelegates) can see
+  authorizedDelegates?: string[]; // UIDs explicitly granted access to this private proposal by CEO
   // Multidepartmental Sharing
   sharedWith?: string[];     // dept IDs granted View/Collaborate rights
   originDepartmentId: string; // Source of truth: the department that created this proposal
@@ -592,17 +595,38 @@ export async function updateProposalSharing(
   updateProposalSummary(proposalId, { sharedWith }).catch(() => {});
 }
 
-// Toggle sensitivity shield — CEO-only: marks/unmarks a proposal as private
+// Toggle sensitivity shield — CEO-only: marks/unmarks a proposal as private.
+// When un-privatising, the authorizedDelegates list is cleared (no longer needed).
 export async function updateProposalPrivacy(
   proposalId: string,
   isPrivate: boolean
 ): Promise<void> {
+  const data: Record<string, unknown> = { isPrivate, updatedAt: serverTimestamp() };
+  if (!isPrivate) data.authorizedDelegates = [];
+  await updateDoc(doc(db, "proposals", proposalId), data);
+  updateProposalSummary(proposalId, { isPrivate }).catch(() => {});
+}
+
+// Grant a Super Admin UID access to a specific private proposal (CEO-only).
+export async function grantPrivateAccess(
+  proposalId: string,
+  uid: string
+): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
-    isPrivate,
+    authorizedDelegates: arrayUnion(uid),
     updatedAt: serverTimestamp(),
   });
-  // Keep summary in sync
-  updateProposalSummary(proposalId, { isPrivate }).catch(() => {});
+}
+
+// Revoke a previously-granted delegate's access to a private proposal (CEO-only).
+export async function revokePrivateAccess(
+  proposalId: string,
+  uid: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    authorizedDelegates: arrayRemove(uid),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // Get proposals where user is either owner (identity used) or sender (actual sender)
