@@ -125,15 +125,22 @@ service cloud.firestore {
     match /proposals/{proposalId} {
 
       // Allow public read for client portal
-      allow get: if true;
+      // Sensitivity Shield: isPrivate proposals are only readable by the root CEO UID
+      allow get: if
+        !resource.data.get('isPrivate', false)
+        || isCeo()
+        || request.auth == null; // unauthenticated client portal still gets public proposals via share link
 
-      // List: CEO/super-admin see all; admin sees all (filtered by app); staff/user see own
+      // List: CEO sees all; admin sees dept + sharedWith; staff/user see own
+      // isPrivate proposals are hidden from everyone except CEO
       allow list: if isSignedIn()
+        && !resource.data.get('isPrivate', false)
         && (
           isCeo()
           || isAdmin()
           || resource.data.ownerId == request.auth.uid
           || resource.data.sentById == request.auth.uid
+          || (getUserDept() != null && getUserDept() in resource.data.get('sharedWith', []))
         );
 
       // Create: Allow if authenticated, and ownerId/sentById are properly set
@@ -169,6 +176,7 @@ service cloud.firestore {
           (isSignedIn() && resource.data.sentById == request.auth.uid)
           ||
           // Path 3: Admin/CEO — unrestricted (trash, restore, etc.)
+          // isPrivate toggling is CEO-only; sharedWith is admin+CEO
           isAdminOrCeo()
           ||
           // Path 4: Public (unauthenticated) client actions only

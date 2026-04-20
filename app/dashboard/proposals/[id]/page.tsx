@@ -9,13 +9,13 @@ import {
   PenTool, History, AlertTriangle, Trash2, Link2, UploadCloud, X,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
-import { useAuth } from "@/contexts/auth-context";
-import { type Proposal, createProposalRevision, softDeleteComment } from "@/lib/firestore";
+import { useAuth, useRole } from "@/contexts/auth-context";
+import { type Proposal, createProposalRevision, softDeleteComment, updateProposalSharing, updateProposalPrivacy, writeAuditLog } from "@/lib/firestore";
 import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { exportProposalPdf } from "@/lib/export-utils";
 import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
 import { toast } from "@/components/providers/toast";
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -36,6 +36,7 @@ export default function ProposalDetailPage() {
   const router = useRouter();
   const proposalId = params.id as string;
   const { user, profile } = useAuth();
+  const { isCeo, isAdmin } = useRole();
 
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +65,15 @@ export default function ProposalDetailPage() {
   // Animated confirm modal
   const { confirm, modalProps } = useConfirmModal();
 
+  // Presence: client typing indicator for staff view
+  const [clientTyping, setClientTyping] = useState(false);
+
+  // isPrivate / sharedWith controls (CEO/Admin)
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
+  const [sharingInput, setSharingInput] = useState("");
+  const [savingSharing, setSavingSharing] = useState(false);
+  const [showSharingPanel, setShowSharingPanel] = useState(false);
+
   // Fetch proposal using real-time subscription
   useEffect(() => {
     if (!proposalId) return;
@@ -78,6 +88,30 @@ export default function ProposalDetailPage() {
         }
         
         const data = { id: snap.id, ...snap.data() } as Proposal;
+
+        // Department border-jump guard (Scenario — URL scoping)
+        // Staff and Admin may only view proposals in their dept or sharedWith depts
+        if (profile && profile.role !== "ceo") {
+          const userDept = profile.department ?? "";
+          const allowed =
+            data.ownerId === user?.uid ||
+            data.sentById === user?.uid ||
+            data.department === userDept ||
+            (data.sharedWith ?? []).includes(userDept);
+          if (!allowed) {
+            toast.error("Access Denied: This proposal belongs to a different department.");
+            router.replace("/dashboard/proposals");
+            return;
+          }
+        }
+
+        // isPrivate sensitivity shield — only CEO can see private proposals
+        if (data.isPrivate && profile?.role !== "ceo") {
+          toast.error("This proposal is confidential. Access restricted to CEO.");
+          router.replace("/dashboard/proposals");
+          return;
+        }
+
         setProposal(data);
         
         // Render document HTML if template URL exists
@@ -117,6 +151,20 @@ export default function ProposalDetailPage() {
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
     return () => unsubscribe();
+  }, [proposalId]);
+
+  // Presence: subscribe to client typing indicator
+  useEffect(() => {
+    if (!proposalId) return;
+    const q = query(collection(db, "proposals", proposalId, "presence"));
+    const unsub = onSnapshot(q, (snap) => {
+      const isClientTyping = snap.docs.some((d) => {
+        const data = d.data() as { isTyping: boolean; updatedAt: number };
+        return data.isTyping && Date.now() - (data.updatedAt ?? 0) < 8000;
+      });
+      setClientTyping(isClientTyping);
+    });
+    return () => unsub();
   }, [proposalId]);
 
   const handleAddComment = async (e: React.FormEvent) => {
@@ -318,6 +366,18 @@ export default function ProposalDetailPage() {
         }),
       }).catch(() => {});
 
+      // Audit log — immutable record of the revision
+      writeAuditLog({
+        action: "proposal_revised",
+        actorId: user.uid,
+        actorName: `${profile.firstName} ${profile.lastName}`,
+        actorRole: profile.role,
+        targetId: newProposalId,
+        targetType: "proposal",
+        description: `Created v${newVersion} of proposal for ${proposal.clientName} (superseded ${proposal.id})`,
+        metadata: { previousId: proposal.id, newId: newProposalId, version: newVersion },
+      }).catch(() => {});
+
       toast.success(`v${newVersion} sent to ${proposal.clientName}.`);
       setIsEditing(false);
       router.push(`/dashboard/proposals/${newProposalId}`);
@@ -325,6 +385,33 @@ export default function ProposalDetailPage() {
       toast.error(err instanceof Error ? err.message : "Failed to create new version.");
     } finally {
       setResending(false);
+    }
+  };
+
+  const handleTogglePrivacy = async () => {
+    if (!proposal) return;
+    setSavingPrivacy(true);
+    try {
+      await updateProposalPrivacy(proposal.id, !proposal.isPrivate);
+      toast.success(proposal.isPrivate ? "Proposal is now visible to your team." : "Proposal marked as Private. Only you can see it.");
+    } catch {
+      toast.error("Failed to update privacy.");
+    } finally {
+      setSavingPrivacy(false);
+    }
+  };
+
+  const handleSaveSharing = async () => {
+    if (!proposal) return;
+    const depts = sharingInput.split(",").map((d) => d.trim()).filter(Boolean);
+    setSavingSharing(true);
+    try {
+      await updateProposalSharing(proposal.id, depts);
+      toast.success("Sharing updated.");
+    } catch {
+      toast.error("Failed to update sharing.");
+    } finally {
+      setSavingSharing(false);
     }
   };
 
@@ -394,7 +481,7 @@ export default function ProposalDetailPage() {
                 </span>
               )}
             </div>
-            <div className="mt-2 flex items-center gap-4 text-[13px] text-slate-500">
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-[13px] text-slate-500">
               <span className="flex items-center gap-1.5">
                 <User className="h-4 w-4" />
                 {proposal.clientName}
@@ -404,10 +491,50 @@ export default function ProposalDetailPage() {
                 {getStatusIcon(proposal.status)}
                 {getStatusLabel(proposal.status)}
               </span>
+              {proposal.isPrivate && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600 ring-1 ring-rose-200">
+                  <X className="h-2.5 w-2.5" /> Private
+                </span>
+              )}
+              {(proposal.sharedWith?.length ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600 ring-1 ring-violet-200">
+                  Shared · {proposal.sharedWith!.join(", ")}
+                </span>
+              )}
+              {proposal.isDelegated && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                  Delegated Send
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Privacy Toggle — CEO only */}
+            {isCeo && (
+              <button
+                onClick={handleTogglePrivacy}
+                disabled={savingPrivacy}
+                title={proposal.isPrivate ? "Make visible to team" : "Mark as Private (CEO-only)"}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium transition active:scale-95 disabled:opacity-50 ${
+                  proposal.isPrivate
+                    ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                {savingPrivacy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                {proposal.isPrivate ? "Private" : "Set Private"}
+              </button>
+            )}
+            {/* Sharing Panel — CEO/Admin */}
+            {(isCeo || isAdmin) && (
+              <button
+                onClick={() => { setShowSharingPanel((v) => !v); setSharingInput((proposal.sharedWith ?? []).join(", ")); }}
+                className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[12px] font-medium text-violet-700 transition hover:bg-violet-100 active:scale-95"
+              >
+                Share
+              </button>
+            )}
             {/* Void & Revise — only for accepted proposals */}
             {proposal.status === "accepted" && (
               <button
@@ -475,6 +602,43 @@ export default function ProposalDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Gold identity banner — shows when CEO sent via delegation */}
+        {proposal.isDelegated && profile?.role !== "ceo" && (
+          <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400/30 text-amber-700">
+              <CheckCircle className="h-4 w-4" />
+            </span>
+            <p className="text-[13px] font-medium text-amber-800">
+              You are acting as CEO. This proposal was sent on their behalf. All branding and signatures reflect the CEO identity.
+            </p>
+          </div>
+        )}
+
+        {/* Sharing Panel — CEO/Admin inline expand */}
+        {showSharingPanel && (isCeo || isAdmin) && (
+          <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 space-y-3">
+            <p className="text-[13px] font-semibold text-violet-800">Share with Departments</p>
+            <p className="text-[12px] text-violet-600">Enter department IDs separated by commas. Those departments can view and comment on this proposal.</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={sharingInput}
+                onChange={(e) => setSharingInput(e.target.value)}
+                placeholder="e.g. Sales, IT, HR"
+                className="flex-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-violet-200"
+              />
+              <button
+                onClick={handleSaveSharing}
+                disabled={savingSharing}
+                className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-violet-700 active:scale-95 disabled:opacity-50"
+              >
+                {savingSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                Save
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 rounded-xl bg-slate-100/50 p-1">
@@ -843,6 +1007,18 @@ export default function ProposalDetailPage() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Presence: client typing indicator */}
+            {clientTyping && (
+              <div className="flex items-center gap-1.5 px-4 py-1.5 border-t border-slate-100 bg-slate-50/60">
+                <span className="flex gap-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
+                </span>
+                <span className="text-[11px] text-slate-400">{proposal.clientName} is typing…</span>
+              </div>
+            )}
+
             {/* Input */}
             {proposal.status !== "accepted" && proposal.status !== "rejected" && (
               <div className="border-t border-slate-100 p-4">
@@ -864,19 +1040,29 @@ export default function ProposalDetailPage() {
                   </div>
                 )}
 
+                {clientTyping && (
+                  <p className="mb-2 text-[11px] font-medium text-amber-600">
+                    ⚠ Client is typing — hold to avoid conflicting messages.
+                  </p>
+                )}
+
                 <form onSubmit={handleAddComment} className="flex gap-2">
                   <input
                     type="text"
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
+                    placeholder={clientTyping ? "Client is typing... wait a moment" : "Type your message..."}
+                    className={`flex-1 rounded-lg border bg-slate-50 px-3 py-2 text-[13px] outline-none transition focus:ring-2 focus:ring-[#800020]/20 ${
+                      clientTyping
+                        ? "border-amber-200 focus:border-amber-300 focus:bg-amber-50/40"
+                        : "border-slate-200 focus:border-[#800020] focus:bg-white"
+                    }`}
                     disabled={submittingComment}
                   />
                   <button
                     type="submit"
                     disabled={!newComment.trim() || submittingComment}
-                    className="flex items-center gap-1 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] disabled:opacity-50"
+                    className="flex items-center gap-1 rounded-lg bg-[#800020] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#660018] active:scale-95 disabled:opacity-50"
                   >
                     {submittingComment ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

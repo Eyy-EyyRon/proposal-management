@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   TrendingUp, FileText, Trash2, ArrowRight, Loader2,
   CheckCircle, Eye, XCircle, DollarSign, Activity,
-  Send, FileCheck, FileX,
+  Send, FileCheck, FileX, Wifi, WifiOff, AlertTriangle,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { StatCard } from "@/components/stat-card";
@@ -53,6 +53,12 @@ const STATUS_ICONS: Record<string, { icon: typeof Eye; color: string; bg: string
   rejected: { icon: FileX,     color: "text-rose-500",    bg: "bg-rose-50" },
 };
 
+interface HealthStatus {
+  status: "ok" | "degraded" | "loading";
+  timestamp?: string;
+  services?: Record<string, { ok: boolean; latencyMs: number; name: string }>;
+}
+
 export default function CeoDashboardPage() {
   const { profile } = useAuth();
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -60,6 +66,7 @@ export default function CeoDashboardPage() {
   const [userNames, setUserNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [pulseLoading, setPulseLoading] = useState(true);
+  const [health, setHealth] = useState<HealthStatus>({ status: "loading" });
 
   useEffect(() => {
     const unsub = subscribeToAllProposals((data) => {
@@ -96,6 +103,22 @@ export default function CeoDashboardPage() {
     : "0.0";
 
   const recentProposals = active.slice(0, 8);
+  // Integration health polling — every 60s
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/health");
+        const data = await res.json();
+        setHealth(data as HealthStatus);
+      } catch {
+        setHealth({ status: "degraded" });
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const greeting = getGreeting();
   const firstName = profile?.firstName ?? "there";
 
@@ -134,6 +157,47 @@ export default function CeoDashboardPage() {
           <StatCard label="Global Close Rate"   value={`${closeRate}%`}    icon={TrendingUp}  accent="green" />
           <StatCard label="Rejected"            value={counts.rejected}    icon={XCircle}     accent="red" />
         </section>
+
+        {/* Integration Health Monitor */}
+        <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${
+          health.status === "ok"
+            ? "border-emerald-200/80 bg-emerald-50/60"
+            : health.status === "degraded"
+            ? "border-rose-200/80 bg-rose-50/60"
+            : "border-slate-200/60 bg-slate-50/40"
+        }`}>
+          <span className="flex items-center gap-1.5">
+            {health.status === "ok" ? (
+              <Wifi className="h-4 w-4 text-emerald-500" />
+            ) : health.status === "degraded" ? (
+              <WifiOff className="h-4 w-4 text-rose-500" />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+            )}
+            <span className={`text-[12px] font-semibold ${
+              health.status === "ok" ? "text-emerald-700" :
+              health.status === "degraded" ? "text-rose-700" : "text-slate-500"
+            }`}>
+              {health.status === "ok" ? "All Systems Operational" :
+               health.status === "degraded" ? "Service Degraded" : "Checking systems…"}
+            </span>
+          </span>
+          {health.services && Object.values(health.services).map((svc) => (
+            <span key={svc.name} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${
+              svc.ok
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                : "bg-rose-50 text-rose-700 ring-rose-200"
+            }`}>
+              {svc.ok ? <CheckCircle className="h-2.5 w-2.5" /> : <AlertTriangle className="h-2.5 w-2.5" />}
+              {svc.name} {svc.ok ? `${svc.latencyMs}ms` : "DOWN"}
+            </span>
+          ))}
+          {health.timestamp && (
+            <span className="ml-auto text-[11px] text-slate-400">
+              Last checked {new Date(health.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+        </div>
 
         {/* Quick Links */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

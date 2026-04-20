@@ -23,12 +23,13 @@ interface ProposalFormProps {
     accessCode?: string;
   }) => Promise<void>;
   submitting?: boolean;
+  actingAsName?: string | null;
 }
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100";
 
-export function ProposalForm({ templates, onSubmit, submitting = false }: ProposalFormProps) {
+export function ProposalForm({ templates, onSubmit, submitting = false, actingAsName }: ProposalFormProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [accessCode, setAccessCode] = useState("");
@@ -192,7 +193,11 @@ export function ProposalForm({ templates, onSubmit, submitting = false }: Propos
           className="inline-flex items-center gap-2 rounded-lg bg-[#780116] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#5f0110] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {submitting ? "Creating..." : "Create proposal"}
+          {submitting
+            ? "Sending…"
+            : actingAsName
+            ? `Send as ${actingAsName}`
+            : "Create proposal"}
         </button>
       </div>
     </form>

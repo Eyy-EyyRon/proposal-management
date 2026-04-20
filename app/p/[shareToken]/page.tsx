@@ -16,7 +16,7 @@ import { renderProposalHtml } from "@/lib/proposal-renderer";
 import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 type SignatureMode = "draw" | "type" | "upload";
@@ -164,9 +164,26 @@ export default function ProposalPortalPage() {
         if (p.status === "archived") { if (!cancelled) setViewState("not-found"); return; }
         if (p.status === "rejected") { setViewState("rejected"); return; }
 
-        // Version detection: if this proposal has been superseded, surface the newer version
-        if ((p.status === "superseded" || p.status === "void") && p.nextVersionId) {
-          if (!cancelled) setNewerVersionId(p.nextVersionId);
+        // Version detection: if this proposal has been superseded, walk the chain to find isLatest head
+        if ((p.status === "superseded" || p.status === "void")) {
+          let headId = p.nextVersionId ?? null;
+          // Walk forward through version chain to reach the isLatest head
+          while (headId) {
+            try {
+              const headSnap = await getDoc(doc(db, "proposals", headId));
+              if (!headSnap.exists()) break;
+              const headData = headSnap.data() as { isLatest?: boolean; nextVersionId?: string | null };
+              if (headData.isLatest) break;
+              headId = headData.nextVersionId ?? null;
+            } catch { break; }
+          }
+          if (headId && headId !== shareToken && !cancelled) {
+            setNewerVersionId(headId);
+            // Auto-redirect after 3s so client sees the superseded notice briefly
+            setTimeout(() => {
+              if (!cancelled) window.location.replace(`/p/${headId}`);
+            }, 3000);
+          }
         }
 
         if (p.accessCode) {

@@ -444,7 +444,18 @@ export default function CreateProposalPage() {
                 </p>
               </div>
             ) : (
-              <ProposalForm templates={formTemplates} onSubmit={handleSubmit} submitting={submitting} />
+              <ProposalForm
+                templates={formTemplates}
+                onSubmit={handleSubmit}
+                submitting={submitting}
+                actingAsName={
+                  selectedIdentity !== "self"
+                    ? availableIdentities.find((i) => i.id === selectedIdentity)
+                        ? `${availableIdentities.find((i) => i.id === selectedIdentity)!.firstName} ${availableIdentities.find((i) => i.id === selectedIdentity)!.lastName}`
+                        : null
+                    : null
+                }
+              />
             )}
           </div>
         </div>

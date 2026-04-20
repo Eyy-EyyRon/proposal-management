@@ -211,6 +211,12 @@ export interface Proposal {
   forwardedSignerName?: string | null;
   forwardedSignerEmail?: string | null;
   forwardedAt?: unknown | null;
+  // Versioning Engine (Enterprise Overhaul)
+  isLatest: boolean;         // true only on the head version; false on all superseded/voided versions
+  // Sensitivity Shield (CEO Scenario)
+  isPrivate: boolean;        // true = only root CEO can see; overrides sharedWith
+  // Multidepartmental Sharing
+  sharedWith?: string[];     // dept IDs granted View/Collaborate rights
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────
@@ -261,6 +267,9 @@ export async function createProposal(
     deletedAt: null,
     isSignable: true,
     isCommentable: true,
+    isLatest: true,
+    isPrivate: false,
+    sharedWith: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     // Versioning fields
@@ -327,6 +336,11 @@ export async function createProposalRevision(
     viewedAt: null,
     isDeleted: false,
     deletedAt: null,
+    isSignable: true,
+    isCommentable: true,
+    isLatest: true,
+    isPrivate: currentProposal.isPrivate ?? false,
+    sharedWith: currentProposal.sharedWith ?? [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     version: newVersionNum,
@@ -334,10 +348,11 @@ export async function createProposalRevision(
     nextVersionId: null,
   });
 
-  // Mark the old version as superseded and store forward link
+  // Mark the old version as superseded and store forward link; it is no longer latest
   await updateDoc(doc(db, "proposals", currentProposal.id), {
     status: "superseded",
     nextVersionId: newProposalId,
+    isLatest: false,
     updatedAt: serverTimestamp(),
   });
 
@@ -348,6 +363,28 @@ export async function createProposalRevision(
     authorName: "System",
     isDeleted: false,
     createdAt: serverTimestamp(),
+  });
+}
+
+// Update multi-dept sharing — Admins can grant collaborator depts view/comment rights
+export async function updateProposalSharing(
+  proposalId: string,
+  sharedWith: string[]
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    sharedWith,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Toggle sensitivity shield — CEO-only: marks/unmarks a proposal as private
+export async function updateProposalPrivacy(
+  proposalId: string,
+  isPrivate: boolean
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    isPrivate,
+    updatedAt: serverTimestamp(),
   });
 }
 
@@ -1234,7 +1271,10 @@ export type AuditAction =
   | "delegation_granted"
   | "delegation_revoked"
   | "staff_reassigned"
-  | "status_changed";
+  | "status_changed"
+  | "proposal_revised"
+  | "proposal_privacy_changed"
+  | "proposal_sharing_updated";
 
 export interface AuditLogEntry {
   id?: string;
