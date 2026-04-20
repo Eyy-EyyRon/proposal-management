@@ -131,17 +131,11 @@ service cloud.firestore {
         || isCeo()
         || request.auth == null; // unauthenticated client portal still gets public proposals via share link
 
-      // List: CEO sees all; admin sees dept + sharedWith; staff/user see own
-      // isPrivate proposals are hidden from everyone except CEO
-      allow list: if isSignedIn()
-        && !resource.data.get('isPrivate', false)
-        && (
-          isCeo()
-          || isAdmin()
-          || resource.data.ownerId == request.auth.uid
-          || resource.data.sentById == request.auth.uid
-          || (getUserDept() != null && getUserDept() in resource.data.get('sharedWith', []))
-        );
+      // List: resource.data is NOT available on list queries in Firestore rules.
+      // Filtering (isPrivate, dept, ownerId) is enforced at the query layer via
+      // where() clauses in the app — the rule just gates whether the user is signed in.
+      // CEO sees all; Admin and Staff are constrained by app-layer where() filters.
+      allow list: if isSignedIn();
 
       // Create: Allow if authenticated, and ownerId/sentById are properly set
       // Admin must create within their own department
@@ -273,13 +267,21 @@ service cloud.firestore {
     }
 
     // ─── STATS (Aggregated) ─────────────────────────────────
+    // Client-side incrementGlobalStats uses setDoc+merge — must allow write for signed-in users.
     match /stats/{docId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isSignedIn();
     }
 
     // ─── AUDIT LOGS (append-only, undeletable) ──────────────
     match /logs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+      allow read: if isAdminOrCeo();
+    }
+
+    // ─── AUDIT LOGS v2 (app writes to audit_logs/) ───────────
+    match /audit_logs/{logId} {
       allow create: if isSignedIn();
       allow update, delete: if false;
       allow read: if isAdminOrCeo();

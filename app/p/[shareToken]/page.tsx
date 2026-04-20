@@ -825,24 +825,6 @@ export default function ProposalPortalPage() {
                       </div>
                     </div>
                   )}
-                  {typingUsers.length > 0 && (
-                    <div className="flex items-center gap-1.5 px-1 py-1">
-                      <span className="flex gap-0.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]"/>
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]"/>
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]"/>
-                      </span>
-                      <span className="text-[11px] text-slate-400">{typingUsers.join(", ")} is typing…</span>
-                    </div>
-                  )}
-                  {autoResponderShown && (
-                    <div className="flex flex-col items-start">
-                      <span className="text-[10px] text-slate-400 mb-1 px-1">Support</span>
-                      <div className="px-3 py-2.5 rounded-xl max-w-[85%] text-[12px] leading-relaxed bg-slate-100 text-slate-600 rounded-bl-none border border-slate-200">
-                        Thanks for your message! Our team typically responds within a few hours during business hours.
-                      </div>
-                    </div>
-                  )}
                   <div ref={messagesEndRef} />
                 </div>
 
