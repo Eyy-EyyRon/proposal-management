@@ -631,7 +631,12 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if false;
+      // Super Admin can delete their own expired/denied doc to re-request
+      allow delete: if
+        isOwner(uid)
+        && getUserRole() == "super_admin"
+        && resource.data.status in ["expired", "pending_approval"]
+        && resource.data.approvalStatus in ["auto_approved", "denied", "pending"];
     }
 
     // ─── SYSTEM PURGE LOGS (Black Box — Immutable) ───────────
