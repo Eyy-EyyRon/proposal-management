@@ -5,7 +5,7 @@ import {
   Users, Plus, Search, MoreHorizontal, Building2, X, Check, ChevronDown, 
   Filter, Crown, Shield, User, Loader2, AlertCircle, Lock 
 } from "lucide-react";
-import { useIsElevated, useIsCriticallyElevated, useElevation } from "@/contexts/auth-context";
+import { useIsElevated, useIsCriticallyElevated, useElevation, useAuth } from "@/contexts/auth-context";
 import { JITGuard } from "@/components/jit-guard";
 import { JitElevationModal } from "@/components/jit-elevation-modal";
 import {
@@ -49,6 +49,7 @@ export default function TeamManagementPage() {
   const isElevated = useIsElevated();
   const isCriticallyElevated = useIsCriticallyElevated();
   const { elevation } = useElevation();
+  const { user: currentUser } = useAuth();
   const [showElevationModal, setShowElevationModal] = useState(false);
   
   // Data states
@@ -99,8 +100,8 @@ export default function TeamManagementPage() {
   const filteredUsers = useMemo(() => {
     let result = users;
     
-    // Exclude CEO from all views (super_admin manages system, not CEO)
-    result = result.filter((u) => u.role !== "ceo");
+    // Exclude CEO and the currently logged-in user from the list
+    result = result.filter((u) => u.role !== "ceo" && u.id !== currentUser?.uid);
     
     // Apply filter mode
     if (filterMode === "by-department" && selectedDepartment) {
@@ -121,7 +122,7 @@ export default function TeamManagementPage() {
     }
     
     return result;
-  }, [users, filterMode, selectedDepartment, searchQuery]);
+  }, [users, filterMode, selectedDepartment, searchQuery, currentUser?.uid]);
   
   // Get department display name for a user
   const getUserDepartments = (user: TeamMember): string => {
