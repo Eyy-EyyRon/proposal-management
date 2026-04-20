@@ -2055,9 +2055,37 @@ export function subscribeToAllElevations(
   );
 }
 
+// ─── SYSTEM PURGE LOG (Black Box) ──────────────────────────
+export interface SystemPurgeLog {
+  id: string;
+  action: "SYSTEM_PURGE_RESET";
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  timestamp: Timestamp;
+  details: string;
+  security: {
+    ipAddress: string;
+    userAgent: string;
+    confirmationText: string;
+  };
+  affectedUids: string[];
+  elevationsWiped: number;
+}
+
+export function subscribeToSystemPurgeLogs(
+  callback: (logs: SystemPurgeLog[]) => void
+): () => void {
+  return onSnapshot(
+    query(collection(db, "system_purge_logs"), orderBy("timestamp", "desc")),
+    (snap) => callback(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as SystemPurgeLog)),
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
 // Client-side callable wrapper for the Emergency Brake Cloud Function
-export async function callRevokeAllElevations(): Promise<{ revokedCount: number; elevationsWiped: number }> {
-  const fn = httpsCallable<void, { revokedCount: number; elevationsWiped: number }>(
+export async function callRevokeAllElevations(): Promise<{ revokedCount: number; elevationsWiped: number; logId: string }> {
+  const fn = httpsCallable<void, { revokedCount: number; elevationsWiped: number; logId: string }>(
     functions,
     "revokeAllElevations"
   );

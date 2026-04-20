@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Shield, ShieldAlert, ShieldCheck, Clock, User, Zap, Crown, Trash2, Loader2, AlertTriangle, X, RefreshCw, Activity } from "lucide-react";
+import Link from "next/link";
+import { Shield, ShieldAlert, ShieldCheck, Clock, User, Zap, Crown, Trash2, Loader2, AlertTriangle, X, Activity, FileText } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -84,8 +85,14 @@ export default function CeoSecurityPage() {
     try {
       const result = await callRevokeAllElevations();
       toast.success(
-        `Emergency Brake executed. ${result.revokedCount} admin(s) revoked, ${result.elevationsWiped} session(s) wiped.`,
-        { duration: 8000 }
+        <div className="space-y-1">
+          <p className="font-bold">Emergency Brake executed.</p>
+          <p className="text-[12px]">{result.revokedCount} admin(s) revoked · {result.elevationsWiped} session(s) wiped</p>
+          <p className="text-[11px] text-slate-500">
+            Log ID: <span className="font-mono select-all">{result.logId}</span>
+          </p>
+        </div>,
+        { duration: 12000 }
       );
       setBrakeOpen(false);
       setBrakeConfirm("");
@@ -120,14 +127,23 @@ export default function CeoSecurityPage() {
               </div>
             </div>
 
-            {/* Emergency Brake */}
-            <button
-              onClick={() => setBrakeOpen(true)}
-              className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-md shadow-rose-200 transition hover:bg-rose-700 active:scale-95"
-            >
-              <ShieldAlert className="h-4 w-4" />
-              Emergency Brake
-            </button>
+            {/* Action buttons */}
+            <div className="flex items-center gap-2">
+              <Link
+                href="/ceo-dashboard/security/logs"
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                <FileText className="h-4 w-4" />
+                Purge Logs
+              </Link>
+              <button
+                onClick={() => setBrakeOpen(true)}
+                className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-md shadow-rose-200 transition hover:bg-rose-700 active:scale-95"
+              >
+                <ShieldAlert className="h-4 w-4" />
+                Emergency Brake
+              </button>
+            </div>
           </div>
 
           {/* Stats row */}

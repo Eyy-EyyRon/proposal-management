@@ -62,7 +62,8 @@ const NAV_CONFIG: Record<string, RoleNavConfig> = {
       { label: "Contracts",         href: "/ceo-dashboard/documents",  icon: FolderOpen },
       { label: "Trash",             href: "/ceo-dashboard/trash",      icon: Trash2 },
       { label: "Settings",          href: "/ceo-dashboard/settings",   icon: Settings },
-      { label: "Security Monitor",  href: "/ceo-dashboard/security",   icon: ShieldAlert },
+      { label: "Security Monitor",  href: "/ceo-dashboard/security",      icon: ShieldAlert },
+      { label: "Purge Logs",        href: "/ceo-dashboard/security/logs", icon: ClipboardList },
     ],
   },
   super_admin: {

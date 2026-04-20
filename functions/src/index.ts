@@ -238,14 +238,16 @@ export const onElevationCreate = onDocumentCreated(
 
 // ─── EMERGENCY BRAKE: revokeAllElevations ───────────────────
 // CEO-only callable that:
-//   1. Revokes Firebase Auth refresh tokens for every super_admin
-//   2. Stamps forceLogoutTimestamp on every super_admin user doc
-//   3. Deletes all documents in the elevations collection
-//   4. Writes an audit log entry
+//   1. Captures CEO network metadata (IP, UA) for the black-box log
+//   2. Revokes Firebase Auth refresh tokens for every super_admin
+//   3. Stamps forceLogoutTimestamp on every super_admin user doc
+//   4. Deletes all documents in the elevations collection
+//   5. Writes an immutable black-box entry to system_purge_logs
+//   6. Writes a standard entry to logs (audit trail)
+//   Returns: { revokedCount, elevationsWiped, logId }
 export const revokeAllElevations = onCall(
   {enforceAppCheck: false},
   async (request) => {
-    // Verify caller is authenticated
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Must be signed in.");
     }
@@ -255,68 +257,103 @@ export const revokeAllElevations = onCall(
     if (!callerDoc.exists) {
       throw new HttpsError("permission-denied", "Caller user doc not found.");
     }
-    const callerData = callerDoc.data() as {role?: string; isRootCEO?: boolean};
+    const callerData = callerDoc.data() as {
+      role?: string; isRootCEO?: boolean;
+      firstName?: string; lastName?: string;
+    };
     if (callerData.role !== "ceo" || !callerData.isRootCEO) {
       throw new HttpsError("permission-denied", "Only the root CEO may execute the Emergency Brake.");
     }
 
-    logger.warn("🚨 Emergency Brake activated by CEO.", {callerUid: request.auth.uid});
+    // ── Capture network metadata for the black-box record ──────
+    const rawHeaders = request.rawRequest?.headers ?? {};
+    const ipAddress = (
+      (rawHeaders["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ??
+      (rawHeaders["x-real-ip"] as string | undefined) ??
+      request.rawRequest?.socket?.remoteAddress ??
+      "unknown"
+    );
+    const userAgent = (rawHeaders["user-agent"] as string | undefined) ?? "unknown";
 
-    const auth = getAuth();
+    logger.warn("🚨 Emergency Brake activated by CEO.", {
+      callerUid: request.auth.uid, ipAddress, userAgent,
+    });
+
+    const firebaseAuth = getAuth();
     const now = FieldValue.serverTimestamp();
+    const callerName = `${callerData.firstName ?? ""} ${callerData.lastName ?? "CEO"}`.trim();
 
     // 1. Find all super_admins
     const adminSnap = await db.collection("users")
       .where("role", "==", "super_admin")
       .get();
 
-    // 2. Revoke tokens + stamp forceLogoutTimestamp in parallel batches
-    const userBatch = db.batch();
-    const tokenRevocations: Promise<void>[] = [];
+    // 2. Revoke Auth tokens in parallel (outside batch — Auth Admin SDK call)
+    const tokenRevocations = adminSnap.docs.map((d) =>
+      firebaseAuth.revokeRefreshTokens(d.id).catch((err) => {
+        logger.error(`Token revocation failed for ${d.id}:`, err);
+      })
+    );
+    await Promise.all(tokenRevocations);
 
-    for (const userDoc of adminSnap.docs) {
-      // Stamp forceLogoutTimestamp so the client sentry fires
-      userBatch.update(userDoc.ref, {forceLogoutTimestamp: now});
-      // Revoke Firebase Auth refresh token (server-side)
-      tokenRevocations.push(
-        auth.revokeRefreshTokens(userDoc.id).catch((err) => {
-          logger.error(`Failed to revoke token for ${userDoc.id}:`, err);
-        })
-      );
-    }
-
-    await Promise.all([
-      userBatch.commit(),
-      ...tokenRevocations,
-    ]);
-
-    // 3. Wipe elevations collection
+    // 3. Fetch elevations to wipe
     const elevSnap = await db.collection("elevations").get();
-    if (!elevSnap.empty) {
-      const elevBatch = db.batch();
-      elevSnap.docs.forEach((d) => elevBatch.delete(d.ref));
-      await elevBatch.commit();
+
+    // 4. Prepare black-box log ref (pre-generate ID so we can return it)
+    const purgeLogRef = db.collection("system_purge_logs").doc();
+    const logId = purgeLogRef.id;
+
+    // 5. Single atomic batch: user stamps + elevation deletes + black-box + audit
+    const batch = db.batch();
+
+    // Stamp forceLogoutTimestamp on every super_admin
+    for (const userDoc of adminSnap.docs) {
+      batch.update(userDoc.ref, {forceLogoutTimestamp: now, isElevated: false});
     }
 
-    // 4. Audit log
-    const callerName = `${(callerData as {firstName?: string}).firstName ?? ""} ${
-      (callerData as {lastName?: string}).lastName ?? "CEO"
-    }`.trim();
-    await db.collection("logs").add({
+    // Delete all elevation docs
+    for (const elevDoc of elevSnap.docs) {
+      batch.delete(elevDoc.ref);
+    }
+
+    // Black-box: immutable system_purge_log entry
+    batch.set(purgeLogRef, {
+      action: "SYSTEM_PURGE_RESET",
+      actorId: request.auth.uid,
+      actorName: callerName,
+      actorRole: "ceo",
+      timestamp: now,
+      details: `Total system reset triggered by ${callerName}. ${adminSnap.size} super admin(s) revoked, ${elevSnap.size} elevation(s) wiped.`,
+      security: {
+        ipAddress,
+        userAgent,
+        confirmationText: "REVOKE",
+      },
+      affectedUids: adminSnap.docs.map((d) => d.id),
+      elevationsWiped: elevSnap.size,
+    });
+
+    // Standard audit log entry (for the existing audit-log UI)
+    const auditRef = db.collection("logs").doc();
+    batch.set(auditRef, {
       action: "emergency_brake_activated",
       actorId: request.auth.uid,
       actorName: callerName,
       actorRole: "ceo",
-      description: `CEO executed Emergency Brake: revoked tokens for ${adminSnap.size} super admin(s) and wiped all elevation sessions.`,
+      description: `CEO executed Emergency Brake: revoked tokens for ${adminSnap.size} super admin(s) and wiped all elevation sessions. Log ID: ${logId}`,
       metadata: {
         affectedUids: adminSnap.docs.map((d) => d.id),
         elevationsWiped: elevSnap.size,
+        purgeLogId: logId,
+        ipAddress,
       },
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: now,
     });
 
-    logger.warn(`Emergency Brake complete: ${adminSnap.size} admins revoked, ${elevSnap.size} elevations wiped.`);
-    return {revokedCount: adminSnap.size, elevationsWiped: elevSnap.size};
+    await batch.commit();
+
+    logger.warn(`Emergency Brake complete: ${adminSnap.size} admins revoked, ${elevSnap.size} elevations wiped. Log: ${logId}`);
+    return {revokedCount: adminSnap.size, elevationsWiped: elevSnap.size, logId};
   }
 );
 

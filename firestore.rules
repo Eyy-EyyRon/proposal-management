@@ -630,6 +630,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ─── SYSTEM PURGE LOGS (Black Box — Immutable) ───────────
+    // Written exclusively by the revokeAllElevations Cloud Function.
+    // No one — not even the CEO — can update or delete these records.
+    // Read is restricted to the root CEO only.
+    match /system_purge_logs/{logId} {
+      allow create: if isSignedIn() && getUserRole() == "ceo";
+      allow read:   if isSignedIn() && getUserRole() == "ceo";
+      allow update, delete: if false;
+    }
+
     // ─── DENY ALL OTHER PATHS ────────────────────────
     match /{document=**} {
       allow read, write: if false;
