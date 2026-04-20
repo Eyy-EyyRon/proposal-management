@@ -60,17 +60,14 @@ service cloud.firestore {
     function notForcedOut() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       let elevPath = /databases/$(database)/documents/elevations/$(request.auth.uid);
-      // If no forceLogoutTimestamp exists, session is clean
-      if (!exists(userPath) || !get(userPath).data.keys().hasAll(["forceLogoutTimestamp"])) {
-        return true;
-      }
-      let flt = get(userPath).data.forceLogoutTimestamp;
-      // If no elevation doc, check against request time
-      if (!exists(elevPath)) {
-        return flt == null || flt < request.time;
-      }
-      // Elevation must have been requested AFTER the force-logout
-      return get(elevPath).data.requestedAt > flt;
+      // If user doc missing or no forceLogoutTimestamp field, session is clean
+      let hasFlt = exists(userPath) && get(userPath).data.keys().hasAll(["forceLogoutTimestamp"]);
+      let flt = hasFlt ? get(userPath).data.forceLogoutTimestamp : null;
+      // No force-logout ever set — always clean
+      let fltClean = !hasFlt || flt == null || flt < request.time;
+      // If elevation doc exists, it must have been requested AFTER the force-logout
+      let elevOk = !exists(elevPath) || flt == null || get(elevPath).data.requestedAt > flt;
+      return fltClean && elevOk;
     }
 
     // ── JIT ELEVATION GATE — TIERED ─────────────────────────────────────
