@@ -26,9 +26,12 @@ import {
   Building2,
   ClipboardList,
   ClipboardCheck,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
-import { useAuth, useRole, useActingAsCeo, type UserRole } from "@/contexts/auth-context";
+import { useState } from "react";
+import { useAuth, useRole, useActingAsCeo, useElevation, type UserRole } from "@/contexts/auth-context";
+import { JitElevationModal } from "@/components/jit-elevation-modal";
 import { signOut } from "@/lib/auth";
 
 // ─── NAV CONFIG ─────────────────────────────────────────────
@@ -248,6 +251,8 @@ export function Sidebar() {
   const { profile } = useAuth();
   const { role, isCeo, isAtLeast } = useRole();
   const { actingAsCeo } = useActingAsCeo();
+  const { isElevated, elevationCountdown } = useElevation();
+  const [showElevationModal, setShowElevationModal] = useState(false);
 
   // Determine which nav set based on current folder
   const activeRole = detectActiveRole(pathname, role);
@@ -275,6 +280,7 @@ export function Sidebar() {
   };
 
   return (
+    <>
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col ${theme.aside}`}>
       {/* Brand */}
       <div className="flex h-14 shrink-0 items-center gap-2.5 px-5">
@@ -380,6 +386,32 @@ export function Sidebar() {
               Admin Panel
             </Link>
           )}
+
+          {/* JIT Elevation — shown in super_admin sidebar */}
+          {activeRole === "super_admin" && (
+            isElevated ? (
+              <div className="relative flex items-center gap-2.5 rounded-lg border border-orange-300 bg-gradient-to-r from-orange-50 to-amber-50 px-3 py-2.5 shadow-sm ring-1 ring-orange-200">
+                {/* Pulsing dot */}
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-orange-500" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold text-orange-800">Active Admin Mode</p>
+                  <p className="font-mono text-[10px] font-medium text-orange-600">{elevationCountdown} remaining</p>
+                </div>
+                <ShieldCheck className="h-4 w-4 shrink-0 text-orange-500" />
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowElevationModal(true)}
+                className="flex w-full items-center gap-2.5 rounded-lg border border-violet-200/60 bg-violet-50/50 px-2.5 py-2 text-[13px] font-medium text-violet-700 transition hover:bg-violet-100"
+              >
+                <Shield className="h-4 w-4 shrink-0 text-violet-600" />
+                Request Super Admin Power
+              </button>
+            )
+          )}
         </div>
       </nav>
 
@@ -416,5 +448,12 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+
+    {/* JIT Elevation modal — rendered outside aside to avoid z-index clipping */}
+    <JitElevationModal
+      isOpen={showElevationModal}
+      onClose={() => setShowElevationModal(false)}
+    />
+  </>
   );
 }

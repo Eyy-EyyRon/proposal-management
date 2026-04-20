@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Shield, Loader2, ClipboardList } from "lucide-react";
+import { Shield, Loader2, ClipboardList, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { useRole } from "@/contexts/auth-context";
 import { subscribeToAuditLogs, type AuditLogEntry } from "@/lib/firestore";
@@ -19,13 +19,15 @@ const ACTION_COLORS: Record<string, string> = {
   template_updated:   "bg-blue-50 text-blue-700",
   template_versioned: "bg-violet-50 text-violet-700",
   template_trashed:   "bg-rose-50 text-rose-700",
-  user_deactivated:   "bg-rose-50 text-rose-700",
-  user_reactivated:   "bg-emerald-50 text-emerald-700",
-  identity_switched:  "bg-amber-50 text-amber-800",
-  delegation_granted: "bg-violet-50 text-violet-700",
-  delegation_revoked: "bg-rose-50 text-rose-700",
-  staff_reassigned:   "bg-indigo-50 text-indigo-700",
-  status_changed:     "bg-slate-50 text-slate-600",
+  user_deactivated:          "bg-rose-50 text-rose-700",
+  user_reactivated:          "bg-emerald-50 text-emerald-700",
+  identity_switched:         "bg-amber-50 text-amber-800",
+  delegation_granted:        "bg-violet-50 text-violet-700",
+  delegation_revoked:        "bg-rose-50 text-rose-700",
+  staff_reassigned:          "bg-indigo-50 text-indigo-700",
+  status_changed:            "bg-slate-50 text-slate-600",
+  jit_elevation_requested:   "bg-orange-100 text-orange-800",
+  jit_elevation_revoked:     "bg-slate-100 text-slate-600",
 };
 
 function formatTs(ts: unknown): string {
@@ -107,6 +109,7 @@ export default function AuditLogPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.015 }}
                     className={`border-b border-slate-100/60 last:border-0 ${
+                      log.action === "jit_elevation_requested" ? "bg-orange-50/40" :
                       log.actingAsCeo ? "bg-amber-50/30" : ""
                     }`}
                   >
@@ -119,6 +122,16 @@ export default function AuditLogPage() {
                       {log.actingAsCeo && (
                         <span className="mt-0.5 inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">
                           CEO Identity
+                        </span>
+                      )}
+                      {log.action === "jit_elevation_requested" && (
+                        <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-orange-700">
+                          <ShieldAlert className="h-2.5 w-2.5" /> Elevated
+                        </span>
+                      )}
+                      {log.action === "jit_elevation_revoked" && (
+                        <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                          <ShieldCheck className="h-2.5 w-2.5" /> Revoked
                         </span>
                       )}
                     </td>

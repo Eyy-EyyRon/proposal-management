@@ -9,8 +9,9 @@
 
 import {setGlobalOptions} from "firebase-functions";
 import {onDocumentCreated, onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
-import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {initializeApp} from "firebase-admin/app";
 
 initializeApp();
@@ -161,5 +162,121 @@ export const onProposalUpdate = onDocumentUpdated(
 
       return;
     }
+  }
+);
+
+// ─── JIT ELEVATION: onElevationCreate ───────────────────────
+// Fires when a super_admin creates their elevation doc.
+// Notifies the root CEO immediately via in-app notification + logs email hook.
+export const onElevationCreate = onDocumentCreated(
+  "elevations/{uid}",
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+
+    const {uid, actorName, justification, durationMs} = data as {
+      uid: string;
+      actorName: string;
+      justification: string;
+      durationMs: number;
+    };
+
+    const durationMin = Math.round(durationMs / 60000);
+    const durationLabel = durationMin >= 60
+      ? `${Math.round(durationMin / 60)}h`
+      : `${durationMin}m`;
+
+    logger.info(`🔐 JIT Elevation requested by ${actorName} (${uid}) for ${durationLabel}`, {justification});
+
+    // Find the root CEO
+    const ceoSnap = await db.collection("users")
+      .where("isRootCEO", "==", true)
+      .limit(1)
+      .get();
+
+    if (ceoSnap.empty) {
+      logger.warn("No root CEO found — skipping CEO notification for elevation.");
+      return;
+    }
+
+    const ceoDoc = ceoSnap.docs[0];
+    const ceoId = ceoDoc.id;
+
+    // In-app notification to CEO
+    await db.collection("notifications").add({
+      userId: ceoId,
+      type: "jit_elevation",
+      message: `🔐 ${actorName} elevated to Super Admin for ${durationLabel}. Reason: ${justification}`,
+      actorRole: "system",
+      actorName,
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // Audit log
+    await db.collection("logs").add({
+      action: "jit_elevation_requested",
+      actorId: uid,
+      actorName,
+      actorRole: "super_admin",
+      description: `${actorName} activated Super Admin mode for ${durationLabel}. Reason: ${justification}`,
+      metadata: {justification, durationMs},
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // EMAIL HOOK — replace with Resend/SendGrid
+    const ceoEmail = ceoDoc.data().email as string | undefined;
+    logger.info(
+      `📧 [EMAIL HOOK] CEO ${ceoEmail ?? ceoId} should be emailed: ` +
+      `"${actorName} elevated to Super Admin for ${durationLabel}. Reason: ${justification}"`,
+      {uid, ceoId}
+    );
+  }
+);
+
+// ─── JIT ELEVATION: scheduledElevationCleanup ───────────────
+// Runs every minute. Finds elevation docs where expiresAt < now
+// and status == "active", then marks them expired.
+export const scheduledElevationCleanup = onSchedule(
+  {schedule: "every 1 minutes", timeoutSeconds: 60},
+  async () => {
+    const now = Timestamp.now();
+
+    const expired = await db.collection("elevations")
+      .where("status", "==", "active")
+      .where("expiresAt", "<=", now)
+      .get();
+
+    if (expired.empty) {
+      logger.info("scheduledElevationCleanup: no expired elevations found.");
+      return;
+    }
+
+    const batch = db.batch();
+    expired.docs.forEach((snap) => {
+      batch.update(snap.ref, {status: "expired"});
+    });
+    await batch.commit();
+
+    logger.info(
+      `scheduledElevationCleanup: expired ${expired.size} elevation(s).`,
+      {ids: expired.docs.map((d) => d.id)}
+    );
+
+    // Write audit log entries for each auto-revoked elevation
+    await Promise.all(
+      expired.docs.map((snap) => {
+        const d = snap.data() as {actorName?: string};
+        return db.collection("logs").add({
+          action: "jit_elevation_revoked",
+          actorId: snap.id,
+          actorName: d.actorName ?? "Super Admin",
+          actorRole: "super_admin",
+          description: `${d.actorName ?? "Super Admin"} Super Admin elevation auto-expired (timer).`,
+          metadata: {revokedBy: "timer"},
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      })
+    );
   }
 );

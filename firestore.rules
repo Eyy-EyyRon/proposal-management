@@ -153,8 +153,10 @@ service cloud.firestore {
           ||
           // Super Admin: deactivate/reactivate a user (isActive toggle).
           // Requires an active elevation session — Vault Protocol enforced server-side.
+          // Peer-lock: super_admin can only deactivate staff, not other admin/super_admin.
           (
             superAdminCanDestroy()
+            && resource.data.role == "staff"
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["isActive", "deactivatedAt", "reactivatedAt", "updatedAt"])
           )
@@ -172,9 +174,14 @@ service cloud.firestore {
       // ── IMMORTALITY RULE ──────────────────────────────────────────────
       // The root CEO account can never be deleted by anyone.
       // Super Admin delete requires an active elevation session (Vault Protocol).
+      // Peer-lock: super_admin cannot delete other admin/super_admin accounts — CEO only.
       allow delete: if
-        isCeo() && !isRootCeo(userId)
-        || (superAdminCanDestroy() && !isRootCeo(userId));
+        (isCeo() && !isRootCeo(userId))
+        || (
+          superAdminCanDestroy()
+          && !isRootCeo(userId)
+          && resource.data.role == "staff"
+        );
     }
 
     // ─── DEPARTMENTS ────────────────────────────────────────
