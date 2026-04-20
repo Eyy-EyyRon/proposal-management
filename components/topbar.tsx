@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase, ShieldAlert, ToggleLeft, ToggleRight } from "lucide-react";
+import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase, ShieldAlert, ToggleLeft, ToggleRight, Lock } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useAuth, useRole, useActingAsCeo } from "@/contexts/auth-context";
+import { useAuth, useRole, useActingAsCeo, useElevation } from "@/contexts/auth-context";
 import {
   subscribeToNotifications,
   markNotificationRead,
@@ -29,6 +29,7 @@ const iconConfig: Record<NotificationType, { icon: typeof Eye; color: string; bg
   delegated_proposal: { icon: Crown,        color: "text-violet-600",  bg: "bg-violet-50" },
   ceo_comment:      { icon: Crown,          color: "text-purple-600",  bg: "bg-purple-50" },
   staff_action:     { icon: Briefcase,      color: "text-indigo-500",  bg: "bg-indigo-50" },
+  jit_elevation:    { icon: ShieldAlert,    color: "text-rose-600",    bg: "bg-rose-50" },
 };
 
 function timeAgo(ts: { seconds: number } | null | undefined): string {
@@ -47,6 +48,7 @@ export function Topbar({ title }: TopbarProps) {
   const { user, profile } = useAuth();
   const { role } = useRole();
   const { actingAsCeo, toggleActingAsCeo, canActAsCeo } = useActingAsCeo();
+  const { isElevated, elevationExpiresAt, revokeElevation: endElevation, elevationCountdown } = useElevation();
 
   const initials = profile
     ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
@@ -96,6 +98,27 @@ export function Topbar({ title }: TopbarProps) {
 
   return (
     <div>
+      {/* JIT Elevation Active Banner */}
+      {isElevated && (
+        <div className="flex items-center justify-between border-b border-rose-300 bg-gradient-to-r from-rose-500 to-rose-600 px-6 py-1.5">
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-rose-100" />
+            <span className="text-[12px] font-semibold text-white">
+              Elevated Privileges Active
+            </span>
+            <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium text-white">
+              {elevationCountdown} remaining
+            </span>
+          </div>
+          <button
+            onClick={() => endElevation("self")}
+            className="text-[11px] font-semibold text-rose-100 underline-offset-2 hover:underline"
+          >
+            Revoke Now
+          </button>
+        </div>
+      )}
+
       {/* CEO Identity Active Banner */}
       {actingAsCeo && (
         <div className="flex items-center justify-between border-b border-amber-300 bg-gradient-to-r from-amber-400 to-amber-500 px-6 py-1.5">

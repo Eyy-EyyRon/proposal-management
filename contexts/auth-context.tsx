@@ -11,7 +11,14 @@ import {
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { writeAuditLog } from "@/lib/firestore";
+import {
+  writeAuditLog,
+  subscribeToElevation,
+  revokeElevation as firestoreRevokeElevation,
+  requestElevation as firestoreRequestElevation,
+  notifyCeoOfElevation,
+  type JitElevation,
+} from "@/lib/firestore";
 
 // ─── TYPES ───────────────────────────────────────────────────
 export type UserRole = "staff" | "admin" | "super_admin" | "ceo";
@@ -32,7 +39,9 @@ export interface UserProfile {
   lastName: string;
   companyName: string | null;
   role: UserRole;
-  department: string | null;
+  department: string | null;   // Department name (human-readable)
+  departmentId?: string | null; // Firestore dept doc ID (stable foreign key)
+  isDeptAdmin?: boolean;       // true when role=="admin" for explicit querying
   avatarUrl?: string;
   jobTitle?: string;
   fullPower?: boolean;         // true if CEO granted this admin full authority
@@ -56,6 +65,15 @@ interface ActingAsCeoContextValue {
   canActAsCeo: boolean;   // true for CEO or fullPower Admin
 }
 
+interface ElevationContextValue {
+  isElevated: boolean;                   // true when active elevation exists
+  elevation: JitElevation | null;        // full elevation record
+  elevationExpiresAt: Date | null;       // parsed JS Date
+  elevationCountdown: string;            // human-readable "1h 23m 45s"
+  requestElevation: (params: { justification: string; durationMs: number; durationLabel: string }) => Promise<void>;
+  revokeElevation: (revokedBy?: string) => Promise<void>;
+}
+
 // ─── CONTEXTS ────────────────────────────────────────────────
 const AuthContext = createContext<AuthContextValue>({
   user: null,
@@ -71,12 +89,29 @@ const ActingAsCeoContext = createContext<ActingAsCeoContextValue>({
   canActAsCeo: false,
 });
 
+const ElevationContext = createContext<ElevationContextValue>({
+  isElevated: false,
+  elevation: null,
+  elevationExpiresAt: null,
+  elevationCountdown: "",
+  requestElevation: async () => {},
+  revokeElevation: async () => {},
+});
+
 export function useAuth() {
   return useContext(AuthContext);
 }
 
 export function useActingAsCeo() {
   return useContext(ActingAsCeoContext);
+}
+
+export function useElevation() {
+  return useContext(ElevationContext);
+}
+
+export function useIsElevated() {
+  return useContext(ElevationContext).isElevated;
 }
 
 export function useRole() {
@@ -95,6 +130,17 @@ export function useRole() {
   };
 }
 
+// ─── COUNTDOWN FORMATTER ─────────────────────────────────────
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return "0s";
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 // ─── PROVIDER ────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -102,6 +148,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [actingAsCeo, setActingAsCeo] = useState(false);
   const [ceoId, setCeoId] = useState<string | null>(null);
+  // ── JIT Elevation state ──
+  const [elevation, setElevation] = useState<JitElevation | null>(null);
+  const [elevationCountdown, setElevationCountdown] = useState("");
 
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
@@ -122,13 +171,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           (snap) => {
             if (snap.exists()) {
               const data = snap.data();
+              const role = (data.role as UserRole) ?? "staff";
               const newProfile: UserProfile = {
                 email: data.email ?? "",
                 firstName: data.firstName ?? "",
                 lastName: data.lastName ?? "",
                 companyName: data.companyName ?? null,
-                role: (data.role as UserRole) ?? "staff",
+                role,
                 department: data.department ?? null,
+                departmentId: data.departmentId ?? null,
+                isDeptAdmin: data.isDeptAdmin ?? (role === "admin"),
                 avatarUrl: data.avatarUrl ?? undefined,
                 jobTitle: data.jobTitle ?? undefined,
                 fullPower: data.fullPower ?? false,
@@ -214,6 +266,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, [user, profile, actingAsCeo, canActAsCeo]);
 
+  // ── JIT Elevation subscription + auto-revoke timer ──────────
+  useEffect(() => {
+    if (!user || profile?.role !== "super_admin") {
+      setElevation(null);
+      return;
+    }
+    const unsub = subscribeToElevation(user.uid, setElevation);
+    return unsub;
+  }, [user, profile?.role]);
+
+  // Client-side countdown + auto-revoke
+  useEffect(() => {
+    if (!elevation || elevation.status !== "active") {
+      setElevationCountdown("");
+      return;
+    }
+    const expiresAt = (elevation.expiresAt as unknown as { toDate?: () => Date })?.toDate?.();
+    if (!expiresAt) return;
+
+    const tick = () => {
+      const remaining = expiresAt.getTime() - Date.now();
+      if (remaining <= 0) {
+        setElevationCountdown("0s");
+        // Auto-revoke
+        if (user) {
+          const name = profile ? `${profile.firstName} ${profile.lastName}` : "Super Admin";
+          firestoreRevokeElevation(user.uid, name, "timer").catch(console.error);
+        }
+        return;
+      }
+      setElevationCountdown(formatCountdown(remaining));
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [elevation, user, profile]);
+
+  const handleRequestElevation = useCallback(async ({
+    justification,
+    durationMs,
+    durationLabel,
+  }: { justification: string; durationMs: number; durationLabel: string }) => {
+    if (!user || !profile) return;
+    const actorName = `${profile.firstName} ${profile.lastName}`;
+    await firestoreRequestElevation({ uid: user.uid, actorName, justification, durationMs });
+    // Notify CEO (find root CEO by isRootCEO flag)
+    try {
+      const { getDocs: gd, collection: col, query: q, where: w } = await import("firebase/firestore");
+      const ceoSnaps = await gd(q(col(db, "users"), w("isRootCEO", "==", true)));
+      if (!ceoSnaps.empty) {
+        const ceoUid = ceoSnaps.docs[0].id;
+        await notifyCeoOfElevation({ ceoId: ceoUid, actorName, justification, durationLabel });
+      }
+    } catch { /* non-critical */ }
+  }, [user, profile]);
+
+  const handleRevokeElevation = useCallback(async (revokedBy = "self") => {
+    if (!user || !profile) return;
+    const actorName = `${profile.firstName} ${profile.lastName}`;
+    await firestoreRevokeElevation(user.uid, actorName, revokedBy);
+  }, [user, profile]);
+
+  const elevationExpiresAt = (() => {
+    if (!elevation || elevation.status !== "active") return null;
+    return (elevation.expiresAt as unknown as { toDate?: () => Date })?.toDate?.() ?? null;
+  })();
+
   const authValue: AuthContextValue = {
     user,
     profile,
@@ -228,10 +347,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     canActAsCeo,
   };
 
+  const elevationValue: ElevationContextValue = {
+    isElevated: elevation?.status === "active" && !!elevationExpiresAt && elevationExpiresAt > new Date(),
+    elevation,
+    elevationExpiresAt,
+    elevationCountdown,
+    requestElevation: handleRequestElevation,
+    revokeElevation: handleRevokeElevation,
+  };
+
   return (
     <AuthContext.Provider value={authValue}>
       <ActingAsCeoContext.Provider value={actingValue}>
-        {children}
+        <ElevationContext.Provider value={elevationValue}>
+          {children}
+        </ElevationContext.Provider>
       </ActingAsCeoContext.Provider>
     </AuthContext.Provider>
   );

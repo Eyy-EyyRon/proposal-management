@@ -4,8 +4,9 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Users, Plus, Search, MoreHorizontal, Building2, X, Check, ChevronDown, 
-  Filter, Crown, Shield, User, Loader2, AlertCircle 
+  Filter, Crown, Shield, User, Loader2, AlertCircle, Lock 
 } from "lucide-react";
+import { useIsElevated } from "@/contexts/auth-context";
 import {
   subscribeToAllUsers,
   subscribeToDepartmentsList,
@@ -44,6 +45,7 @@ const ROLE_BADGES: Record<UserRole, { label: string; className: string; icon: ty
 
 export default function TeamManagementPage() {
   const router = useRouter();
+  const isElevated = useIsElevated();
   
   // Data states
   const [users, setUsers] = useState<TeamMember[]>([]);
@@ -142,6 +144,10 @@ export default function TeamManagementPage() {
   
   // Deactivate user with orphan guard
   const handleDeactivate = async (member: TeamMember) => {
+    if (!isElevated) {
+      alert("Elevation required. Go to Settings → Security to request temporary elevated access.");
+      return;
+    }
     if (!confirm(`Deactivate ${member.firstName} ${member.lastName}? They will lose all access.`)) return;
     setDeactivating(member.id);
     try {
@@ -360,13 +366,19 @@ export default function TeamManagementPage() {
                         <button
                           onClick={() => handleDeactivate(member)}
                           disabled={deactivating === member.id}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[12px] font-medium text-rose-600 transition hover:bg-rose-100 active:scale-95 disabled:opacity-50"
-                          title="Deactivate user (blocked if active proposals exist)"
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition active:scale-95 disabled:opacity-50 ${
+                            isElevated
+                              ? "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100"
+                              : "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+                          }`}
+                          title={isElevated ? "Deactivate user" : "Requires elevation — go to Settings → Security"}
                         >
                           {deactivating === member.id ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
+                          ) : isElevated ? (
                             <X className="h-3.5 w-3.5" />
+                          ) : (
+                            <Lock className="h-3.5 w-3.5" />
                           )}
                           Deactivate
                         </button>

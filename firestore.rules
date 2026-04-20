@@ -53,6 +53,25 @@ service cloud.firestore {
       return getUserDept() != null && deptField == getUserDept();
     }
 
+    // ── JIT ELEVATION GATE ─────────────────────────────────────────────
+    // Returns true if the calling super_admin has an unexpired, active elevation
+    // record in /elevations/{uid}. Evaluated entirely server-side — the client
+    // cannot fake this by passing a flag in the request.
+    function hasActiveElevation() {
+      let elev = /databases/$(database)/documents/elevations/$(request.auth.uid);
+      return exists(elev)
+        && get(elev).data.status == "active"
+        && get(elev).data.expiresAt > request.time;
+    }
+
+    // ── DESTRUCTIVE ACTION GATE ───────────────────────────────────────────
+    // A super_admin can perform a destructive action only when both conditions
+    // are true simultaneously: (1) they ARE a super_admin AND (2) they hold an
+    // unexpired elevation session right now.
+    function superAdminCanDestroy() {
+      return getUserRole() == "super_admin" && hasActiveElevation();
+    }
+
     // ABAC: check if user's dept is in the document's sharedWith array
     function isSharedWithUser() {
       return getUserDept() != null
@@ -121,6 +140,14 @@ service cloud.firestore {
                 .hasOnly(["departments", "department", "updatedAt"])
           )
           ||
+          // Super Admin: deactivate/reactivate a user (isActive toggle).
+          // Requires an active elevation session — Vault Protocol enforced server-side.
+          (
+            superAdminCanDestroy()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["isActive", "deactivatedAt", "reactivatedAt", "updatedAt"])
+          )
+          ||
           // CEO: can write delegation authority fields on any non-CEO user
           // (covers updateExecutiveAdminSettings — fullPower, delegatedCeoId, isExecutiveAdmin)
           (
@@ -133,7 +160,10 @@ service cloud.firestore {
 
       // ── IMMORTALITY RULE ──────────────────────────────────────────────
       // The root CEO account can never be deleted by anyone.
-      allow delete: if isSuperAdmin() && !isRootCeo(userId);
+      // Super Admin delete requires an active elevation session (Vault Protocol).
+      allow delete: if
+        isCeo() && !isRootCeo(userId)
+        || (superAdminCanDestroy() && !isRootCeo(userId));
     }
 
     // ─── DEPARTMENTS ────────────────────────────────────────
@@ -209,13 +239,15 @@ service cloud.firestore {
           || isSameDept(request.resource.data.department)
         );
 
-      // Delete: owner/sender always; others only if privacy gate passes
+      // Delete: owner/sender always; CEO unrestricted; super_admin only with active elevation
       allow delete: if isSignedIn()
         && passesPrivacyGate()
         && (
           resource.data.ownerId == request.auth.uid
           || resource.data.sentById == request.auth.uid
-          || isAdminOrCeo()
+          || isCeo()
+          || (getUserRole() == "super_admin" && hasActiveElevation())
+          || isAdmin()
         );
 
       // Update: Allow if owner, sender, or Admin/CEO
@@ -459,6 +491,44 @@ service cloud.firestore {
             && request.resource.data.status == "verifying"
           )
         );
+
+      allow delete: if false;
+    }
+
+    // ─── JIT ELEVATIONS ──────────────────────────────
+    // /elevations/{uid} — one doc per super_admin, keyed by their UID.
+    match /elevations/{uid} {
+
+      // Super Admin can read their own elevation record
+      allow get: if isOwner(uid) || isCeo();
+
+      // CEO can list all elevation records (for audit/monitoring)
+      allow list: if isCeo();
+
+      // Super Admin can create their own elevation (request elevation).
+      // Optional fields: metadata (device/IP), reason (alias for justification).
+      allow create: if
+        isSignedIn()
+        && request.auth.uid == uid
+        && getUserRole() == "super_admin"
+        && request.resource.data.status == "active"
+        && request.resource.data.uid == uid
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.keys().hasOnly([
+             "uid", "actorName", "justification", "durationMs",
+             "requestedAt", "expiresAt", "status", "metadata"
+           ]);
+
+      // Super Admin (self) or CEO can mark the record as expired (revoke).
+      // Status transition is one-way only: active → expired.
+      allow update: if
+        isSignedIn()
+        && (request.auth.uid == uid || isCeo())
+        // Can only flip status active → expired; no re-activating via update
+        && resource.data.status == "active"
+        && request.resource.data.status == "expired"
+        // All other fields are immutable after creation
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"]);
 
       allow delete: if false;
     }

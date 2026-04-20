@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Bell, Eye, CheckCircle, XCircle, Check, Loader2,
-  Users, LayoutTemplate, Trophy, Info, MessageCircle, Crown, UserCheck,
+  Users, LayoutTemplate, Trophy, Info, MessageCircle, Crown, UserCheck, ShieldAlert,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Topbar } from "@/components/topbar";
@@ -30,6 +30,7 @@ const iconConfig: Record<NotificationType, { icon: typeof Eye; color: string; bg
   template_updated:   { icon: LayoutTemplate, color: "text-amber-500",   bg: "bg-amber-50" },
   major_deal:         { icon: Trophy,         color: "text-amber-600",   bg: "bg-amber-50" },
   system:             { icon: Info,           color: "text-slate-500",   bg: "bg-slate-50" },
+  jit_elevation:      { icon: ShieldAlert,    color: "text-rose-600",    bg: "bg-rose-50" },
 };
 
 function timeAgo(ts: { seconds: number } | null | undefined): string {

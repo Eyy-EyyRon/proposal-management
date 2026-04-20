@@ -9,18 +9,26 @@ import {
   Save,
   Loader2,
   User,
+  Lock,
+  ShieldAlert,
+  Clock,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import {
   updateUserProfile,
   type UpdateProfileData,
 } from "@/lib/firestore";
 import { uploadAvatar } from "@/lib/storage";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, useElevation } from "@/contexts/auth-context";
 import { toast } from "sonner";
+import { JitElevationModal } from "@/components/jit-elevation-modal";
 
 export default function SettingsPage() {
   const { user, profile } = useAuth();
+  const { isElevated, elevation, elevationCountdown, revokeElevation } = useElevation();
   const [activeTab, setActiveTab] = useState<"profile" | "general" | "notifications" | "security" | "appearance">("profile");
+  const [showElevationModal, setShowElevationModal] = useState(false);
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col space-y-8 px-8 pb-10 pt-12 lg:px-10">
@@ -186,50 +194,94 @@ export default function SettingsPage() {
           {activeTab === "security" && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
-                  Security Settings
-                </h3>
+                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Vault Protocol</h3>
                 <p className="mt-2 text-[13px] text-slate-500">
-                  Manage your security preferences
+                  Just-In-Time elevation grants temporary destructive access for a defined window.
+                  The CEO is notified immediately and every action is audit-logged.
                 </p>
               </div>
 
-              <div className="space-y-4">
-                <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
-                  <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-                    Current Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Enter current password"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
-                  />
-                </div>
+              {/* Current elevation status */}
+              {isElevated ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100">
+                      <Lock className="h-4 w-4 text-rose-600" />
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-semibold text-rose-900">Elevated Privileges Active</p>
+                      <p className="text-[12px] text-rose-600">Destructive actions unlocked</p>
+                    </div>
+                    <span className="ml-auto flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-[12px] font-bold text-rose-700 ring-1 ring-rose-200">
+                      <Clock className="h-3 w-3" />
+                      {elevationCountdown} remaining
+                    </span>
+                  </div>
 
-                <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
-                  <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Enter new password"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
-                  />
-                </div>
+                  {elevation?.justification && (
+                    <div className="mb-4 rounded-xl border border-rose-200/60 bg-white/70 px-4 py-3">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-rose-500">Justification</p>
+                      <p className="mt-0.5 text-[13px] text-slate-700">{elevation.justification}</p>
+                    </div>
+                  )}
 
-                <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
-                  <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-                    Confirm New Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Confirm new password"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-[13px] outline-none shadow-[inset_0_1px_3px_rgba(15,23,42,0.08)] transition focus:border-[#800020] focus:bg-white focus:ring-2 focus:ring-[#800020]/20"
-                  />
+                  <button
+                    onClick={() => revokeElevation("self")}
+                    className="flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-[13px] font-medium text-rose-700 transition hover:bg-rose-50"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    Revoke Now
+                  </button>
                 </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100">
+                      <ShieldAlert className="h-4 w-4 text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-semibold text-slate-800">No Active Elevation</p>
+                      <p className="text-[12px] text-slate-500">Destructive actions are currently locked</p>
+                    </div>
+                    <span className="ml-auto flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
+                      <CheckCircle className="h-3 w-3 text-emerald-500" />
+                      Secured
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowElevationModal(true)}
+                    className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-rose-700 active:scale-95"
+                  >
+                    <Lock className="h-4 w-4" />
+                    Request Elevation
+                  </button>
+                </div>
+              )}
+
+              {/* What gets unlocked */}
+              <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+                <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Locked without elevation</p>
+                <ul className="space-y-1.5">
+                  {[
+                    "Deactivate / reactivate user accounts",
+                    "Delete users permanently",
+                    "Modify global organization settings",
+                    "Reassign active proposals across departments",
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-[12px] text-slate-600">
+                      <Lock className="h-3 w-3 shrink-0 text-slate-400" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}
+
+          <JitElevationModal
+            isOpen={showElevationModal}
+            onClose={() => setShowElevationModal(false)}
+          />
 
           {activeTab === "appearance" && (
             <div className="space-y-6">

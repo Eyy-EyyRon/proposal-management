@@ -1840,7 +1840,9 @@ export type AuditAction =
   | "proposal_privacy_changed"
   | "proposal_sharing_updated"
   | "template_published"
-  | "template_unpublished";
+  | "template_unpublished"
+  | "jit_elevation_requested"
+  | "jit_elevation_revoked";
 
 export interface AuditLogEntry {
   id?: string;
@@ -1855,6 +1857,135 @@ export interface AuditLogEntry {
   department?: string;
   actingAsCeo?: boolean;   // true if Executive Admin acting on CEO's behalf
   createdAt: unknown;
+}
+
+// ─── JIT ELEVATION ──────────────────────────────────────────
+// Stored at /elevations/{uid} — one active record per user.
+
+export interface JitElevation {
+  uid: string;          // The super_admin who elevated
+  actorName: string;
+  justification: string;
+  durationMs: number;   // e.g. 30 * 60 * 1000
+  requestedAt: Timestamp;
+  expiresAt: Timestamp; // requestedAt + durationMs
+  status: "active" | "expired";
+  metadata?: {          // Browser context captured at request time
+    userAgent?: string;
+    platform?: string;
+    language?: string;
+  };
+}
+
+export const JIT_DURATIONS = [
+  { label: "30 minutes", ms: 30 * 60 * 1000 },
+  { label: "1 hour",    ms: 60 * 60 * 1000 },
+  { label: "2 hours",   ms: 2  * 60 * 60 * 1000 },
+  { label: "4 hours",   ms: 4  * 60 * 60 * 1000 },
+] as const;
+
+export async function requestElevation({
+  uid,
+  actorName,
+  justification,
+  durationMs,
+}: {
+  uid: string;
+  actorName: string;
+  justification: string;
+  durationMs: number;
+}): Promise<void> {
+  const now = Date.now();
+  const expiresAt = new Date(now + durationMs);
+
+  // Collect browser metadata for audit trail
+  const metadata: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    metadata.userAgent = navigator.userAgent;
+    metadata.platform  = navigator.platform ?? "unknown";
+    metadata.language  = navigator.language ?? "unknown";
+  }
+
+  await setDoc(doc(db, "elevations", uid), {
+    uid,
+    actorName,
+    justification,
+    durationMs,
+    requestedAt: serverTimestamp(),
+    expiresAt,
+    status: "active",
+    metadata,
+  });
+
+  await writeAuditLog({
+    action: "jit_elevation_requested",
+    actorId: uid,
+    actorName,
+    actorRole: "super_admin",
+    description: `${actorName} requested Super Admin elevation for ${Math.round(durationMs / 60000)} min. Reason: ${justification}`,
+    metadata: { justification, durationMs, expiresAt: expiresAt.toISOString() },
+  });
+}
+
+export async function revokeElevation(
+  uid: string,
+  actorName: string,
+  revokedBy: "self" | "timer" | string = "timer"
+): Promise<void> {
+  await updateDoc(doc(db, "elevations", uid), {
+    status: "expired",
+  });
+
+  await writeAuditLog({
+    action: "jit_elevation_revoked",
+    actorId: uid,
+    actorName,
+    actorRole: "super_admin",
+    description: `${actorName} Super Admin elevation revoked (by: ${revokedBy}).`,
+    metadata: { revokedBy },
+  });
+}
+
+export function subscribeToElevation(
+  uid: string,
+  callback: (elevation: JitElevation | null) => void
+): () => void {
+  return onSnapshot(
+    doc(db, "elevations", uid),
+    (snap) => {
+      if (!snap.exists()) { callback(null); return; }
+      const data = snap.data() as JitElevation;
+      // Expire server-side if past expiresAt
+      const expiresAt = (data.expiresAt as unknown as { toDate?: () => Date })?.toDate?.();
+      if (expiresAt && expiresAt < new Date() && data.status === "active") {
+        callback({ ...data, status: "expired" });
+      } else {
+        callback(data);
+      }
+    },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+export async function notifyCeoOfElevation({
+  ceoId,
+  actorName,
+  justification,
+  durationLabel,
+}: {
+  ceoId: string;
+  actorName: string;
+  justification: string;
+  durationLabel: string;
+}): Promise<void> {
+  const { createInAppNotification } = await import("./notifications");
+  await createInAppNotification({
+    userId: ceoId,
+    type: "jit_elevation",
+    message: `🔐 ${actorName} elevated to Super Admin for ${durationLabel}. Reason: ${justification}`,
+    actorRole: "system",
+    actorName,
+  });
 }
 
 export async function writeAuditLog(

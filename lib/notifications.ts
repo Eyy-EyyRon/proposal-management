@@ -29,7 +29,8 @@ export type NotificationType =
   | "system"
   | "delegated_proposal"  // Staff sent proposal on CEO's behalf
   | "ceo_comment"        // CEO commented on proposal
-  | "staff_action";      // Staff performed an action
+  | "staff_action"       // Staff performed an action
+  | "jit_elevation";     // Super Admin requested JIT elevation
 
 export interface AppNotification {
   id: string;
@@ -48,9 +49,10 @@ export interface AppNotification {
 // ─── NOTIFICATION TYPES PER ROLE ────────────────────────────
 // All roles now see actions from client, CEO, and staff
 const ROLE_NOTIFICATION_TYPES: Record<string, NotificationType[]> = {
-  staff:  ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "delegated_proposal", "team_joined", "template_updated"],
-  admin:  ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "delegated_proposal", "team_joined", "template_updated"],
-  ceo:    ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "team_joined", "template_updated", "major_deal", "system", "delegated_proposal"],
+  staff:       ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "delegated_proposal", "team_joined", "template_updated"],
+  admin:       ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "delegated_proposal", "team_joined", "template_updated"],
+  super_admin: ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "delegated_proposal", "team_joined", "template_updated", "system"],
+  ceo:         ["viewed", "signed", "rejected", "commented", "ceo_comment", "staff_action", "team_joined", "template_updated", "major_deal", "system", "delegated_proposal", "jit_elevation"],
 };
 
 // ─── REAL-TIME LISTENER ──────────────────────────────────────
