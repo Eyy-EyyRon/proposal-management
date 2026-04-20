@@ -86,9 +86,9 @@ export function TaskCard({ task, actions }: TaskCardProps) {
       </div>
 
       {/* Verification note */}
-      {task.verificationNote && task.status === "changes_requested" && (
+      {task.verificationNote && task.status === "revision_requested" && (
         <div className="mb-3 rounded-lg border border-amber-200/60 bg-amber-50/50 px-3 py-2 text-[12px] text-amber-700">
-          <span className="font-semibold">Changes needed:</span> {task.verificationNote}
+          <span className="font-semibold">Revision needed:</span> {task.verificationNote}
         </div>
       )}
 

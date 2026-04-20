@@ -16,8 +16,7 @@ import {
 import { toast } from "@/components/providers/toast";
 import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
 import {
-  Send, Plus, Loader2, Inbox, ChevronDown, ChevronRight,
-  Filter, Eye, XCircle,
+  Send, Plus, Loader2, Inbox, Eye, XCircle,
 } from "lucide-react";
 
 type ViewFilter = "ready" | "in_progress" | "all";
@@ -31,7 +30,6 @@ export default function CeoTasksPage() {
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [viewFilter, setViewFilter] = useState<ViewFilter>("ready");
-  const [showInProgress, setShowInProgress] = useState(false);
   const { confirm, modalProps } = useConfirmModal();
 
   useEffect(() => {
