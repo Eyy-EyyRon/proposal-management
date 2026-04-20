@@ -5,12 +5,11 @@ import { Topbar } from "@/components/topbar";
 import { TaskCard } from "@/components/task-card";
 import { AssignTaskModal } from "@/components/assign-task-modal";
 import { VerifyTaskModal } from "@/components/verify-task-modal";
-import { SlaCountdown } from "@/components/sla-countdown";
-import { UrgencyBadge } from "@/components/urgency-badge";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import {
   subscribeToAdminTasks,
   subscribeToDeptAdminTasks,
+  subscribeToDeptScopedTasks,
   subscribeToStaffTasks,
   subscribeToVerificationQueue,
   submitTaskForReview,
@@ -19,7 +18,7 @@ import {
 import { toast } from "@/components/providers/toast";
 import {
   Loader2, Inbox, UserPlus, CheckCircle, Send, AlertTriangle,
-  ShieldCheck, Clock, RefreshCw, Pin,
+  ShieldCheck, Clock, RefreshCw, Pin, Building2,
 } from "lucide-react";
 
 function toDueMs(dueAt: unknown): number {
@@ -52,6 +51,9 @@ export default function TasksPage() {
     const uid = user.uid;
 
     if (isAdmin) {
+      const dept = profile?.department ?? "";
+
+      // Tasks where this admin is the top-level handler (CEO assigned to them)
       const unsub1 = subscribeToAdminTasks(uid, (adminTasks) => {
         setTasks((prev) => {
           const ids = new Set(adminTasks.map((t) => t.id));
@@ -59,17 +61,29 @@ export default function TasksPage() {
         });
         setLoading(false);
       });
-      const unsub2 = subscribeToDeptAdminTasks(uid, (deptTasks) => {
-        setTasks((prev) => {
-          const deptIds = new Set(deptTasks.map((t) => t.id));
-          return [...prev.filter((t) => !deptIds.has(t.id)), ...deptTasks].sort(
-            (a, b) => toDueMs(a.dueAt) - toDueMs(b.dueAt)
-          );
-        });
-        setLoading(false);
-      });
+
+      // Tasks where this admin is the dept admin handler
+      const unsub2 = dept
+        ? subscribeToDeptScopedTasks(uid, dept, (deptTasks) => {
+            setTasks((prev) => {
+              const deptIds = new Set(deptTasks.map((t) => t.id));
+              return [...prev.filter((t) => !deptIds.has(t.id)), ...deptTasks].sort(
+                (a, b) => toDueMs(a.dueAt) - toDueMs(b.dueAt)
+              );
+            });
+            setLoading(false);
+          })
+        : subscribeToDeptAdminTasks(uid, (deptTasks) => {
+            setTasks((prev) => {
+              const deptIds = new Set(deptTasks.map((t) => t.id));
+              return [...prev.filter((t) => !deptIds.has(t.id)), ...deptTasks].sort(
+                (a, b) => toDueMs(a.dueAt) - toDueMs(b.dueAt)
+              );
+            });
+            setLoading(false);
+          });
+
       // Dept-scoped verification queue
-      const dept = profile?.department ?? "";
       const unsub3 = subscribeToVerificationQueue(uid, dept, (q) => {
         setVerificationQueue(q);
       });
@@ -211,23 +225,35 @@ export default function TasksPage() {
 
       <div className="flex flex-1 flex-col gap-6 p-6">
         {/* Page header */}
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              {isAdmin ? "Task Board — Command & Control" : "My Assigned Tasks"}
-            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {isAdmin ? "Task Board" : "My Tasks"}
+              </h2>
+              {isAdmin && profile?.department && (
+                <span className="flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                  <Building2 className="h-3 w-3" />
+                  {profile.department} Dept
+                </span>
+              )}
+            </div>
             <p className="mt-0.5 text-[13px] text-slate-500">
               {isAdmin
-                ? "Route, verify, and escalate delegated proposals. CEO never sees unverified work."
+                ? profile?.department
+                  ? `You see tasks scoped to your department (${profile.department}). Route, verify, and escalate.`
+                  : "Route, verify, and escalate delegated proposals. CEO never sees unverified work."
                 : "Build drafts and submit for admin review. You cannot send directly to clients on tasked proposals."}
             </p>
           </div>
-          {isAdmin && verificationQueue.length > 0 && (
-            <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-[12px] font-bold text-emerald-700 ring-1 ring-emerald-200">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              {verificationQueue.length} pending verification
-            </span>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {isAdmin && verificationQueue.length > 0 && (
+              <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-[12px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {verificationQueue.length} pending verification
+              </span>
+            )}
+          </div>
         </div>
 
         {loading ? (

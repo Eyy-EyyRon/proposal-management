@@ -241,6 +241,18 @@ export interface Proposal {
   verifyingAdminId?: string | null;   // The DA who owns this verification
   verifyingAdminName?: string | null;
   revisionNote?: string | null;       // Admin's feedback when status = revision_requested
+  // Immutable Document Seal (Post-Signature)
+  contentHash?: string | null;        // SHA-256 of document content at signing time
+  signerIp?: string | null;           // Signer's IP address
+  transactionId?: string | null;      // Unique TX ID = SHA-256 of (proposalId + signedAt + signerIp)
+  auditSeal?: {
+    transactionId: string;
+    contentHash: string;
+    signerIp: string;
+    signedAtUtc: string;
+    signerName: string;
+  } | null;
+  signedPdfUrl?: string | null;       // URL to the frozen PDF in Firebase Storage
 }
 
 // ─── SEARCH KEYWORDS BUILDER ─────────────────────────────────
@@ -854,7 +866,14 @@ export async function markProposalViewed(proposalId: string): Promise<void> {
 export async function acceptProposal(
   proposalId: string,
   signatureType: "draw" | "upload",
-  signatureUrl: string
+  signatureUrl: string,
+  auditData?: {
+    contentHash: string;
+    signerIp: string;
+    transactionId: string;
+    signedAtUtc: string;
+    signerName: string;
+  }
 ): Promise<void> {
   // Guard: only sent/viewed proposals can be accepted (signature zombie prevention)
   const snap = await getDoc(doc(db, "proposals", proposalId));
@@ -869,8 +888,27 @@ export async function acceptProposal(
     signatureUrl,
     signedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    ...(auditData ? {
+      contentHash: auditData.contentHash,
+      signerIp: auditData.signerIp,
+      transactionId: auditData.transactionId,
+      auditSeal: {
+        transactionId: auditData.transactionId,
+        contentHash: auditData.contentHash,
+        signerIp: auditData.signerIp,
+        signedAtUtc: auditData.signedAtUtc,
+        signerName: auditData.signerName,
+      },
+    } : {}),
   });
   incrementGlobalStats("totalAccepted").catch(() => {});
+}
+
+export async function updateProposalSignedPdf(
+  proposalId: string,
+  signedPdfUrl: string
+): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), { signedPdfUrl, updatedAt: serverTimestamp() });
 }
 
 // ─── STATS SHARDING (Summary Document) ──────────────────────
@@ -2689,5 +2727,145 @@ export function subscribeToTask(
 ): () => void {
   return onSnapshot(doc(db, "tasks", taskId), (snap) => {
     callback(snap.exists() ? ({ id: snap.id, ...snap.data() } as ProposalTask) : null);
+  });
+}
+
+// ─── UPDATE URGENCY (CEO / Admin / Staff) ────────────────────
+// Any actor in the chain can escalate or de-escalate urgency at any time.
+
+export async function updateTaskUrgency(
+  taskId: string,
+  actorId: string,
+  actorName: string,
+  newUrgency: UrgencyLevel
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const history = (task.history || []) as TaskHistoryEntry[];
+  const oldUrgency = task.urgency as UrgencyLevel;
+  if (oldUrgency === newUrgency) return;
+
+  // Recompute dueAt: shift from now by the new SLA window
+  const newDueAt = new Date(Date.now() + URGENCY_SLA[newUrgency]);
+
+  await updateDoc(doc(db, "tasks", taskId), {
+    urgency: newUrgency,
+    dueAt: newDueAt,
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "urgency_changed",
+      by: actorId,
+      byName: actorName,
+      note: `Urgency changed from ${oldUrgency.toUpperCase()} → ${newUrgency.toUpperCase()}`,
+      at: new Date().toISOString(),
+    }],
+  });
+
+  // Notify the CEO if escalated to P1
+  if (newUrgency === "p1") {
+    const ceoId = task.requesterId as string;
+    if (ceoId && ceoId !== actorId) {
+      fireTaskNotification({
+        taskId,
+        event: "urgency_escalated_p1",
+        targetUserId: ceoId,
+        clientName: task.clientName as string,
+        urgency: newUrgency,
+        senderName: actorName,
+      });
+    }
+  }
+}
+
+// ─── CEO PUSH-BACK (after client revision request) ───────────
+// When a proposal is in "sent" state and the client has pushed back or
+// requested revisions, the CEO routes the task back to staff for rework.
+// Status: sent → revision_requested (reopens the drafting loop).
+
+export async function ceoRequestRevision(
+  taskId: string,
+  ceoId: string,
+  ceoName: string,
+  note: string
+): Promise<void> {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  if (task.status !== "sent" && task.status !== "ready_to_send") {
+    throw new Error(`Cannot push back a task with status "${task.status}"`);
+  }
+  const history = (task.history || []) as TaskHistoryEntry[];
+
+  await updateDoc(doc(db, "tasks", taskId), {
+    status: "revision_requested",
+    verificationNote: note,
+    updatedAt: serverTimestamp(),
+    history: [...history, {
+      action: "ceo_revision_requested",
+      by: ceoId,
+      byName: ceoName,
+      note,
+      at: new Date().toISOString(),
+    }],
+  });
+
+  // Notify staff assignee
+  const staffId = task.assigneeId as string;
+  if (staffId) {
+    fireTaskNotification({
+      taskId,
+      event: "task_changes_requested",
+      targetUserId: staffId,
+      clientName: task.clientName as string,
+      urgency: task.urgency as string,
+      senderName: ceoName,
+    });
+  }
+  // Also notify the dept admin
+  const deptAdminId = (task.deptAdminId || task.adminId) as string;
+  if (deptAdminId && deptAdminId !== staffId) {
+    fireTaskNotification({
+      taskId,
+      event: "task_changes_requested",
+      targetUserId: deptAdminId,
+      clientName: task.clientName as string,
+      urgency: task.urgency as string,
+      senderName: ceoName,
+    });
+  }
+}
+
+// ─── CEO: sent tasks (for push-back UI) ──────────────────────
+export function subscribeToSentTasksForCeo(
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("status", "==", "sent"),
+    orderBy("updatedAt", "desc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  });
+}
+
+// ─── DEPT ADMIN: dept-scoped subscription (all active tasks) ─
+// Shows admins ONLY their department's tasks so they are not
+// overwhelmed with cross-department noise.
+export function subscribeToDeptScopedTasks(
+  deptAdminId: string,
+  department: string,
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("deptAdminId", "==", deptAdminId),
+    where("department", "==", department),
+    where("status", "in", ["drafting", "verifying", "revision_requested", "changes_requested"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
   });
 }

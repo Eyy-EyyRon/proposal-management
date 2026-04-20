@@ -50,6 +50,18 @@ export async function uploadSignatureImage(
   return uploadFile(file, path);
 }
 
+// Upload the frozen signed-contract HTML snapshot
+// Path: /signed-contracts/{proposalId}/signed-document.html
+export async function uploadSignedContract(
+  proposalId: string,
+  htmlBase64: string
+): Promise<UploadResult> {
+  const bytes = Uint8Array.from(atob(htmlBase64), (c) => c.charCodeAt(0));
+  const file = new File([bytes], "signed-document.html", { type: "text/html; charset=utf-8" });
+  const path = `signed-contracts/${proposalId}/signed-document.html`;
+  return uploadFile(file, path);
+}
+
 // Upload user avatar
 // Path: /avatars/{userId}/{filename}
 export async function uploadAvatar(

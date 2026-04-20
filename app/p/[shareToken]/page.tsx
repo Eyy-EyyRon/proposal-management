@@ -10,10 +10,11 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import {
   getProposal, markProposalViewed, acceptProposal, rejectProposal,
+  updateProposalSignedPdf,
   type Proposal,
 } from "@/lib/firestore";
 // renderProposalHtml is lazy-loaded below to keep mammoth out of the initial bundle
-import { uploadSignature, uploadSignatureImage } from "@/lib/storage";
+import { uploadSignature, uploadSignatureImage, uploadSignedContract } from "@/lib/storage";
 import { exportProposalPdf } from "@/lib/export-utils";
 
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
@@ -44,6 +45,15 @@ export default function ProposalPortalPage() {
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [auditSeal, setAuditSeal] = useState<{
+    transactionId: string;
+    contentHash: string;
+    signerIp: string;
+    signedAtUtc: string;
+    signerName: string;
+  } | null>(null);
+  const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const [activeTab, setActiveTab] = useState<TabMode>("action");
   const [comments, setComments] = useState<any[]>([]);
@@ -395,6 +405,13 @@ export default function ProposalPortalPage() {
     return () => document.removeEventListener("mousedown", hideTooltip);
   }, []);
 
+  // SHA-256 helper (Web Crypto API — available in browser + Next.js edge)  
+  const sha256 = async (text: string): Promise<string> => {
+    const encoded = new TextEncoder().encode(text);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+
   const handleAccept = useCallback(async () => {
     if (!proposal) return;
     setSubmitting(true);
@@ -436,9 +453,65 @@ export default function ProposalPortalPage() {
         return;
       }
 
-      await acceptProposal(proposal.id, sigType, sigUrl);
+      // ── Build Audit Seal ────────────────────────────────────
+      const signedAtUtc = new Date().toISOString();
+      const signerName = proposal.clientName || "Client";
 
-      // Send signed document copies to all parties
+      // Get signer IP
+      let signerIp = "unknown";
+      try {
+        const ipRes = await fetch("/api/get-signer-ip");
+        const ipData = await ipRes.json();
+        signerIp = ipData.ip || "unknown";
+      } catch { /* non-blocking */ }
+
+      // SHA-256 of the document content
+      const docContent = documentHtml || proposal.templateName || proposal.id;
+      const contentHash = await sha256(docContent);
+
+      // Transaction ID = SHA-256 of (proposalId + signedAt + ip)
+      const transactionId = await sha256(`${proposal.id}:${signedAtUtc}:${signerIp}`);
+
+      const seal = { transactionId, contentHash, signerIp, signedAtUtc, signerName };
+
+      await acceptProposal(proposal.id, sigType, sigUrl, seal);
+      setAuditSeal(seal);
+
+      // ── Generate + Upload Signed Contract Snapshot ──────────
+      setGeneratingPdf(true);
+      try {
+        const auditLog = [
+          { event: "Created", actor: proposal.userId || "Staff", timestamp: proposal.createdAt ? new Date((proposal.createdAt as {seconds:number}).seconds * 1000).toISOString() : "—", ip: "—" },
+          { event: "Sent", actor: proposal.sentById || "System", timestamp: proposal.updatedAt ? new Date((proposal.updatedAt as {seconds:number}).seconds * 1000).toISOString() : "—", ip: "—" },
+          { event: "Viewed", actor: signerName, timestamp: proposal.viewedAt ? new Date((proposal.viewedAt as {seconds:number}).seconds * 1000).toISOString() : "—", ip: signerIp },
+          { event: "Signed", actor: signerName, timestamp: signedAtUtc, ip: signerIp },
+        ];
+
+        const pdfRes = await fetch("/api/generate-signed-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposalId: proposal.id,
+            clientName: proposal.clientName,
+            proposalTitle: proposal.templateName || "Proposal",
+            documentHtml,
+            auditSeal: seal,
+            auditLog,
+            signatureUrl: sigUrl,
+          }),
+        });
+
+        if (pdfRes.ok) {
+          const { htmlBase64 } = await pdfRes.json();
+          const uploaded = await uploadSignedContract(proposal.id, htmlBase64);
+          await updateProposalSignedPdf(proposal.id, uploaded.url);
+          setSignedPdfUrl(uploaded.url);
+        }
+      } catch { /* non-blocking — main signature already committed */ } finally {
+        setGeneratingPdf(false);
+      }
+
+      // ── Notify all parties ──────────────────────────────────
       fetch("/api/send-signed-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -461,7 +534,7 @@ export default function ProposalPortalPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [proposal, signatureMode, typedName, signatureFile, hasDrawn, shareToken]);
+  }, [proposal, signatureMode, typedName, signatureFile, hasDrawn, shareToken, documentHtml]);
 
   const handleReject = useCallback(async () => {
     if (!proposal) return;
@@ -932,30 +1005,76 @@ export default function ProposalPortalPage() {
                 )}
 
                 {proposal?.status === "accepted" ? (
-                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/80 p-6 shadow-lg text-center backdrop-blur-xl">
-                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 mb-4">
-                      <ShieldCheck className="h-7 w-7 text-emerald-600" />
+                  <div className="space-y-4">
+                    {/* Thank You card */}
+                    <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-6 shadow-lg text-center">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 ring-4 ring-emerald-50 mb-3">
+                        <ShieldCheck className="h-7 w-7 text-emerald-600" />
+                      </div>
+                      <h3 className="text-[17px] font-bold text-slate-900">Agreement Confirmed</h3>
+                      <p className="mt-1 text-[12px] text-slate-500 leading-relaxed">
+                        This document has been legally executed and sealed. A copy has been sent to all parties.
+                      </p>
+                      {generatingPdf && (
+                        <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Generating signed copy…
+                        </div>
+                      )}
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900">Document Locked</h3>
-                    <p className="mt-2 text-[13px] text-slate-600 mb-6">
-                      This document has been legally signed and is now locked for editing.
-                    </p>
-                    <button
-                      onClick={async () => {
-                        if (!documentRef.current || !proposal) return;
-                        setPdfLoading(true);
-                        try {
-                          await exportProposalPdf(documentRef.current, `Signed-${proposal.clientName.replace(/\s+/g, "-")}.pdf`);
-                        } finally {
-                          setPdfLoading(false);
-                        }
-                      }}
-                      disabled={pdfLoading || !documentHtml}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-md transition hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                      Download Signed PDF
-                    </button>
+
+                    {/* Audit Seal */}
+                    {(auditSeal || proposal.auditSeal) && (() => {
+                      const seal = auditSeal || proposal.auditSeal!;
+                      return (
+                        <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50/60 p-4 space-y-2">
+                          <div className="flex items-center gap-2 mb-3">
+                            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Certified Audit Seal</span>
+                          </div>
+                          {[
+                            { label: "Transaction ID", value: seal.transactionId },
+                            { label: "Document Hash", value: seal.contentHash },
+                            { label: "Signed At (UTC)", value: seal.signedAtUtc },
+                            { label: "Signer IP", value: seal.signerIp },
+                          ].map(({ label, value }) => (
+                            <div key={label} className="flex flex-col gap-0.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+                              <span className="font-mono text-[10px] text-slate-700 break-all bg-white/80 rounded px-2 py-1 border border-slate-100">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Download buttons */}
+                    <div className="space-y-2">
+                      {signedPdfUrl || proposal.signedPdfUrl ? (
+                        <a
+                          href={signedPdfUrl || proposal.signedPdfUrl || ""}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-[13px] font-semibold text-white shadow-md transition hover:bg-emerald-700"
+                        >
+                          <Download className="h-4 w-4" /> Download Signed Copy
+                        </a>
+                      ) : null}
+                      <button
+                        onClick={async () => {
+                          if (!documentRef.current || !proposal) return;
+                          setPdfLoading(true);
+                          try {
+                            await exportProposalPdf(documentRef.current, `Signed-${proposal.clientName.replace(/\s+/g, "-")}.pdf`);
+                          } finally {
+                            setPdfLoading(false);
+                          }
+                        }}
+                        disabled={pdfLoading || !documentHtml}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                        Export as PDF (Local)
+                      </button>
+                    </div>
                   </div>
                 ) : !showReject ? (
                   <div className="rounded-2xl border border-slate-200/60 bg-white/80 p-5 shadow-lg shadow-slate-200/20 backdrop-blur-xl">

@@ -1,11 +1,51 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, User, Building2, FileText } from "lucide-react";
+import { ArrowRight, FileText } from "lucide-react";
 import { UrgencyBadge } from "./urgency-badge";
+import { UrgencyEditor } from "./urgency-editor";
 import { SlaCountdown, type DueAtValue } from "./sla-countdown";
 import { DepartmentBadge } from "./department-badge";
 import type { ProposalTask, TaskStatus } from "@/lib/firestore";
+
+// ── Pipeline stage bar ────────────────────────────────────────
+const PIPELINE_STAGES: { key: TaskStatus; label: string }[] = [
+  { key: "drafting",           label: "Draft" },
+  { key: "verifying",          label: "Review" },
+  { key: "ready_to_send",      label: "Talking" },
+  { key: "sent",               label: "Sent" },
+];
+
+function PipelineBar({ status }: { status: TaskStatus }) {
+  const stageIndex = PIPELINE_STAGES.findIndex((s) => s.key === status);
+  const isRevision = status === "revision_requested" || status === "changes_requested";
+
+  return (
+    <div className="flex items-center gap-0 mb-3">
+      {PIPELINE_STAGES.map((stage, i) => {
+        const done = stageIndex > i;
+        const active = stageIndex === i;
+        const revision = isRevision && i <= 1;
+        return (
+          <div key={stage.key} className="flex flex-1 flex-col items-center">
+            <div className="flex w-full items-center">
+              <div className={`h-1.5 flex-1 rounded-full transition-all ${i === 0 ? "invisible" : done || active ? revision ? "bg-amber-400" : "bg-violet-400" : "bg-slate-100"}`} />
+              <div className={`h-3 w-3 rounded-full border-2 transition-all ${
+                done ? "border-violet-500 bg-violet-500" :
+                active ? revision ? "border-amber-500 bg-amber-100" : "border-violet-600 bg-white" :
+                "border-slate-200 bg-white"
+              }`} />
+              <div className={`h-1.5 flex-1 rounded-full transition-all ${i === PIPELINE_STAGES.length - 1 ? "invisible" : done ? revision ? "bg-amber-400" : "bg-violet-400" : "bg-slate-100"}`} />
+            </div>
+            <span className={`mt-1 text-[9px] font-medium ${active ? revision ? "text-amber-600" : "text-violet-600" : done ? "text-violet-400" : "text-slate-300"}`}>
+              {active && isRevision ? "Revision" : stage.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const STATUS_LABELS: Record<TaskStatus, { label: string; color: string; bg: string }> = {
   drafting:           { label: "Drafting",           color: "text-slate-600",  bg: "bg-slate-100" },
@@ -21,6 +61,8 @@ interface TaskCardProps {
   task: ProposalTask;
   showActions?: boolean;
   actions?: React.ReactNode;
+  /** When true the urgency badge is read-only (no inline editor) */
+  readOnlyUrgency?: boolean;
 }
 
 export function TaskStatusBadge({ status }: { status: TaskStatus }) {
@@ -32,22 +74,30 @@ export function TaskStatusBadge({ status }: { status: TaskStatus }) {
   );
 }
 
-export function TaskCard({ task, actions }: TaskCardProps) {
+export function TaskCard({ task, actions, readOnlyUrgency }: TaskCardProps) {
   const isP1 = task.urgency === "p1";
+  const isCancelled = task.status === "cancelled";
 
   return (
     <div
       className={`group rounded-xl border p-4 transition-all ${
-        isP1
+        isP1 && !isCancelled
           ? "border-rose-200/80 bg-gradient-to-r from-rose-50/60 to-white shadow-[0_0_12px_rgba(244,63,94,0.08)] hover:shadow-[0_0_20px_rgba(244,63,94,0.14)]"
-          : task.urgency === "p2"
+          : task.urgency === "p2" && !isCancelled
           ? "border-orange-200/60 bg-white hover:border-orange-300"
           : "border-slate-200/80 bg-white hover:border-slate-300"
       }`}
     >
-      {/* Top Row: urgency + status + SLA */}
+      {/* Pipeline progress */}
+      {!isCancelled && <PipelineBar status={task.status} />}
+
+      {/* Top Row: urgency (editable) + status + SLA */}
       <div className="flex items-center gap-2 flex-wrap mb-3">
-        <UrgencyBadge urgency={task.urgency} />
+        {readOnlyUrgency || isCancelled ? (
+          <UrgencyBadge urgency={task.urgency} />
+        ) : (
+          <UrgencyEditor task={task} />
+        )}
         <TaskStatusBadge status={task.status} />
         {task.status !== "sent" && task.status !== "cancelled" && (
           <SlaCountdown dueAt={task.dueAt as DueAtValue} urgency={task.urgency} compact />

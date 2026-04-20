@@ -339,6 +339,67 @@ export function CreateTaskModal({
               </div>
             </div>
 
+            {/* Admin Handler picker */}
+            {department && (
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium text-slate-500">
+                  Admin Handler <span className="text-slate-400">(optional — leave blank for any {department} admin)</span>
+                </label>
+                {adminsLoading ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] text-slate-400">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading admins…
+                  </div>
+                ) : admins.length === 0 ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] text-slate-400">
+                    No admins found in {department}. Task will be visible to all {department} admins.
+                  </div>
+                ) : (
+                  <div className="grid gap-2 max-h-40 overflow-y-auto sm:grid-cols-2">
+                    {/* Unassigned option */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAdminId("")}
+                      className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-[12px] transition ${
+                        !selectedAdminId
+                          ? "border-violet-300 bg-violet-50 ring-2 ring-violet-200"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                      }`}
+                    >
+                      <User className="h-4 w-4 text-slate-300" />
+                      <div>
+                        <p className="font-medium text-slate-600">Any admin</p>
+                        <p className="text-[10px] text-slate-400">First available</p>
+                      </div>
+                    </button>
+                    {admins.map((a) => {
+                      const name = `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim();
+                      const initials = `${a.firstName?.[0] ?? ""}${a.lastName?.[0] ?? ""}`.toUpperCase();
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => setSelectedAdminId(a.id)}
+                          className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-[12px] transition ${
+                            selectedAdminId === a.id
+                              ? "border-violet-300 bg-violet-50 ring-2 ring-violet-200"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-600 overflow-hidden">
+                            {a.avatarUrl ? <img src={a.avatarUrl} alt={name} className="h-full w-full object-cover" /> : initials}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-slate-700">{name}</p>
+                            <p className="text-[10px] text-slate-400">{a.department ?? "—"}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Urgency */}
             <div>
               <label className="mb-2 block text-[12px] font-medium text-slate-500">Urgency Level *</label>

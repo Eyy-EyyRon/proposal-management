@@ -20,6 +20,9 @@ import {
   Crown,
   AlertTriangle,
   Trash2,
+  ShieldCheck,
+  ShieldAlert,
+  Lock,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { toast } from "@/components/providers/toast";
@@ -66,6 +69,7 @@ export default function CeoProposalDetailPage() {
   const [activeTab, setActiveTab] = useState<"document" | "discuss" | "signature" | "history">("document");
   const [showVoidConfirm, setShowVoidConfirm] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [integrityStatus, setIntegrityStatus] = useState<"unchecked" | "checking" | "valid" | "tampered">("unchecked");
 
   // Fetch proposal using real-time subscription
   useEffect(() => {
@@ -250,6 +254,20 @@ export default function CeoProposalDetailPage() {
     }
   };
 
+  // SHA-256 helper to recompute content hash for tamper detection
+  const sha256 = async (text: string): Promise<string> => {
+    const encoded = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest("SHA-256", encoded);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  const checkIntegrity = async () => {
+    if (!proposal?.contentHash || !documentHtml) return;
+    setIntegrityStatus("checking");
+    const recomputed = await sha256(documentHtml);
+    setIntegrityStatus(recomputed === proposal.contentHash ? "valid" : "tampered");
+  };
+
   const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
       sent: "Pending",
@@ -339,14 +357,37 @@ export default function CeoProposalDetailPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Hash Integrity Check */}
+            {proposal.status === "accepted" && proposal.contentHash && documentHtml && (
+              <button
+                onClick={checkIntegrity}
+                disabled={integrityStatus === "checking"}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                {integrityStatus === "checking" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4 text-slate-400" />}
+                Verify Integrity
+              </button>
+            )}
+            {/* Download Certificate */}
+            {proposal.status === "accepted" && proposal.signedPdfUrl && (
+              <a
+                href={proposal.signedPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] font-medium text-emerald-700 transition hover:bg-emerald-100"
+              >
+                <Download className="h-4 w-4" />
+                Download Certificate
+              </a>
+            )}
             {proposal.status === "accepted" && (
               <button
                 onClick={() => setShowVoidConfirm(true)}
                 className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-[13px] font-medium text-rose-700 transition hover:bg-rose-100"
               >
                 <AlertTriangle className="h-4 w-4" />
-                Void Signature & Revise
+                Void & Revise
               </button>
             )}
             {documentHtml && (
@@ -366,6 +407,52 @@ export default function CeoProposalDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Tamper Alert Banner */}
+        {integrityStatus === "tampered" && (
+          <div className="flex items-start gap-4 rounded-2xl border-2 border-rose-400 bg-rose-50 px-6 py-4 shadow-lg shadow-rose-100">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100">
+              <ShieldAlert className="h-6 w-6 text-rose-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[14px] font-bold text-rose-700">⚠ DOCUMENT INTEGRITY COMPROMISED</p>
+              <p className="mt-1 text-[12px] text-rose-600 leading-relaxed">
+                The current document content does not match the SHA-256 hash recorded at the time of signing.
+                This indicates the document may have been altered after the client signed.
+                Stored hash: <code className="font-mono text-[11px] bg-rose-100 px-1 rounded">{proposal.contentHash}</code>
+              </p>
+            </div>
+          </div>
+        )}
+        {integrityStatus === "valid" && (
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3">
+            <ShieldCheck className="h-5 w-5 text-emerald-600" />
+            <p className="text-[13px] font-medium text-emerald-700">Document integrity verified — content matches the signed hash.</p>
+          </div>
+        )}
+
+        {/* Audit Seal Panel (accepted proposals) */}
+        {proposal.status === "accepted" && proposal.auditSeal && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Lock className="h-4 w-4 text-emerald-600" />
+              <span className="text-[12px] font-bold uppercase tracking-wider text-emerald-700">Certified Audit Seal</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { label: "Transaction ID", value: proposal.auditSeal.transactionId },
+                { label: "Document Hash", value: proposal.auditSeal.contentHash },
+                { label: "Signed At (UTC)", value: proposal.auditSeal.signedAtUtc },
+                { label: "Signer IP", value: proposal.auditSeal.signerIp },
+              ].map(({ label, value }) => (
+                <div key={label}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+                  <p className="mt-0.5 font-mono text-[11px] text-slate-700 break-all bg-white rounded px-2 py-1 border border-slate-100">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 rounded-xl bg-slate-100/50 p-1">
