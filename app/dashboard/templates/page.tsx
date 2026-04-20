@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileCode2, FileDown, Plus, Upload, Link as LinkIcon, Search, Trash2, Loader2, LayoutTemplate, AlertTriangle } from "lucide-react";
+import { FileCode2, FileDown, Plus, Link as LinkIcon, Search, Trash2, Loader2, LayoutTemplate, AlertTriangle, Globe, EyeOff } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Topbar } from "@/components/topbar";
 import { useAuth, useRole } from "@/contexts/auth-context";
-import { getUserTemplates, getAllTemplates, moveToTrash, type Template } from "@/lib/firestore";
+import { getUserTemplates, getAllTemplates, moveToTrash, publishTemplate, unpublishTemplate, type Template } from "@/lib/firestore";
 import { ConfirmModal, useConfirmModal } from "@/components/ui/confirm-modal";
-import { toast } from "@/components/providers/toast-provider";
+import { toast } from "@/components/providers/toast";
 
 function formatDate(ts: { seconds: number } | null) {
   if (!ts) return "—";
@@ -50,7 +50,8 @@ function VariablePill({ label }: { label: string }) {
 
 export default function TemplatesPage() {
   const { user } = useAuth();
-  const { isStaff } = useRole();
+  const { isStaff, isAdmin, isCeo } = useRole();
+  const canManageTemplates = isAdmin || isCeo;
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -58,6 +59,7 @@ export default function TemplatesPage() {
   const [retryCount, setRetryCount] = useState(0);
   const { confirm, modalProps } = useConfirmModal();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -100,6 +102,35 @@ export default function TemplatesPage() {
       toast.error("Failed to move template to trash. Please try again.");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleTogglePublish = async (template: Template) => {
+    const isPublished = template.isPublished !== false;
+    if (isPublished) {
+      const ok = await confirm({
+        title: "Unpublish Template?",
+        description: `"${template.name}" will become a Draft and will be hidden from staff. No new proposals can use it until republished.`,
+        actionType: "danger",
+        confirmText: "Unpublish",
+      });
+      if (!ok) return;
+    }
+    setPublishingId(template.id);
+    try {
+      if (isPublished) {
+        await unpublishTemplate(template.id);
+        setTemplates((prev) => prev.map((t) => t.id === template.id ? { ...t, isPublished: false } : t));
+        toast.success(`"${template.name}" is now a Draft.`);
+      } else {
+        await publishTemplate(template.id, user!.uid);
+        setTemplates((prev) => prev.map((t) => t.id === template.id ? { ...t, isPublished: true } : t));
+        toast.success(`"${template.name}" published — staff can now use it.`);
+      }
+    } catch {
+      toast.error("Failed to update template status.");
+    } finally {
+      setPublishingId(null);
     }
   };
 
@@ -201,6 +232,9 @@ export default function TemplatesPage() {
                     <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                       Created
                     </th>
+                    <th className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Status
+                    </th>
                     <th className="w-10 px-3 py-2.5" />
                   </tr>
                 </thead>
@@ -242,6 +276,31 @@ export default function TemplatesPage() {
                         </td>
                         <td className="whitespace-nowrap px-5 py-3 font-mono tabular-nums text-[13px] text-slate-500">
                           {formatDate(template.createdAt as unknown as { seconds: number })}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3">
+                          {canManageTemplates ? (
+                            <button
+                              onClick={() => handleTogglePublish(template)}
+                              disabled={publishingId === template.id}
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition active:scale-95 disabled:opacity-50 ${
+                                template.isPublished !== false
+                                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              }`}
+                            >
+                              {publishingId === template.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : template.isPublished !== false ? (
+                                <><Globe className="h-3 w-3" /> Published</>
+                              ) : (
+                                <><EyeOff className="h-3 w-3" /> Draft</>
+                              )}
+                            </button>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${template.isPublished !== false ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                              {template.isPublished !== false ? <><Globe className="h-3 w-3" /> Published</> : <><EyeOff className="h-3 w-3" /> Draft</>}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-3">
                           <button

@@ -40,9 +40,36 @@ export interface Template {
   deletedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  // Template Sandbox (Scenario 8)
+  isPublished: boolean;       // false = Draft, invisible to staff
+  publishedAt: Timestamp | null;
+  publishedBy: string | null; // UID of who published
 }
 
 // ─── TEMPLATES ───────────────────────────────────────────────
+
+// ─── TEMPLATE SANDBOX ────────────────────────────────────────
+
+export async function publishTemplate(
+  templateId: string,
+  publishedByUid: string
+): Promise<void> {
+  await updateDoc(doc(db, "templates", templateId), {
+    isPublished: true,
+    publishedAt: serverTimestamp(),
+    publishedBy: publishedByUid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function unpublishTemplate(templateId: string): Promise<void> {
+  await updateDoc(doc(db, "templates", templateId), {
+    isPublished: false,
+    publishedAt: null,
+    publishedBy: null,
+    updatedAt: serverTimestamp(),
+  });
+}
 
 export async function createTemplate(data: {
   userId: string;
@@ -66,6 +93,9 @@ export async function createTemplate(data: {
     fields: data.fields,
     isDeleted: false,
     deletedAt: null,
+    isPublished: true,
+    publishedAt: null,
+    publishedBy: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -171,9 +201,12 @@ export interface Proposal {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   // Versioning fields
-  version: number; // Defaults to 1, increments on every revision
-  previousVersionId: string | null; // Reference to the ID of the previous version
-  nextVersionId?: string | null; // Forward link set when a revision is created
+  version: number;
+  previousVersionId: string | null;
+  nextVersionId?: string | null;
+  // Status Lockdown (Scenario 10)
+  isSignable: boolean;      // false on archive/trash — blocks zombie signatures
+  isCommentable: boolean;   // false on archive/trash — closes discussion thread
 }
 
 // ─── PROPOSALS ───────────────────────────────────────────────
@@ -222,6 +255,8 @@ export async function createProposal(
     viewedAt: null,
     isDeleted: false,
     deletedAt: null,
+    isSignable: true,
+    isCommentable: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     // Versioning fields
@@ -487,16 +522,61 @@ export async function acceptProposal(
   });
 }
 
+// ─── ACTIVITY LOGS (Shadow Audit — CEO-eyes-only) ────────────
+// Records actorId vs identityId for every delegated action.
+
+export interface ActivityLogEntry {
+  id?: string;
+  action: string;          // e.g. "comment_deleted", "proposal_sent"
+  actorId: string;         // The real UID who performed the action
+  actorName: string;       // Display name of real actor
+  identityId: string;      // The UID whose identity was used (CEO)
+  identityName: string;    // Display name of identity
+  isDelegated: boolean;    // true when actorId !== identityId
+  targetId?: string;       // proposalId / templateId / etc.
+  targetType?: string;
+  description: string;     // Human-readable summary shown to CEO
+  metadata?: Record<string, unknown>;
+  createdAt: unknown;
+}
+
+export async function writeActivityLog(
+  entry: Omit<ActivityLogEntry, "id" | "createdAt">
+): Promise<void> {
+  await addDoc(collection(db, "activity_logs"), {
+    ...entry,
+    createdAt: serverTimestamp(),
+  });
+}
+
 // Soft-delete a comment (audit-safe, preserves thread integrity)
+// Also writes an activity_log entry so the CEO can see delegated deletes.
 export async function softDeleteComment(
   proposalId: string,
-  commentId: string
+  commentId: string,
+  actor?: { actorId: string; actorName: string; identityId: string; identityName: string }
 ): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId, "comments", commentId), {
     isDeleted: true,
     deletedText: "[Message deleted]",
     deletedAt: serverTimestamp(),
+    deletedByActorId: actor?.actorId ?? null,
+    deletedByActorName: actor?.actorName ?? null,
   });
+
+  if (actor && actor.actorId !== actor.identityId) {
+    await writeActivityLog({
+      action: "comment_deleted",
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      identityId: actor.identityId,
+      identityName: actor.identityName,
+      isDelegated: true,
+      targetId: proposalId,
+      targetType: "proposal",
+      description: `${actor.actorName} (acting as ${actor.identityName}) deleted a comment on proposal ${proposalId}.`,
+    });
+  }
 }
 
 // Check if a staff user still has active delegation from a CEO
@@ -520,6 +600,18 @@ export async function rejectProposal(proposalId: string): Promise<void> {
 export async function archiveProposal(proposalId: string): Promise<void> {
   await updateDoc(doc(db, "proposals", proposalId), {
     status: "archived",
+    isSignable: false,
+    isCommentable: false,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function trashProposal(proposalId: string): Promise<void> {
+  await updateDoc(doc(db, "proposals", proposalId), {
+    isDeleted: true,
+    deletedAt: serverTimestamp(),
+    isSignable: false,
+    isCommentable: false,
     updatedAt: serverTimestamp(),
   });
 }

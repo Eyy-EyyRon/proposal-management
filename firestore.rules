@@ -28,6 +28,11 @@ service cloud.firestore {
       return isSignedIn() && getUserRole() in ["ceo", "super-admin"];
     }
 
+    function isRootCeo(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('isRootCEO', false) == true;
+    }
+
     function isAdmin() {
       return isSignedIn() && getUserRole() == "admin";
     }
@@ -51,25 +56,37 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdminOrCeo();
 
       allow update: if
-        // CEO: unrestricted
-        isCeo()
-        ||
-        // Self: can update own profile but NEVER change role, email, or delegatedUserIds
-        (
-          isOwner(userId)
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds"])
+        // ── IMMORTALITY RULE ──────────────────────────────────────────────
+        // The root CEO document can NEVER have its role, isRootCEO, or email
+        // changed by anyone — including the CEO themselves.
+        !(
+          resource.data.get('isRootCEO', false) == true
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(["role", "isRootCEO", "email"])
         )
-        ||
-        // Admin: can update staff in their dept, but CANNOT touch role, email, or delegatedUserIds
-        // and CANNOT modify the CEO account at all
+        &&
         (
-          isAdmin()
-          && resource.data.role in ["staff"]
-          && isSameDept(resource.data.department)
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds", "canSendOnBehalfOf"])
+          // CEO: unrestricted (subject to immortality guard above)
+          isCeo()
+          ||
+          // Self: can update own profile but NEVER change role, email, or delegatedUserIds
+          (
+            isOwner(userId)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds"])
+          )
+          ||
+          // Admin: can update staff in their dept only
+          (
+            isAdmin()
+            && resource.data.role in ["staff"]
+            && isSameDept(resource.data.department)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds", "canSendOnBehalfOf"])
+          )
         );
 
-      allow delete: if isCeo();
+      // ── IMMORTALITY RULE ──────────────────────────────────────────────
+      // The root CEO account can never be deleted by anyone.
+      allow delete: if isCeo() && !isRootCeo(userId);
     }
 
     // ─── DEPARTMENTS ────────────────────────────────────────
@@ -89,8 +106,13 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
 
-      // All signed-in users can read templates (staff needs them to create proposals)
-      allow read: if isSignedIn();
+      // CEO/Admin can read all templates (including drafts)
+      // Staff can only read published templates
+      allow read: if isSignedIn()
+        && (
+          isAdminOrCeo()
+          || resource.data.get('isPublished', true) == true
+        );
 
       allow update, delete: if isSignedIn()
         && (
@@ -155,6 +177,10 @@ service cloud.firestore {
             request.auth == null
             && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
+            // ── STATUS LOCKDOWN ──────────────────────────────────────────
+            // Archived/trashed proposals have isSignable=false — clients
+            // cannot sign or even view-update them (Zombie Signature fix)
+            && resource.data.get('isSignable', true) == true
             && (
               // Signature zombie guard: only sent/viewed proposals can be signed
               (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
@@ -225,13 +251,26 @@ service cloud.firestore {
 
     // ─── AUDIT LOGS (append-only, undeletable) ──────────────
     match /logs/{logId} {
-      // Anyone signed-in can create a log entry
       allow create: if isSignedIn();
-      // Logs are immutable — no updates or deletes ever
       allow update, delete: if false;
-      // Only CEO/Admin can read audit logs
       allow read: if isAdminOrCeo();
     }
+
+    // ─── ACTIVITY LOGS (Shadow Audit — CEO-eyes-only) ────────
+    // Records actorId vs identityId for every delegated action.
+    // Only the root CEO UID can read. Append-only forever.
+    match /activity_logs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+      // Only the authenticated user whose doc has isRootCEO:true can read
+      allow read: if isSignedIn() && isRootCeo(request.auth.uid);
+    }
+
+    // ─── DELEGATION GUARD (Circular Delegation Prevention) ───
+    // Enforced at the app layer via updateDelegationSettings:
+    // only users whose actualRole == 'ceo' may call that function.
+    // The Firestore rule below protects the delegatedUserIds field
+    // from being written by non-CEO roles (already covered in /users rules).
 
     // ─── DENY ALL OTHER PATHS ────────────────────────────────
     match /{document=**} {

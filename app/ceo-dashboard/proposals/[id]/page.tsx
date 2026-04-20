@@ -22,7 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
-import { toast } from "sonner";
+import { toast } from "@/components/providers/toast";
 import { useAuth } from "@/contexts/auth-context";
 import { type Proposal, createProposalRevision, softDeleteComment } from "@/lib/firestore";
 import { renderProposalHtml } from "@/lib/proposal-renderer";
@@ -37,8 +37,12 @@ interface Comment {
   authorRole: "client" | "ceo" | "staff" | "admin" | "system";
   authorName: string;
   authorId?: string;
+  actingAsId?: string | null;
+  actingAsName?: string | null;
   isDeleted?: boolean;
   deletedText?: string;
+  deletedByActorId?: string;
+  deletedByActorName?: string;
   createdAt: { seconds: number; nanoseconds: number };
 }
 
@@ -124,12 +128,18 @@ export default function CeoProposalDetailPage() {
 
     setSubmittingComment(true);
     try {
+      const ownerName = `${profile.firstName} ${profile.lastName}`;
+      const isDelegatedPost = proposal.isDelegated && proposal.ownerId !== user.uid;
       const commentData = {
         text: newComment.trim(),
         quote: activeQuote || null,
         authorRole: "ceo",
-        authorName: `${profile.firstName} ${profile.lastName}`,
+        authorName: ownerName,
         authorId: user.uid,
+        // Actor attribution: if this CEO comment is actually written by a delegate,
+        // stamp actingAsId so the internal UI can show "CEO (via Admin Name)"
+        actingAsId: isDelegatedPost ? proposal.ownerId : null,
+        actingAsName: isDelegatedPost ? ownerName : null,
         createdAt: serverTimestamp(),
       };
 
@@ -189,9 +199,22 @@ export default function CeoProposalDetailPage() {
   const clearQuote = () => setActiveQuote("");
 
   const handleSoftDeleteComment = async (commentId: string) => {
-    if (!proposal) return;
+    if (!proposal || !user || !profile) return;
+    const ceoName = `${profile.firstName} ${profile.lastName}`;
+    const isDelegated = proposal.isDelegated && proposal.ownerId !== user.uid;
     try {
-      await softDeleteComment(proposal.id, commentId);
+      await softDeleteComment(
+        proposal.id,
+        commentId,
+        isDelegated
+          ? {
+              actorId: user.uid,
+              actorName: ceoName,
+              identityId: proposal.ownerId,
+              identityName: ceoName,
+            }
+          : undefined
+      );
       toast.success("Comment deleted.");
     } catch {
       toast.error("Failed to delete comment.");
@@ -549,7 +572,14 @@ export default function CeoProposalDetailPage() {
                         c.authorRole === "client" ? "" : "flex-row-reverse"
                       }`}>
                         <span className="text-[10px] text-slate-400">
-                          {c.authorName} • {c.authorRole === "client" ? "Client" : c.authorRole === "ceo" ? "CEO" : c.authorRole === "system" ? "System" : "Staff"}
+                          {c.authorName}
+                          {c.authorRole === "ceo" && c.actingAsId && (
+                            <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-700" title="Written by a delegate acting as CEO">
+                              via {c.authorName}
+                            </span>
+                          )}
+                          {" • "}
+                          {c.authorRole === "client" ? "Client" : c.authorRole === "ceo" ? "CEO" : c.authorRole === "system" ? "System" : "Staff"}
                         </span>
                         {!c.isDeleted && c.authorRole !== "client" && c.authorRole !== "system" && (
                           <button
