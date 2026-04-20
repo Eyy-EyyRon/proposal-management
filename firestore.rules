@@ -98,6 +98,14 @@ service cloud.firestore {
             && isSameDept(resource.data.department)
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds", "canSendOnBehalfOf"])
           )
+          ||
+          // CEO / super-admin: can update department assignments on any user
+          // (covers setUserDepartments — writes departments, department, updatedAt)
+          (
+            isCeo()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["departments", "department", "updatedAt"])
+          )
         );
 
       // ── IMMORTALITY RULE ──────────────────────────────────────────────
