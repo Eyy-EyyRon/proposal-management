@@ -1322,6 +1322,8 @@ export interface TeamMember {
   role: "staff" | "admin" | "super_admin" | "ceo";
   department: string | null; // Legacy single department (for backward compatibility)
   departments?: string[]; // NEW: Multiple departments for staff
+  departmentId?: string | null; // Firestore dept doc ID (stable foreign key)
+  isDeptAdmin?: boolean; // true when role=="admin" — mirrors role for explicit querying
   jobTitle?: string; // NEW: Job title (e.g., "IT Specialist")
   avatarUrl?: string; // NEW: User avatar/profile picture URL
   delegatedUserIds?: string[]; // For CEO: stores UIDs of authorized staff who can send on their behalf (Level 1)
@@ -1621,14 +1623,31 @@ export async function removeUserFromDepartments(
   });
 }
 
-// Set user's departments (replace all)
+// Set user's departments (replace all).
+// Accepts an optional departmentId (Firestore dept doc ID for the primary dept)
+// so callers can stamp the stable foreign key alongside the name string.
 export async function setUserDepartments(
   userId: string,
-  departmentNames: string[]
+  departmentNames: string[],
+  departmentId?: string | null
 ): Promise<void> {
   await updateDoc(doc(db, "users", userId), {
     departments: departmentNames,
     department: departmentNames[0] || null, // Keep legacy field in sync
+    ...(departmentId !== undefined ? { departmentId: departmentId ?? null } : {}),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Set a user's role and stamp isDeptAdmin accordingly.
+// CEO/super_admin only — enforced by Firestore rules.
+export async function setUserRole(
+  userId: string,
+  role: "staff" | "admin" | "super_admin"
+): Promise<void> {
+  await updateDoc(doc(db, "users", userId), {
+    role,
+    isDeptAdmin: role === "admin",
     updatedAt: serverTimestamp(),
   });
 }

@@ -11,6 +11,7 @@ import {
   subscribeToAllUsers,
   subscribeToDepartmentsList,
   setUserDepartments,
+  setUserRole,
   deactivateUser,
   OrphanError,
   type TeamMember,
@@ -61,6 +62,7 @@ export default function TeamManagementPage() {
   const [selectedUser, setSelectedUser] = useState<TeamMember | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  const [selectedRole, setSelectedRole] = useState<"staff" | "admin" | "super_admin">("staff");
   const [saving, setSaving] = useState(false);
 
   // Deactivate / Orphan protection
@@ -130,6 +132,8 @@ export default function TeamManagementPage() {
   const openAssignModal = (user: TeamMember) => {
     setSelectedUser(user);
     setSelectedDepartments(user.departments || (user.department ? [user.department] : []));
+    const role = user.role === "ceo" ? "staff" : user.role as "staff" | "admin" | "super_admin";
+    setSelectedRole(role);
     setIsAssignModalOpen(true);
   };
   
@@ -167,17 +171,30 @@ export default function TeamManagementPage() {
     }
   };
 
-  // Save department assignments
+  // Save department assignments + role
   const handleSaveDepartments = async () => {
     if (!selectedUser) return;
     setSaving(true);
     try {
-      await setUserDepartments(selectedUser.id, selectedDepartments);
+      // Resolve the primary departmentId from the departments list
+      const primaryDeptName = selectedDepartments[0] ?? null;
+      const primaryDept = primaryDeptName
+        ? departments.find((d) => d.name === primaryDeptName)
+        : null;
+      const departmentId = primaryDept?.id ?? null;
+
+      await setUserDepartments(selectedUser.id, selectedDepartments, departmentId);
+
+      // Only update role if it changed (and user is not CEO)
+      if (selectedRole !== selectedUser.role && selectedUser.role !== "ceo") {
+        await setUserRole(selectedUser.id, selectedRole);
+      }
+
       setIsAssignModalOpen(false);
       setSelectedUser(null);
     } catch (err) {
-      console.error("Failed to update departments:", err);
-      alert("Failed to update departments. Please try again.");
+      console.error("Failed to update member:", err);
+      alert("Failed to update member. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -417,7 +434,7 @@ export default function TeamManagementPage() {
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-slate-900">
-                Assign Departments
+                Assign Role & Department
               </h3>
               <button
                 onClick={() => setIsAssignModalOpen(false)}
@@ -426,11 +443,40 @@ export default function TeamManagementPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
-            <p className="mb-4 text-[13px] text-slate-500">
-              Select which departments <strong>{selectedUser.firstName} {selectedUser.lastName}</strong> should be assigned to:
+
+            <p className="mb-3 text-[13px] text-slate-500">
+              Configure <strong>{selectedUser.firstName} {selectedUser.lastName}</strong>:
             </p>
-            
+
+            {/* Role picker */}
+            {selectedUser.role !== "ceo" && (
+              <div className="mb-5">
+                <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["staff", "admin", "super_admin"] as const).map((r) => {
+                    const labels: Record<string, string> = { staff: "Staff", admin: "Dept Admin", super_admin: "Super Admin" };
+                    const colors: Record<string, string> = {
+                      staff: selectedRole === r ? "border-slate-500 bg-slate-50 text-slate-700" : "border-slate-200 text-slate-500",
+                      admin: selectedRole === r ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500",
+                      super_admin: selectedRole === r ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-500",
+                    };
+                    return (
+                      <button
+                        key={r}
+                        onClick={() => setSelectedRole(r)}
+                        className={`rounded-lg border px-3 py-2 text-[12px] font-medium transition ${colors[r]}`}
+                      >
+                        {labels[r]}
+                        {selectedRole === r && <Check className="ml-1 inline h-3 w-3" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Departments</p>
+
             <div className="space-y-2 max-h-64 overflow-y-auto mb-6">
               {departments.map((dept) => (
                 <label

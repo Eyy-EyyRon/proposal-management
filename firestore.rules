@@ -118,10 +118,11 @@ service cloud.firestore {
             )
           )
           ||
-          // Self: can update own profile but NEVER change role, email, or delegatedUserIds
+          // Self: can update own profile but NEVER change role, email, delegatedUserIds, or isDeptAdmin
           (
             isOwner(userId)
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds"])
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(["role", "email", "delegatedUserIds", "isDeptAdmin"])
           )
           ||
           // Admin: can update staff in their dept only
@@ -133,11 +134,21 @@ service cloud.firestore {
           )
           ||
           // CEO / super-admin: can update department assignments on any user
-          // (covers setUserDepartments — writes departments, department, updatedAt)
+          // (covers setUserDepartments — writes departments, department, departmentId, updatedAt)
           (
             isSuperAdmin()
             && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(["departments", "department", "updatedAt"])
+                .hasOnly(["departments", "department", "departmentId", "updatedAt"])
+          )
+          ||
+          // CEO / super-admin: can assign role + isDeptAdmin via setUserRole
+          // isDeptAdmin is NOT self-writable — only this path stamps it.
+          (
+            isSuperAdmin()
+            && !isRootCeo(userId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["role", "isDeptAdmin", "updatedAt"])
+            && request.resource.data.isDeptAdmin == (request.resource.data.role == "admin")
           )
           ||
           // Super Admin: deactivate/reactivate a user (isActive toggle).
