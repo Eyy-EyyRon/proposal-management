@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, Suspense, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -31,7 +31,7 @@ function friendlyError(err: unknown): string {
   return "An unexpected error occurred.";
 }
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
@@ -581,6 +581,14 @@ function PasswordField({
       </div>
       {hint && <p className="mt-1.5 text-xs text-red-500">{hint}</p>}
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
   );
 }
 
