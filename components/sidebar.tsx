@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState as useStateInner, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -30,10 +30,11 @@ import {
   ShieldAlert,
   type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
 import { useAuth, useRole, useActingAsCeo, useElevation, type UserRole } from "@/contexts/auth-context";
 import { JitElevationModal } from "@/components/jit-elevation-modal";
 import { signOut } from "@/lib/auth";
+import { subscribeToVerificationQueue, subscribeToReadyToSendTasks, type ProposalTask } from "@/lib/firestore";
+import { LazySecurityCore } from "@/components/three/lazy-three";
 
 // ─── NAV CONFIG ─────────────────────────────────────────────
 interface NavItem {
@@ -179,24 +180,24 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
     quickBtnHover: "hover:bg-violet-700",
   },
   admin: {
-    aside:         "border-r border-indigo-100 bg-white/95 backdrop-blur-xl",
-    brand:         "bg-indigo-700",
-    brandShadow:   "shadow-sm shadow-indigo-200",
-    brandIcon:     Shield,
-    badgeCls:      "rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700",
+    aside:         "border-r border-teal-100 bg-white/95 backdrop-blur-xl",
+    brand:         "bg-teal-700",
+    brandShadow:   "shadow-sm shadow-teal-200",
+    brandIcon:     ShieldCheck,
+    badgeCls:      "rounded-full bg-teal-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-700",
     badgeLabel:    "DEPT ADMIN",
-    sectionLabel:  "text-indigo-400",
-    activeLink:    "bg-indigo-50 text-indigo-800 shadow-sm shadow-indigo-100/50",
-    activeIcon:    "text-indigo-600",
-    hoverLink:     "text-slate-500 hover:bg-indigo-50/50 hover:text-indigo-700",
-    chevron:       "text-indigo-300",
-    divider:       "border-indigo-100/60",
-    avatar:        "bg-gradient-to-br from-indigo-500 to-indigo-700",
-    avatarShadow:  "shadow-sm shadow-indigo-200",
-    hoverUser:     "hover:bg-indigo-50/50",
-    hoverLogout:   "hover:bg-indigo-50 hover:text-indigo-700",
-    quickBtn:      "bg-indigo-600 text-white",
-    quickBtnHover: "hover:bg-indigo-700",
+    sectionLabel:  "text-teal-400",
+    activeLink:    "bg-teal-50 text-teal-800 shadow-sm shadow-teal-100/50",
+    activeIcon:    "text-teal-600",
+    hoverLink:     "text-slate-500 hover:bg-teal-50/50 hover:text-teal-700",
+    chevron:       "text-teal-300",
+    divider:       "border-teal-100/60",
+    avatar:        "bg-gradient-to-br from-teal-500 to-teal-700",
+    avatarShadow:  "shadow-sm shadow-teal-200",
+    hoverUser:     "hover:bg-teal-50/50",
+    hoverLogout:   "hover:bg-teal-50 hover:text-teal-700",
+    quickBtn:      "bg-teal-600 text-white",
+    quickBtnHover: "hover:bg-teal-700",
   },
   admin_ceo: {
     aside:         "border-r border-amber-200/60 bg-amber-50/60 backdrop-blur-xl",
@@ -253,11 +254,31 @@ function detectActiveRole(pathname: string, userRole: UserRole): string {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { role, isCeo, isAtLeast } = useRole();
   const { actingAsCeo } = useActingAsCeo();
   const { isElevated, elevation, elevationTier, elevationCountdown } = useElevation();
-  const [showElevationModal, setShowElevationModal] = useState(false);
+  const [showElevationModal, setShowElevationModal] = useStateInner(false);
+  const [verifyingCount, setVerifyingCount] = useStateInner(0);
+  const [ceoHasActivity, setCeoHasActivity] = useStateInner(false);
+
+  // Subscribe to verification queue count for Dept Admin
+  useEffect(() => {
+    if (role !== "admin" || !profile?.department || !user?.uid) return;
+    const unsub = subscribeToVerificationQueue(
+      user.uid,
+      profile.department,
+      (tasks) => setVerifyingCount(tasks.length)
+    );
+    return unsub;
+  }, [role, profile?.department, user?.uid]);
+
+  // Subscribe to active tasks for CEO Security Core
+  useEffect(() => {
+    if (role !== "ceo") return;
+    const unsub = subscribeToReadyToSendTasks((tasks: ProposalTask[]) => setCeoHasActivity(tasks.length > 0));
+    return unsub;
+  }, [role]);
 
   // Determine which nav set based on current folder
   const activeRole = detectActiveRole(pathname, role);
@@ -287,6 +308,13 @@ export function Sidebar() {
   return (
     <>
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col ${theme.aside}`}>
+      {/* Security Core — CEO sidebar only */}
+      {activeRole === "ceo" && (
+        <div className="flex justify-center pt-4 pb-1">
+          <LazySecurityCore hasActivity={ceoHasActivity} />
+        </div>
+      )}
+
       {/* Brand */}
       <div className="flex h-14 shrink-0 items-center gap-2.5 px-5">
         <div className="relative h-8 w-8 overflow-hidden rounded-md">
@@ -336,6 +364,18 @@ export function Sidebar() {
                 }`}
               />
               <span className="relative z-10 min-w-0 truncate">{item.label}</span>
+              {/* Verification queue ping dot — Dept Admin only */}
+              {role === "admin" && item.href === "/dashboard/tasks" && verifyingCount > 0 && !active && (
+                <span className="relative z-10 flex items-center gap-1 justify-self-end">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-500" />
+                  </span>
+                  <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-bold text-teal-700">
+                    {verifyingCount}
+                  </span>
+                </span>
+              )}
               {active && (
                 <ChevronRight className={`relative z-10 h-3 w-3 justify-self-end ${theme.chevron}`} />
               )}

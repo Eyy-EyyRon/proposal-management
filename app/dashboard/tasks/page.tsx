@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Topbar } from "@/components/topbar";
+import { Breadcrumb } from "@/components/breadcrumb";
+import { LazyUrgencyShard } from "@/components/three/lazy-three";
 import { TaskCard } from "@/components/task-card";
 import { AssignTaskModal } from "@/components/assign-task-modal";
 import { VerifyTaskModal } from "@/components/verify-task-modal";
@@ -243,7 +245,7 @@ export default function TasksPage() {
       onClick={() => setVerifyModal(task)}
       className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-emerald-700 active:scale-95"
     >
-      <CheckCircle className="h-3.5 w-3.5" /> Verify & Promote
+      <CheckCircle className="h-3.5 w-3.5" /> Verify & Promote to CEO
     </button>
   );
 
@@ -259,7 +261,7 @@ export default function TasksPage() {
         className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
       >
         {submittingId === task.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-        Submit for Review
+        Submit for Admin Review
       </button>
     );
   };
@@ -274,6 +276,7 @@ export default function TasksPage() {
         {/* Page header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
+            <Breadcrumb />
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold text-slate-900">
                 {isSuperAdmin ? "System Task Board" : isAdmin ? "Task Board" : "My Tasks"}
@@ -347,7 +350,7 @@ export default function TasksPage() {
             )}
 
             {/* ── VERIFICATION QUEUE (Dept Admin / Super Admin) ── */}
-            {(isAdmin || isSuperAdmin) && verificationQueue.length > 0 && (
+            {(isAdmin || isSuperAdmin) && (
               <section>
                 <div className="mb-3 flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-emerald-600" />
@@ -359,11 +362,21 @@ export default function TasksPage() {
                     {isSuperAdmin ? "All departments" : `Dept-locked · Only ${profile?.department ?? "your dept"} proposals`}
                   </span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {verificationQueue.map((task) => (
-                    <TaskCard key={task.id} task={task} actions={renderVerifyActions(task)} />
-                  ))}
-                </div>
+                {verificationQueue.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-teal-200 bg-teal-50/40 py-12">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100">
+                      <ShieldCheck className="h-6 w-6 text-teal-500" />
+                    </div>
+                    <p className="text-[14px] font-semibold text-teal-700">Queue Clear</p>
+                    <p className="text-[12px] text-teal-500">No proposals awaiting your verification. Great work!</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {verificationQueue.map((task) => (
+                      <TaskCard key={task.id} task={task} actions={renderVerifyActions(task)} />
+                    ))}
+                  </div>
+                )}
               </section>
             )}
 
@@ -399,6 +412,37 @@ export default function TasksPage() {
                   {revisionRequested.map((task) => (
                     <TaskCard key={task.id} task={task} actions={renderStaffActions(task)} />
                   ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── P1 STAFF URGENCY SECTION ── */}
+            {isStaff && inProgressTasks.some((t) => t.urgency === "p1") && (
+              <section className="rounded-2xl border border-rose-200 bg-rose-50/30 p-4">
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 animate-ping rounded-full bg-rose-500" />
+                    <h3 className="text-sm font-bold text-rose-700">P1 Critical Task</h3>
+                  </div>
+                  <span className="text-[11px] text-rose-500">SLA breach imminent — submit now</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {inProgressTasks
+                    .filter((t) => t.urgency === "p1")
+                    .map((task) => {
+                      const dueAt = task.dueAt as { seconds?: number } | null | undefined;
+                      const dueMs = dueAt?.seconds ? dueAt.seconds * 1000 : Date.now() + 3600000;
+                      const msRemaining = Math.max(0, dueMs - Date.now());
+                      const msTotal = 4 * 60 * 60 * 1000;
+                      return (
+                        <div key={task.id} className="relative">
+                          <div className="absolute -top-3 -right-2 z-10">
+                            <LazyUrgencyShard msRemaining={msRemaining} msTotal={msTotal} />
+                          </div>
+                          <TaskCard task={task} actions={renderStaffActions(task)} />
+                        </div>
+                      );
+                    })}
                 </div>
               </section>
             )}

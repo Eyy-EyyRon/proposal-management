@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { Topbar } from "@/components/topbar";
+import { Breadcrumb } from "@/components/breadcrumb";
 import { TaskCard } from "@/components/task-card";
 import { CreateTaskModal } from "@/components/create-task-modal";
 import { CeoPushBackModal } from "@/components/ceo-pushback-modal";
@@ -121,6 +122,7 @@ export default function CeoTasksPage() {
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
+            <Breadcrumb />
             <h2 className="font-sans text-lg font-semibold text-slate-900">Task Center</h2>
             <p className="mt-0.5 text-[13px] text-slate-500">
               Delegate, track, and manage all proposal tasks. Urgent items are pinned at the top.
@@ -213,7 +215,7 @@ export default function CeoTasksPage() {
                         className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
                       >
                         {sendingId === task.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                        Mark as Sent
+                        Initiate Client Discussion
                       </button>
                     )}
                     {task.status === "sent" && (

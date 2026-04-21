@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Zap, Flag, Minus, Loader2, ChevronDown } from "lucide-react";
+import { Zap, Flag, Minus, Loader2, ChevronDown, type LucideIcon } from "lucide-react";
 import { updateTaskUrgency, URGENCY_META, type UrgencyLevel, type ProposalTask } from "@/lib/firestore";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "@/components/providers/toast";
@@ -11,7 +11,7 @@ interface UrgencyEditorProps {
   disabled?: boolean;
 }
 
-const ICONS: Record<UrgencyLevel, React.ElementType> = { p1: Zap, p2: Flag, p3: Minus };
+const ICONS: Record<UrgencyLevel, LucideIcon> = { p1: Zap, p2: Flag, p3: Minus };
 
 export function UrgencyEditor({ task, disabled }: UrgencyEditorProps) {
   const { user, profile } = useAuth();

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Topbar } from "@/components/topbar";
+import { Breadcrumb } from "@/components/breadcrumb";
 import { StatusBadge } from "@/components/status-badge";
 import { DepartmentBadge } from "@/components/department-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -70,6 +71,7 @@ export default function CeoProposalsPage() {
 
       <div className="flex flex-1 flex-col gap-5 p-6">
         <div>
+          <Breadcrumb />
           <h2 className="font-sans text-lg font-semibold text-slate-900">All Proposals</h2>
           <p className="mt-0.5 text-[13px] text-slate-500">Global cross-department view of every proposal.</p>
         </div>

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { AuthProvider } from "@/contexts/auth-context";
+import { SystemStatusProvider } from "@/contexts/system-status-context";
+import { SentryBridge } from "@/components/sentry-bridge";
 import { RedirectController } from "@/components/redirect-controller";
 import { ToastProvider } from "@/components/providers/toast-provider";
 import "./globals.css";
@@ -39,10 +41,13 @@ export default function RootLayout({
       className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>
-          <RedirectController>{children}</RedirectController>
-          <ToastProvider />
-        </AuthProvider>
+        <SystemStatusProvider>
+          <AuthProvider>
+            <SentryBridge />
+            <RedirectController>{children}</RedirectController>
+            <ToastProvider />
+          </AuthProvider>
+        </SystemStatusProvider>
       </body>
     </html>
   );

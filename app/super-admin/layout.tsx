@@ -4,6 +4,7 @@ import { RoleGuard } from "@/components/role-guard";
 import { OnboardingGuard } from "@/components/onboarding-guard";
 import { Sidebar } from "@/components/sidebar";
 import { CommandPalette } from "@/components/command-palette";
+import { RoleLayout } from "@/components/role-layout";
 
 export default function SuperAdminLayout({
   children,
@@ -13,13 +14,13 @@ export default function SuperAdminLayout({
   return (
     <RoleGuard minRole="super_admin">
       <OnboardingGuard>
-        <div className="min-h-screen bg-[#faf8ff] text-slate-900">
+        <RoleLayout>
           <Sidebar />
           <div className="pl-60">
             {children}
           </div>
           <CommandPalette />
-        </div>
+        </RoleLayout>
       </OnboardingGuard>
     </RoleGuard>
   );

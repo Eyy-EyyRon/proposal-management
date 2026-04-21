@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback, memo } from "react";
 import Link from "next/link";
 import { Search, FileText, CheckCircle, Clock, XCircle, FilePlus, Copy, Check, Loader2, Trash2, Download, FolderOpen, Eye, AlertTriangle, Archive, Share2 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
+import { Breadcrumb } from "@/components/breadcrumb";
 import { StatCard } from "@/components/stat-card";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import {
@@ -409,7 +410,8 @@ export default function ProposalsPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200 shadow-sm xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h2 className="font-sans text-xl font-bold tracking-tight text-slate-950">Proposals</h2>
+            <Breadcrumb />
+          <h2 className="font-sans text-xl font-bold tracking-tight text-slate-950">Proposals</h2>
             <p className="mt-1 text-[13px] text-slate-400">
               Track and manage all client proposals.
             </p>

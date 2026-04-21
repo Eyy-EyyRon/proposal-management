@@ -6,6 +6,7 @@ import { Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { signIn, signUp, signInWithGoogle, resetPassword } from "@/lib/auth";
 import Image from "next/image";
+import { LazyParticleField } from "@/components/three/lazy-three";
 
 const FIREBASE_ERROR_MAP: Record<string, string> = {
   "auth/email-already-in-use": "This email is already registered. Try signing in instead.",
@@ -55,18 +56,20 @@ function HomeContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+  const [warpActive, setWarpActive] = useState(false);
 
   // Signup validation
   const passwordTooShort = password.length > 0 && password.length < 6;
   const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
   const signupDisabled = loading || !password || password.length < 6 || password !== confirmPassword;
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated (with warp)
   useEffect(() => {
-    if (!authLoading && user) {
-      router.replace("/dashboard");
+    if (!authLoading && user && !warpActive) {
+      setWarpActive(true);
+      setTimeout(() => router.replace("/dashboard"), 700);
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, warpActive]);
 
   // Clear error when switching views
   useEffect(() => {
@@ -80,7 +83,8 @@ function HomeContent() {
     setLoading(true);
     try {
       await signIn(email, password);
-      // onAuthStateChanged will trigger redirect
+      setWarpActive(true);
+      setTimeout(() => router.replace("/dashboard"), 700);
     } catch (err: unknown) {
       setError(friendlyError(err));
     } finally {
@@ -106,6 +110,8 @@ function HomeContent() {
     setLoading(true);
     try {
       await signUp(email, password, firstName.trim(), lastName.trim());
+      setWarpActive(true);
+      setTimeout(() => router.replace("/dashboard"), 700);
     } catch (err: unknown) {
       setError(friendlyError(err));
     } finally {
@@ -118,6 +124,8 @@ function HomeContent() {
     setLoading(true);
     try {
       await signInWithGoogle();
+      setWarpActive(true);
+      setTimeout(() => router.replace("/dashboard"), 700);
     } catch (err: unknown) {
       setError(friendlyError(err));
     } finally {
@@ -158,6 +166,12 @@ function HomeContent() {
         <section className="relative flex flex-col justify-center overflow-hidden p-10 sm:p-14 xl:border-r border-white/10">
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#780116]/20 to-slate-950" />
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+          <LazyParticleField warp={warpActive} />
+          {/* Warp-to-black overlay */}
+          <div
+            className="pointer-events-none absolute inset-0 bg-black transition-opacity duration-700"
+            style={{ opacity: warpActive ? 1 : 0 }}
+          />
           <div className="relative z-10 grid w-full">
             {/* Login Text */}
             <div

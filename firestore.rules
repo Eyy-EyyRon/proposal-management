@@ -181,12 +181,24 @@ service cloud.firestore {
           // CEO / super-admin (with Critical elevation): assign role + isDeptAdmin.
           // Role changes require Critical elevation — this is the peer-lock + tier gate.
           // isDeptAdmin is NOT self-writable — only this path stamps it.
+          // ── PEER IMMUNITY ──────────────────────────────────────────────
+          // Super Admin may only role-change staff or admin accounts.
+          // CEO and other super_admin accounts are IMMUNE to super_admin role edits.
+          // The CEO retains full authority to promote/demote any non-root-CEO account.
           (
-            (
-              isCeo()
-              || (isSuperAdmin() && hasCriticalElevation())
-            )
+            isCeo()
             && !isRootCeo(userId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["role", "isDeptAdmin", "updatedAt"])
+            && request.resource.data.isDeptAdmin == (request.resource.data.role == "admin")
+          )
+          ||
+          (
+            isSuperAdmin() && hasCriticalElevation()
+            && !isRootCeo(userId)
+            // ─ PEER IMMUNITY: super_admin cannot touch CEO or other super_admin accounts ─
+            && resource.data.role in ["staff", "admin"]
+            && request.resource.data.role in ["staff", "admin"]
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["role", "isDeptAdmin", "updatedAt"])
             && request.resource.data.isDeptAdmin == (request.resource.data.role == "admin")
