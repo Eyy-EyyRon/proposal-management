@@ -13,6 +13,7 @@ import { useProbationGuard } from "@/hooks/use-probation-guard";
 import { ProbationaryBanner } from "@/components/probationary-banner";
 import {
   subscribeToAdminTasks,
+  subscribeToOpenDeptTasks,
   subscribeToDeptAdminTasks,
   subscribeToDeptScopedTasks,
   subscribeToSuperAdminTasks,
@@ -78,7 +79,7 @@ export default function TasksPage() {
     if (isAdmin) {
       const dept = profile?.department ?? "";
 
-      // Tasks where this admin is the top-level handler (CEO assigned to them)
+      // Tasks where this admin is the top-level handler (CEO assigned directly to them)
       const unsub1 = subscribeToAdminTasks(uid, (adminTasks) => {
         setTasks((prev) => {
           const ids = new Set(adminTasks.map((t) => t.id));
@@ -108,11 +109,24 @@ export default function TasksPage() {
             setLoading(false);
           });
 
+      // Open dept tasks (CEO selected "Any admin" — adminId is null)
+      const unsub3 = dept
+        ? subscribeToOpenDeptTasks(dept, (openTasks) => {
+            setTasks((prev) => {
+              const openIds = new Set(openTasks.map((t) => t.id));
+              return [...prev.filter((t) => !openIds.has(t.id)), ...openTasks].sort(
+                (a, b) => toDueMs(a.dueAt) - toDueMs(b.dueAt)
+              );
+            });
+            setLoading(false);
+          })
+        : () => {};
+
       // Dept-scoped verification queue
-      const unsub3 = subscribeToVerificationQueue(uid, dept, (q) => {
+      const unsub4 = subscribeToVerificationQueue(uid, dept, (q) => {
         setVerificationQueue(q);
       });
-      return () => { unsub1(); unsub2(); unsub3(); };
+      return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
     }
 
     if (isStaff) {
@@ -226,17 +240,47 @@ export default function TasksPage() {
       }
       return null;
     }
-    // Dept Admin: scoped to their segment of the chain
-    if (task.adminId === user?.uid && !task.deptAdminId) {
+    // Open task (CEO picked "Any admin") — any dept admin in the dept can claim it.
+    if (!task.adminId && !task.deptAdminId && !task.assigneeId && task.status === "drafting") {
       return (
-        <button
-          onClick={() => setAssignModal({ task, level: "deptAdmin" })}
-          className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-violet-700 active:scale-95"
-        >
-          <UserPlus className="h-3.5 w-3.5" /> Assign Dept Admin
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAssignModal({ task, level: "staff" })}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-violet-700 active:scale-95"
+          >
+            <UserPlus className="h-3.5 w-3.5" /> Claim & Assign Staff
+          </button>
+          <button
+            onClick={() => setAssignModal({ task, level: "deptAdmin" })}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
+          >
+            <UserPlus className="h-3.5 w-3.5" /> Forward to Admin
+          </button>
+        </div>
       );
     }
+    // Admin is the top-level handler (CEO → this admin). No deptAdmin set yet.
+    // They can either forward to another dept admin OR directly assign staff
+    // (assignTask will auto-fill deptAdminId = themselves in the latter case).
+    if (task.adminId === user?.uid && !task.deptAdminId && !task.assigneeId) {
+      return (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAssignModal({ task, level: "staff" })}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-violet-700 active:scale-95"
+          >
+            <UserPlus className="h-3.5 w-3.5" /> Assign Staff
+          </button>
+          <button
+            onClick={() => setAssignModal({ task, level: "deptAdmin" })}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
+          >
+            <UserPlus className="h-3.5 w-3.5" /> Forward to Admin
+          </button>
+        </div>
+      );
+    }
+    // This admin is already set as deptAdmin — assign staff
     if (task.deptAdminId === user?.uid && !task.assigneeId) {
       return (
         <button

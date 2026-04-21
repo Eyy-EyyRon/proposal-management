@@ -3044,8 +3044,8 @@ export async function createTask(data: {
   requesterId: string;
   requesterName: string;
   ceoId?: string;               // Set when a Super Admin creates the task on behalf of CEO oversight
-  adminId: string;
-  adminName: string;
+  adminId: string | null;       // null = "any admin" — visible to all dept admins in the department
+  adminName: string | null;
   department: string;
   clientName: string;
   clientEmail?: string;
@@ -3063,8 +3063,8 @@ export async function createTask(data: {
     requesterId: data.requesterId,
     requesterName: data.requesterName,
     ceoId: data.ceoId ?? null,
-    adminId: data.adminId,
-    adminName: data.adminName,
+    adminId: data.adminId ?? null,
+    adminName: data.adminName ?? null,
     deptAdminId: null,
     deptAdminName: null,
     assigneeId: null,
@@ -3083,14 +3083,35 @@ export async function createTask(data: {
       action: "created",
       by: data.requesterId,
       byName: data.requesterName,
-      to: data.adminId,
-      toName: data.adminName,
+      to: data.adminId ?? null,
+      toName: data.adminName ?? null,
       at: new Date().toISOString(),
     }],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
   return ref.id;
+}
+
+// ─── OPEN DEPT TASKS: visible to any admin in the dept ──────
+// Created when CEO picks "Any admin" — adminId is null.
+// Any dept admin in that department can claim and assign it.
+export function subscribeToOpenDeptTasks(
+  department: string,
+  callback: (tasks: ProposalTask[]) => void
+): () => void {
+  const q = query(
+    collection(db, "tasks"),
+    where("adminId", "==", null),
+    where("department", "==", department),
+    where("status", "in", ["drafting", "verifying", "revision_requested", "changes_requested", "ready_to_send"]),
+    orderBy("dueAt", "asc")
+  );
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // ─── ASSIGN TASK (Admin → Dept Admin, or Dept Admin → Staff) ─
@@ -3123,9 +3144,25 @@ export async function assignTask(
   if (level === "deptAdmin") {
     update.deptAdminId = targetId;
     update.deptAdminName = targetName;
+    // If this was an open task, the forwarding admin claims it
+    if (!task.adminId) {
+      update.adminId = assignerId;
+      update.adminName = assignerName;
+    }
   } else {
     update.assigneeId = targetId;
     update.assigneeName = targetName;
+    // If the admin is directly assigning staff without a deptAdmin in the chain,
+    // auto-set themselves as deptAdmin so the verification chain is complete.
+    if (!task.deptAdminId) {
+      update.deptAdminId = assignerId;
+      update.deptAdminName = assignerName;
+    }
+    // If this was an open task (adminId=null), the claiming admin becomes the owner.
+    if (!task.adminId) {
+      update.adminId = assignerId;
+      update.adminName = assignerName;
+    }
   }
 
   await updateDoc(doc(db, "tasks", taskId), update);

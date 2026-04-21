@@ -31,7 +31,7 @@ interface CreateTaskModalProps {
 
 type DeadlineMode = "preset" | "custom";
 
-const STEP_LABELS = ["Client Info", "Scope & Deadline", "Review & Submit"];
+const STEP_LABELS = ["Client Info", "Template", "Scope & Deadline", "Review & Submit"];
 
 // ── helpers ──────────────────────────────────────────────────
 function formatDeadline(date: Date): string {
@@ -168,27 +168,34 @@ export function CreateTaskModal({
       if (!clientName.trim()) { toast.error("Client name is required."); return; }
       if (!brief.trim()) { toast.error("Brief description is required."); return; }
     }
-    if (step === 2) {
+    // Step 2 (template) is optional — no validation needed
+    if (step === 3) {
       if (!department) { toast.error("Select a department."); return; }
       if (deadlineMode === "custom" && !customDateStr) {
         toast.error("Pick a custom deadline date."); return;
       }
     }
-    setStep((s) => Math.min(s + 1, 3));
+    setStep((s) => Math.min(s + 1, 4));
   };
 
   const goBack = () => setStep((s) => Math.max(s - 1, 1));
+
+  // Template search filter
+  const [templateSearch, setTemplateSearch] = useState("");
+  const filteredTemplates = templates.filter((t) =>
+    t.name.toLowerCase().includes(templateSearch.toLowerCase())
+  );
 
   const handleSubmit = async () => {
     if (!user || !profile) return;
     const selectedTemplate = templates.find((t) => t.id === templateId);
     const requesterName = `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() || (isSuperAdmin ? "Super Admin" : "CEO");
     const selectedAdmin = admins.find((a) => a.id === selectedAdminId);
-    // selectedAdminId === "" means "Any admin" was intentionally chosen — that is valid
-    const assignedAdminId = selectedAdmin?.id ?? user.uid;
+    // null = "Any admin" — task is open to all dept admins in the selected department
+    const assignedAdminId = selectedAdmin?.id ?? null;
     const assignedAdminName = selectedAdmin
       ? `${selectedAdmin.firstName} ${selectedAdmin.lastName}`.trim()
-      : requesterName;
+      : null;
 
     setSaving(true);
     try {
@@ -224,6 +231,7 @@ export function CreateTaskModal({
   const meta = URGENCY_META[urgency];
   const selectedTemplate = templates.find((t) => t.id === templateId);
   const UrgencyIcon = urgency === "p1" ? Zap : urgency === "p2" ? Flag : Minus;
+  const totalSteps = 4;
 
   return (
     <div
@@ -238,7 +246,7 @@ export function CreateTaskModal({
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div>
             <h3 className="text-[15px] font-semibold text-slate-800">Create Task</h3>
-            <p className="text-[12px] text-slate-400">Step {step} of 3 — {STEP_LABELS[step - 1]}</p>
+            <p className="text-[12px] text-slate-400">Step {step} of {totalSteps} — {STEP_LABELS[step - 1]}</p>
           </div>
           <button
             onClick={onClose}
@@ -266,7 +274,7 @@ export function CreateTaskModal({
                     {label}
                   </span>
                 </div>
-                {i < 2 && (
+                {i < totalSteps - 1 && (
                   <div className={`mx-2 h-px flex-1 transition-all ${done ? "bg-emerald-400" : "bg-slate-200"}`} />
                 )}
               </div>
@@ -317,54 +325,117 @@ export function CreateTaskModal({
           </div>
         )}
 
-        {/* ── STEP 2: Scope & Deadline ── */}
+        {/* ── STEP 2: Template Selection ── */}
         {step === 2 && (
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto px-6 py-5">
+            <div className="flex items-center gap-2 rounded-xl bg-violet-50/60 px-4 py-2.5">
+              <FileText className="h-4 w-4 text-violet-500" />
+              <span className="text-[12px] font-medium text-violet-700">Select a proposal template (optional)</span>
+            </div>
+
+            {templatesLoading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading templates…
+              </div>
+            ) : (
+              <>
+                {/* Search */}
+                {templates.length > 4 && (
+                  <input
+                    value={templateSearch}
+                    onChange={(e) => setTemplateSearch(e.target.value)}
+                    placeholder="Search templates…"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-[13px] text-slate-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                  />
+                )}
+
+                {/* None card */}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setTemplateId("")}
+                    className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-[13px] transition ${
+                      !templateId
+                        ? "border-violet-300 bg-violet-50 ring-2 ring-violet-200"
+                        : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                      !templateId ? "bg-violet-100" : "bg-slate-100"
+                    }`}>
+                      <Minus className={`h-4 w-4 ${!templateId ? "text-violet-500" : "text-slate-400"}`} />
+                    </div>
+                    <div>
+                      <p className={`font-semibold ${!templateId ? "text-violet-700" : "text-slate-600"}`}>No template</p>
+                      <p className="text-[11px] text-slate-400">Staff drafts from scratch</p>
+                    </div>
+                    {!templateId && <CheckCircle className="ml-auto h-4 w-4 shrink-0 text-violet-500" />}
+                  </button>
+
+                  {filteredTemplates.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTemplateId(t.id)}
+                      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-[13px] transition ${
+                        templateId === t.id
+                          ? "border-violet-300 bg-violet-50 ring-2 ring-violet-200"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                        templateId === t.id ? "bg-violet-100" : "bg-slate-100"
+                      }`}>
+                        <FileText className={`h-4 w-4 ${templateId === t.id ? "text-violet-500" : "text-slate-400"}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`truncate font-semibold ${templateId === t.id ? "text-violet-700" : "text-slate-700"}`}>{t.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {t.isPublished ? (
+                            <span className="flex items-center gap-1 text-[10px] text-emerald-600"><Globe className="h-2.5 w-2.5" />Published</span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-[10px] text-amber-600"><EyeOff className="h-2.5 w-2.5" />Draft</span>
+                          )}
+                          <span className="text-[10px] text-slate-300">·</span>
+                          <span className="text-[10px] text-slate-400">{t.type?.toUpperCase()}</span>
+                        </div>
+                      </div>
+                      {templateId === t.id && <CheckCircle className="ml-auto h-4 w-4 shrink-0 text-violet-500" />}
+                    </button>
+                  ))}
+
+                  {filteredTemplates.length === 0 && templateSearch && (
+                    <div className="col-span-2 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center text-[12px] text-slate-400">
+                      No templates match &ldquo;{templateSearch}&rdquo;
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP 3: Scope & Deadline ── */}
+        {step === 3 && (
           <div className="max-h-[60vh] space-y-5 overflow-y-auto px-6 py-5">
-            {/* Department + Template */}
+            {/* Department */}
             <div className="flex items-center gap-2 rounded-xl bg-violet-50/60 px-4 py-2.5">
               <Building2 className="h-4 w-4 text-violet-500" />
               <span className="text-[12px] font-medium text-violet-700">Which team handles this?</span>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-[12px] font-medium text-slate-500">Department *</label>
-                <select
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[13px] text-slate-700 outline-none transition focus:border-violet-400"
-                >
-                  <option value="">Select department</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.name}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[12px] font-medium text-slate-500">Template</label>
-                {templatesLoading ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] text-slate-400">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading templates…
-                  </div>
-                ) : templates.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[12px] text-slate-400">
-                    No templates available
-                  </div>
-                ) : (
-                  <select
-                    value={templateId}
-                    onChange={(e) => setTemplateId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[13px] text-slate-700 outline-none transition focus:border-violet-400"
-                  >
-                    <option value="">No template</option>
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}{!t.isPublished ? " (Draft)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-medium text-slate-500">Department *</label>
+              <select
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[13px] text-slate-700 outline-none transition focus:border-violet-400"
+              >
+                <option value="">Select department</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.name}>{d.name}</option>
+                ))}
+              </select>
             </div>
 
             {/* Admin Handler picker */}
@@ -534,8 +605,8 @@ export function CreateTaskModal({
           </div>
         )}
 
-        {/* ── STEP 3: Review & Submit ── */}
-        {step === 3 && (
+        {/* ── STEP 4: Review & Submit ── */}
+        {step === 4 && (
           <div className="max-h-[60vh] space-y-4 overflow-y-auto px-6 py-5">
             <div className="flex items-center gap-2 rounded-xl bg-emerald-50/60 px-4 py-2.5">
               <CheckCircle className="h-4 w-4 text-emerald-500" />
@@ -650,7 +721,7 @@ export function CreateTaskModal({
             </button>
           )}
 
-          {step < 3 ? (
+          {step < 4 ? (
             <button
               type="button"
               onClick={goNext}

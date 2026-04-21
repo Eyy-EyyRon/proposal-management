@@ -24,6 +24,9 @@ interface UserOption {
   email: string;
   role: string;
   department: string | null;
+  departments?: string[];
+  avatarUrl?: string;
+  jobTitle?: string;
 }
 
 export function AssignTaskModal({ isOpen, onClose, task, level }: AssignTaskModalProps) {
@@ -40,36 +43,32 @@ export function AssignTaskModal({ isOpen, onClose, task, level }: AssignTaskModa
 
     (async () => {
       try {
-        // Query users based on level
-        let q;
-        if (level === "deptAdmin") {
-          // Find admins in the task's department
-          q = query(
-            collection(db, "users"),
-            where("role", "==", "admin"),
-            where("department", "==", task.department)
-          );
-        } else {
-          // Find staff in the task's department
-          q = query(
-            collection(db, "users"),
-            where("role", "==", "staff"),
-            where("department", "==", task.department)
-          );
-        }
-        const snap = await getDocs(q);
-        setUsers(
-          snap.docs.map((d) => {
+        const role = level === "deptAdmin" ? "admin" : "staff";
+        // Fetch all users of the required role, then client-side filter by dept.
+        // This covers both the legacy `department` string and the `departments[]` array.
+        const snap = await getDocs(
+          query(collection(db, "users"), where("role", "==", role))
+        );
+        const dept = task.department ?? "";
+        const filtered = snap.docs
+          .map((d) => {
             const data = d.data();
             return {
               uid: d.id,
               name: `${data.firstName ?? ""} ${data.lastName ?? ""}`.trim() || data.email,
               email: data.email,
-              role: data.role,
-              department: data.department,
+              role: data.role as string,
+              department: (data.department ?? null) as string | null,
+              departments: (data.departments ?? []) as string[],
+              avatarUrl: (data.avatarUrl ?? undefined) as string | undefined,
+              jobTitle: (data.jobTitle ?? undefined) as string | undefined,
             };
           })
-        );
+          .filter((u) =>
+            u.department === dept ||
+            (u.departments ?? []).includes(dept)
+          );
+        setUsers(filtered);
       } catch {
         toast.error("Failed to load team members.");
       } finally {
@@ -126,25 +125,33 @@ export function AssignTaskModal({ isOpen, onClose, task, level }: AssignTaskModa
             </p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {users.map((u) => (
-                <button
-                  key={u.uid}
-                  onClick={() => setSelectedUid(u.uid)}
-                  className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition ${
-                    selectedUid === u.uid
-                      ? "border-violet-300 bg-violet-50/50 ring-2 ring-violet-200"
-                      : "border-slate-200 bg-white hover:border-slate-300"
-                  }`}
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px] font-bold text-slate-500">
-                    {u.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-slate-700">{u.name}</p>
-                    <p className="text-[11px] text-slate-400">{u.email}</p>
-                  </div>
-                </button>
-              ))}
+              {users.map((u) => {
+                const initials = u.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+                const selected = selectedUid === u.uid;
+                return (
+                  <button
+                    key={u.uid}
+                    onClick={() => setSelectedUid(u.uid)}
+                    className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition ${
+                      selected
+                        ? "border-violet-300 bg-violet-50/50 ring-2 ring-violet-200"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-600">
+                      {u.avatarUrl
+                        ? <img src={u.avatarUrl} alt={u.name} className="h-full w-full object-cover" />
+                        : initials
+                      }
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-[13px] font-semibold ${selected ? "text-violet-700" : "text-slate-700"}`}>{u.name}</p>
+                      <p className="text-[11px] text-slate-400">{u.jobTitle ?? u.email}</p>
+                    </div>
+                    {selected && <UserPlus className="ml-auto h-4 w-4 shrink-0 text-violet-500" />}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
