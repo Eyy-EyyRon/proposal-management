@@ -1,23 +1,34 @@
 import type { Metadata } from "next";
-import { Merriweather, Poppins } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
+import { AuthProvider } from "@/contexts/auth-context";
+import { SystemStatusProvider } from "@/contexts/system-status-context";
+import { SentryBridge } from "@/components/sentry-bridge";
+import { RedirectController } from "@/components/redirect-controller";
+import { ToastProvider } from "@/components/providers/toast-provider";
 import "./globals.css";
 
-const poppins = Poppins({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-});
-
-const merriweather = Merriweather({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  weight: ["300", "400", "700", "900"],
-});
-
 export const metadata: Metadata = {
-  title: "Proposal Management System",
+  title: "Hyacinth Proposal System",
   description: "Manage, send, track, and sign proposals with Firebase.",
 };
+
+// ─── Suppress Firebase permission-denied snapshot noise ───────
+if (typeof window !== "undefined") {
+  const _originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    const msg = args.join(" ");
+    if (
+      msg.includes("permission-denied") &&
+      msg.includes("snapshot listener")
+    ) {
+      console.log("[Firebase] Suppressed permission-denied snapshot noise.");
+      return;
+    }
+    _originalConsoleError(...args);
+  };
+}
+// ─────────────────────────────────────────────────────────────
 
 export default function RootLayout({
   children,
@@ -27,9 +38,17 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${poppins.variable} ${merriweather.variable} h-full antialiased`}
+      className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <SystemStatusProvider>
+          <AuthProvider>
+            <SentryBridge />
+            <RedirectController>{children}</RedirectController>
+            <ToastProvider />
+          </AuthProvider>
+        </SystemStatusProvider>
+      </body>
     </html>
   );
 }

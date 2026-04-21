@@ -1,0 +1,665 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── HELPER FUNCTIONS ───────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userDocExists() {
+      return isSignedIn() && exists(userDocPath());
+    }
+
+    function getUserRole() {
+      return userDocExists() ? get(userDocPath()).data.role : "none";
+    }
+
+    function getUserDept() {
+      return userDocExists() ? get(userDocPath()).data.department : null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && getUserRole() in ["super_admin", "ceo"];
+    }
+
+    function isCeo() {
+      return isSignedIn() && getUserRole() == "ceo";
+    }
+
+    function isRootCeo(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('isRootCEO', false) == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserRole() == "admin";
+    }
+
+    function isAdminOrCeo() {
+      return isSignedIn() && getUserRole() in ["admin", "super_admin", "ceo"];
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isSameDept(deptField) {
+      return getUserDept() != null && deptField == getUserDept();
+    }
+
+    // ── GHOST-SESSION GUARD ───────────────────────────────────────────────
+    // Blocks requests from sessions that were force-logged-out by the CEO's
+    // Emergency Brake. If forceLogoutTimestamp exists and is NEWER than the
+    // elevation's requestedAt, the session is considered dead.
+    function notForcedOut() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let elevPath = /databases/$(database)/documents/elevations/$(request.auth.uid);
+      // If user doc missing or no forceLogoutTimestamp field, session is clean
+      let hasFlt = exists(userPath) && get(userPath).data.keys().hasAll(["forceLogoutTimestamp"]);
+      let flt = hasFlt ? get(userPath).data.forceLogoutTimestamp : null;
+      // No force-logout ever set — always clean
+      let fltClean = !hasFlt || flt == null || flt < request.time;
+      // If elevation doc exists, it must have been requested AFTER the force-logout
+      let elevOk = !exists(elevPath) || flt == null || get(elevPath).data.requestedAt > flt;
+      return fltClean && elevOk;
+    }
+
+    // ── JIT ELEVATION GATE — TIERED ─────────────────────────────────────
+    // Operational: auto-approved; gates staff deactivation & dept deletion.
+    // Critical:    CEO-approved; gates role changes & system settings edits.
+    // Both check server-side — clients cannot spoof these.
+
+    function hasOperationalElevation() {
+      let elev = /databases/$(database)/documents/elevations/$(request.auth.uid);
+      return exists(elev)
+        && get(elev).data.status == "active"
+        && get(elev).data.expiresAt > request.time
+        && get(elev).data.tier == "operational";
+    }
+
+    function hasCriticalElevation() {
+      let elev = /databases/$(database)/documents/elevations/$(request.auth.uid);
+      return exists(elev)
+        && get(elev).data.status == "active"
+        && get(elev).data.expiresAt > request.time
+        && get(elev).data.tier == "critical"
+        && get(elev).data.approvalStatus == "approved";
+    }
+
+    // Either tier suffices for general destructive actions (operational is the minimum).
+    function hasActiveElevation() {
+      return hasOperationalElevation() || hasCriticalElevation();
+    }
+
+    // ── DESTRUCTIVE ACTION GATES ──────────────────────────────────────────
+    // notForcedOut() prevents ghost sessions where the CEO hit Emergency Brake
+    // but the client hasn't refreshed yet.
+    function superAdminCanDestroy() {
+      return getUserRole() == "super_admin" && hasActiveElevation() && notForcedOut();
+    }
+
+    // Critical-tier gate: role changes, system settings.
+    function superAdminCanEdit() {
+      return getUserRole() == "super_admin" && hasCriticalElevation() && notForcedOut();
+    }
+
+    // ABAC: check if user's dept is in the document's sharedWith array
+    function isSharedWithUser() {
+      return getUserDept() != null
+        && resource.data.get('sharedWith', []).hasAny([getUserDept()]);
+    }
+
+    // ── DOUBLE-KEY PRIVACY GATE ──────────────────────────────────────────
+    // Returns true if the document is NOT private, OR if it IS private and
+    // the caller is either the root CEO OR explicitly listed in authorizedDelegates.
+    // Super Admins and all other roles are denied unless delegated.
+    function passesPrivacyGate() {
+      return !resource.data.get('isPrivate', false)
+        || isCeo()
+        || resource.data.get('authorizedDelegates', []).hasAny([request.auth.uid]);
+    }
+
+    // ─── USERS ───────────────────────────────────────────────
+    match /users/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      allow read: if isOwner(userId) || isAdminOrCeo();
+
+      allow update: if
+        // ── IMMORTALITY RULE ──────────────────────────────────────────────
+        // The root CEO document can NEVER have its role, isRootCEO, or email
+        // changed by anyone — including the CEO themselves.
+        !(
+          resource.data.get('isRootCEO', false) == true
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(["role", "isRootCEO", "email"])
+        )
+        &&
+        (
+          // CEO: unrestricted (subject to immortality guard above)
+          // ── DIRECT DELEGATION ONLY ────────────────────────────────
+          // Only the actual CEO (role == "ceo") can modify delegation lists.
+          // An Admin "Acting as CEO" cannot grant/revoke delegation power.
+          (
+            isCeo()
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(["delegatedUserIds", "executiveAdminIds"])
+              || getUserRole() == "ceo"
+            )
+          )
+          ||
+          // Self: can update own profile but NEVER change role, email, delegatedUserIds, or isDeptAdmin
+          (
+            isOwner(userId)
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(["role", "email", "delegatedUserIds", "isDeptAdmin"])
+          )
+          ||
+          // Admin: can update staff in their dept only
+          (
+            isAdmin()
+            && resource.data.role in ["staff"]
+            && isSameDept(resource.data.department)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role", "email", "delegatedUserIds", "canSendOnBehalfOf"])
+          )
+          ||
+          // CEO / super-admin: can update department assignments on any user
+          // (covers setUserDepartments — writes departments, department, departmentId, updatedAt)
+          (
+            isSuperAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["departments", "department", "departmentId", "updatedAt"])
+          )
+          ||
+          // CEO / super-admin (with Critical elevation): assign role + isDeptAdmin.
+          // Role changes require Critical elevation — this is the peer-lock + tier gate.
+          // isDeptAdmin is NOT self-writable — only this path stamps it.
+          // ── PEER IMMUNITY ──────────────────────────────────────────────
+          // Super Admin may only role-change staff or admin accounts.
+          // CEO and other super_admin accounts are IMMUNE to super_admin role edits.
+          // The CEO retains full authority to promote/demote any non-root-CEO account.
+          (
+            isCeo()
+            && !isRootCeo(userId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["role", "isDeptAdmin", "updatedAt"])
+            && request.resource.data.isDeptAdmin == (request.resource.data.role == "admin")
+          )
+          ||
+          (
+            isSuperAdmin() && hasCriticalElevation()
+            && !isRootCeo(userId)
+            // ─ PEER IMMUNITY: super_admin cannot touch CEO or other super_admin accounts ─
+            && resource.data.role in ["staff", "admin"]
+            && request.resource.data.role in ["staff", "admin"]
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["role", "isDeptAdmin", "updatedAt"])
+            && request.resource.data.isDeptAdmin == (request.resource.data.role == "admin")
+          )
+          ||
+          // Super Admin: deactivate/reactivate a user (isActive toggle).
+          // Requires an active elevation session — Vault Protocol enforced server-side.
+          // Peer-lock: super_admin can only deactivate staff, not other admin/super_admin.
+          (
+            superAdminCanDestroy()
+            && resource.data.role == "staff"
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["isActive", "deactivatedAt", "reactivatedAt", "updatedAt"])
+          )
+          ||
+          // CEO: can write delegation authority fields on any non-CEO user
+          // (covers updateExecutiveAdminSettings — fullPower, delegatedCeoId, isExecutiveAdmin)
+          (
+            isCeo()
+            && !isRootCeo(userId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["isExecutiveAdmin", "fullPower", "delegatedCeoId", "updatedAt"])
+          )
+        );
+
+      // ── IMMORTALITY RULE ──────────────────────────────────────────────
+      // The root CEO account can never be deleted by anyone.
+      // Super Admin delete requires an active elevation session (Vault Protocol).
+      // Peer-lock: super_admin cannot delete other admin/super_admin accounts — CEO only.
+      allow delete: if
+        (isCeo() && !isRootCeo(userId))
+        || (
+          superAdminCanDestroy()
+          && !isRootCeo(userId)
+          && resource.data.role == "staff"
+        );
+    }
+
+    // ─── DEPARTMENTS ────────────────────────────────────────
+    match /departments/{deptId} {
+      allow read: if isSignedIn();
+      allow create: if isAdminOrCeo();
+      allow update: if isAdminOrCeo();
+      // Delete: CEO unrestricted; super_admin requires active elevation (Vault Protocol)
+      allow delete: if
+        isCeo()
+        || (getUserRole() == "super_admin" && superAdminCanDestroy());
+    }
+
+    // ─── ORGANIZATION SETTINGS ───────────────────────────────
+    // Reading own settings is always allowed.
+    // Writing (changing system config) requires Critical elevation for super_admin.
+    match /orgSettings/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if
+        isOwner(userId)
+        && (
+          // CEO can always edit their own settings
+          isCeo()
+          // Admin/staff editing their own settings (non-system config)
+          || (isAdmin() || getUserRole() == "staff")
+          // Super Admin: requires Critical elevation to modify system settings
+          || (isSuperAdmin() && hasCriticalElevation())
+        );
+    }
+
+    // ─── TEMPLATES ───────────────────────────────────────────
+    match /templates/{templateId} {
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+
+      // CEO/Admin can read all templates (including drafts)
+      // Staff can only read published templates
+      allow read: if isSignedIn()
+        && (
+          isAdminOrCeo()
+          || resource.data.get('isPublished', true) == true
+        );
+
+      allow update, delete: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdminOrCeo()
+        );
+    }
+
+    // ─── PROPOSALS ───────────────────────────────────────────
+    match /proposals/{proposalId} {
+
+      // ABAC-based get: allow read if
+      //   1. Unauthenticated client portal (public share link)
+      //   2. CEO: always (Double-Key owner)
+      //   3. Any signed-in user — BUT only if document passes the privacy gate.
+      //      isPrivate=true blocks everyone except CEO and authorizedDelegates.
+      allow get: if
+        request.auth == null // unauthenticated client portal
+        || isCeo()           // CEO: always (Double-Key owner)
+        || (
+          isSignedIn()
+          && passesPrivacyGate()
+          && (
+            resource.data.ownerId == request.auth.uid
+            || resource.data.sentById == request.auth.uid
+            || isSameDept(resource.data.department)
+            || isSharedWithUser()
+            || isAdminOrCeo()
+          )
+        );
+
+      // List: resource.data is NOT available on list queries in Firestore rules.
+      // isPrivate filtering MUST be enforced at the app-query layer (where isPrivate==false).
+      // Non-CEO users must always include where("isPrivate","==",false) in their queries.
+      // CEO sees all; Super Admin / Admin / Staff are constrained by app-layer filters.
+      allow list: if isSignedIn();
+
+      // Create: Allow if authenticated, and ownerId/sentById are properly set
+      // Admin must create within their own department
+      allow create: if isSignedIn()
+        && request.resource.data.sentById == request.auth.uid
+        && (request.resource.data.ownerId == request.resource.data.sentById || request.resource.data.isDelegated == true)
+        && request.resource.data.status == "sent"
+        && (
+          isCeo()
+          || !isAdmin()
+          || isSameDept(request.resource.data.department)
+        );
+
+      // Delete: owner/sender always; CEO unrestricted; super_admin only with active elevation
+      allow delete: if isSignedIn()
+        && passesPrivacyGate()
+        && (
+          resource.data.ownerId == request.auth.uid
+          || resource.data.sentById == request.auth.uid
+          || isCeo()
+          || (getUserRole() == "super_admin" && hasActiveElevation())
+          || isAdmin()
+        );
+
+      // Update: Allow if owner, sender, or Admin/CEO
+      allow update: if
+        // Immutability: ownerId and sentById can never change after creation
+        request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.sentById == resource.data.sentById
+        && (
+          // Path 1: Authenticated owner (identity owner) — unrestricted
+          (isSignedIn() && resource.data.ownerId == request.auth.uid)
+          ||
+          // Path 2: Authenticated sender (actual sender) — unrestricted
+          (isSignedIn() && resource.data.sentById == request.auth.uid)
+          ||
+          // Path 3: Admin/CEO — allowed only if privacy gate passes.
+          // isPrivate + authorizedDelegates fields are CEO-only writes.
+          // Super Admins / Dept Admins cannot touch private proposals unless delegated.
+          (
+            isAdminOrCeo()
+            && passesPrivacyGate()
+            && (
+              isCeo()
+              || !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(["isPrivate", "authorizedDelegates"])
+            )
+          )
+          ||
+          // Path 4: Public (unauthenticated) client actions only
+          // Self-sign block: only unauthenticated sessions can accept/reject
+          (
+            request.auth == null
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["status", "signatureType", "signatureUrl", "signedAt", "viewedAt", "updatedAt"])
+            // ── STATUS LOCKDOWN ──────────────────────────────────────────
+            // Archived/trashed proposals have isSignable=false — clients
+            // cannot sign or even view-update them (Zombie Signature fix)
+            && resource.data.get('isSignable', true) == true
+            && (
+              // Signature zombie guard: only sent/viewed proposals can be signed
+              (resource.data.status == "sent" && request.resource.data.status in ["viewed", "accepted", "rejected"])
+              || (resource.data.status == "viewed" && request.resource.data.status in ["accepted", "rejected"])
+            )
+            && request.resource.data.templateId == resource.data.templateId
+            && request.resource.data.templateName == resource.data.templateName
+            && request.resource.data.templateFileUrl == resource.data.templateFileUrl
+            && request.resource.data.templateGdocUrl == resource.data.templateGdocUrl
+            && request.resource.data.clientName == resource.data.clientName
+            && request.resource.data.clientEmail == resource.data.clientEmail
+            && request.resource.data.fieldValues == resource.data.fieldValues
+            && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.get('version', 1) == resource.data.get('version', 1)
+            && request.resource.data.get('previousVersionId', null) == resource.data.get('previousVersionId', null)
+          )
+          ||
+          // Path 5: Client Signature Forwarding (Change Signer)
+          // Only affects forwardedSignerName/Email/At + clientName/clientEmail
+          // Proposal must be in sent/viewed state (not accepted/rejected/archived)
+          (
+            request.auth == null
+            && resource.data.get('isSignable', true) == true
+            && resource.data.status in ["sent", "viewed"]
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["forwardedSignerName", "forwardedSignerEmail", "forwardedAt",
+                          "clientName", "clientEmail", "updatedAt"])
+            && request.resource.data.status == resource.data.status
+          )
+        );
+
+      // Presence subcollection — typing/viewing indicators for discussion sidebar
+      // Readable by anyone (client + staff); writable by anyone; auto-expires client-side
+      match /presence/{sessionId} {
+        allow read: if true;
+        allow create, update: if true;
+        allow delete: if true;
+      }
+
+      // Comments subcollection - soft-delete only, no hard deletes
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if true; // Allows client portal and staff to post
+        // Soft-delete only: allow update only to set isDeleted=true + deletedText
+        // Hard delete is never permitted — audit trail must be preserved
+        allow update: if (
+          isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["isDeleted", "deletedText", "deletedAt"])
+          && request.resource.data.isDeleted == true
+        );
+        allow delete: if false;
+      }
+    }
+
+    // ─── PROPOSALS SUMMARY (Lightweight Dashboard) ──────────
+    // Mirrors a subset of proposal data for fast dashboard loading.
+    // Same access pattern as proposals.
+    match /proposals_summary/{summaryId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdminOrCeo();
+    }
+
+    // ─── NOTIFICATIONS ─────────────────────────────────────────
+    match /notifications/{notificationId} {
+      // get (single doc): owner or CEO
+      allow get: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCeo()
+        );
+      // list (collection query with where userId==uid): any signed-in user.
+      // resource.data is unavailable on list; the app-layer query already
+      // filters by userId so only the user's own docs are returned.
+      allow list: if isSignedIn();
+      // Create: open — needed for unauthenticated client portal events
+      allow create: if true;
+      // Update: only the recipient can flip read=true
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
+      // Never deleted
+      allow delete: if false;
+    }
+
+    // ─── ANALYTICS ───────────────────────────────────────────
+    match /analytics/{userId} {
+      allow read: if isOwner(userId) || isCeo();
+      allow write: if isOwner(userId);
+    }
+
+    // ─── STATS (Aggregated) ─────────────────────────────────
+    // Client-side incrementGlobalStats uses setDoc+merge — must allow write for signed-in users.
+    match /stats/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // ─── AUDIT LOGS (append-only, undeletable) ──────────────
+    match /logs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+      allow read: if isAdminOrCeo();
+    }
+
+    // ─── AUDIT LOGS v2 (app writes to audit_logs/) ───────────
+    match /audit_logs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+      allow read: if isAdminOrCeo();
+    }
+
+    // ─── ACTIVITY LOGS (Shadow Audit — CEO-eyes-only) ────────
+    // Records actorId vs identityId for every delegated action.
+    // Only the root CEO UID can read. Append-only forever.
+    match /activity_logs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+      // Only the authenticated user whose doc has isRootCEO:true can read
+      allow read: if isSignedIn() && isRootCeo(request.auth.uid);
+    }
+
+    // ─── SUCCESSION REQUESTS (48h Emergency Root Access) ────
+    // An Admin can create a request. CEO can approve/deny (veto).
+    // After 48h without veto, the request becomes eligible for processing.
+    match /succession_requests/{requestId} {
+      // Only admins can create a succession request
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasAll(["requesterId", "requestedAt", "status", "reason"])
+        && request.resource.data.status == "pending"
+        && request.resource.data.requesterId == request.auth.uid;
+      // Only root CEO can approve/deny; only status + resolvedAt + resolvedBy fields may change
+      allow update: if isSignedIn()
+        && isRootCeo(request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["status", "resolvedAt", "resolvedBy"]);
+      // Read: CEO + the requester
+      allow read: if isSignedIn()
+        && (isCeo() || resource.data.requesterId == request.auth.uid);
+      allow delete: if false;
+    }
+
+    // ─── CEO SETTINGS (Global Pricing Floors, Template Sandbox) ──
+    // Only the actual CEO (not acting-as) can write.
+    match /ceo_settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && getUserRole() == "ceo";
+    }
+
+    // ─── SHARING LOGS (Cross-Dept Sharing Monitor) ────────────
+    // Append-only log for the CEO to monitor sharing activity.
+    match /sharing_logs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+      allow read: if isCeo();
+    }
+
+    // ─── TASKS (Tiered Delegation & Verification) ──────────────
+    match /tasks/{taskId} {
+      // Read: anyone in the task chain (requester, admin, deptAdmin, assignee), CEO, or Super Admin
+      allow read: if isSignedIn()
+        && (
+          isSuperAdmin()  // Super Admin has system-wide oversight
+          || resource.data.requesterId == request.auth.uid
+          || resource.data.adminId == request.auth.uid
+          || resource.data.deptAdminId == request.auth.uid
+          || resource.data.assigneeId == request.auth.uid
+        );
+
+      // List: signed-in users (app filters by role; rules can't filter "in" on list)
+      allow list: if isSignedIn();
+
+      // Create: CEO, Super Admin, or Dept Admin can initiate a task
+      allow create: if isSignedIn()
+        && (isSuperAdmin() || isAdmin())
+        && request.resource.data.status == "drafting"
+        && request.resource.data.requesterId == request.auth.uid;
+
+      // Update: depends on the transition
+      allow update: if isSignedIn()
+        && (
+          // CEO can update any task
+          isCeo()
+          ||
+          // Super Admin: can assign dept admin / staff on tasks they created or any task
+          isSuperAdmin()
+          ||
+          // Dept Admin (admin role) assigned as adminId can assign deptAdmin / staff
+          (resource.data.adminId == request.auth.uid && isAdmin())
+          ||
+          // Dept Admin assigned as deptAdminId: verify / request-changes only
+          (
+            resource.data.deptAdminId == request.auth.uid
+            && isAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(["status", "verificationNote", "history", "updatedAt", "assigneeId", "assigneeName"])
+          )
+          ||
+          // Staff assignee can submit for review (status: drafting/revision_requested → verifying)
+          (
+            resource.data.assigneeId == request.auth.uid
+            && resource.data.status in ["drafting", "revision_requested"]
+            && request.resource.data.status == "verifying"
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // ─── JIT ELEVATIONS ──────────────────────────────
+    // /elevations/{uid} — one doc per super_admin, keyed by their UID.
+    match /elevations/{uid} {
+
+      // Super Admin can read their own elevation record
+      allow get: if isOwner(uid) || isCeo();
+
+      // CEO can list all elevation records (for audit/monitoring)
+      allow list: if isCeo();
+
+      // Super Admin can create their own elevation (request elevation).
+      // Operational: status must be "active". Critical: status "pending_approval".
+      allow create: if
+        isSignedIn()
+        && request.auth.uid == uid
+        && getUserRole() == "super_admin"
+        && request.resource.data.uid == uid
+        && request.resource.data.status in ["active", "pending_approval"]
+        && request.resource.data.tier in ["operational", "critical"]
+        && request.resource.data.keys().hasOnly([
+             "uid", "actorName", "justification", "durationMs", "tier",
+             "requestedAt", "expiresAt", "status", "approvalStatus", "metadata"
+           ]);
+
+      // Revoke: Super Admin (self) or CEO can mark active → expired.
+      allow update: if
+        isSignedIn()
+        && (
+          // Self-revoke or CEO revoke: active/pending → expired
+          (
+            (request.auth.uid == uid || isCeo())
+            && resource.data.status in ["active", "pending_approval"]
+            && request.resource.data.status == "expired"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"])
+          )
+          ||
+          // CEO approves a pending_approval critical elevation:
+          // stamps status=active, approvalStatus=approved, approvedAt, approvedBy, expiresAt
+          (
+            isCeo()
+            && resource.data.status == "pending_approval"
+            && request.resource.data.status == "active"
+            && request.resource.data.approvalStatus == "approved"
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["status", "approvalStatus", "approvedAt", "approvedBy", "expiresAt"])
+          )
+          ||
+          // CEO denies: pending_approval → expired, approvalStatus=denied
+          (
+            isCeo()
+            && resource.data.status == "pending_approval"
+            && request.resource.data.status == "expired"
+            && request.resource.data.approvalStatus == "denied"
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["status", "approvalStatus", "approvedBy"])
+          )
+        );
+
+      // Super Admin can delete their own elevation doc to re-request a new session.
+      // Covers: expired, denied, or any doc where expiresAt is in the past.
+      allow delete: if
+        isOwner(uid)
+        && getUserRole() == "super_admin";
+    }
+
+    // ─── SYSTEM PURGE LOGS (Black Box — Immutable) ───────────
+    // Written exclusively by the revokeAllElevations Cloud Function.
+    // No one — not even the CEO — can update or delete these records.
+    // Read is restricted to the root CEO only.
+    match /system_purge_logs/{logId} {
+      allow create: if isSignedIn() && getUserRole() == "ceo";
+      allow read:   if isSignedIn() && getUserRole() == "ceo";
+      allow update, delete: if false;
+    }
+
+    // ─── DENY ALL OTHER PATHS ────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

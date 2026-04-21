@@ -1,5 +1,6 @@
 // Firebase Storage utility for file uploads
-// TODO: Replace with actual Firebase config once Blaze plan is enabled
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "./firebase";
 
 interface UploadResult {
   url: string;
@@ -9,57 +10,66 @@ interface UploadResult {
 
 export async function uploadFile(
   file: File,
-  folder: string
+  storagePath: string
 ): Promise<UploadResult> {
-  // TODO: Implement with Firebase Storage
-  // import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-  //
-  // const storage = getStorage();
-  // const fileRef = ref(storage, `${folder}/${Date.now()}-${file.name}`);
-  // const snapshot = await uploadBytes(fileRef, file);
-  // const url = await getDownloadURL(snapshot.ref);
-  // return { url, path: snapshot.ref.fullPath, fileName: file.name };
-
-  // Mock implementation for development
-  console.log(`[Mock] Uploading ${file.name} to ${folder}/`);
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-
-  return {
-    url: URL.createObjectURL(file),
-    path: `${folder}/${Date.now()}-${file.name}`,
-    fileName: file.name,
-  };
+  const fileRef = ref(storage, storagePath);
+  const snapshot = await uploadBytes(fileRef, file);
+  const url = await getDownloadURL(snapshot.ref);
+  return { url, path: snapshot.ref.fullPath, fileName: file.name };
 }
 
+// Upload a .docx template file
+// Path: /templates/{userId}/{templateId}/{filename}
+export async function uploadTemplateFile(
+  userId: string,
+  templateId: string,
+  file: File
+): Promise<UploadResult> {
+  const path = `templates/${userId}/${templateId}/${file.name}`;
+  return uploadFile(file, path);
+}
+
+// Upload a drawn e-signature (data URL → blob → upload)
 export async function uploadSignature(
   dataUrl: string,
   proposalId: string
 ): Promise<UploadResult> {
-  // TODO: Implement with Firebase Storage
-  // Convert dataUrl to blob, then upload
-  //
-  // const response = await fetch(dataUrl);
-  // const blob = await response.blob();
-  // const file = new File([blob], `signature-${proposalId}.png`, { type: "image/png" });
-  // return uploadFile(file, `signatures/${proposalId}`);
-
-  console.log(`[Mock] Uploading signature for proposal ${proposalId}`);
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-
-  return {
-    url: dataUrl,
-    path: `signatures/${proposalId}/signature.png`,
-    fileName: "signature.png",
-  };
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const file = new File([blob], `signature-${proposalId}.png`, { type: "image/png" });
+  const path = `signatures/${proposalId}/signature.png`;
+  return uploadFile(file, path);
 }
 
-export async function uploadTemplate(file: File): Promise<UploadResult> {
-  return uploadFile(file, "templates");
-}
-
+// Upload a signature image file
 export async function uploadSignatureImage(
   file: File,
   proposalId: string
 ): Promise<UploadResult> {
-  return uploadFile(file, `signatures/${proposalId}`);
+  const path = `signatures/${proposalId}/${file.name}`;
+  return uploadFile(file, path);
+}
+
+// Upload the frozen signed-contract HTML snapshot
+// Path: /signed-contracts/{proposalId}/signed-document.html
+export async function uploadSignedContract(
+  proposalId: string,
+  htmlBase64: string
+): Promise<UploadResult> {
+  const bytes = Uint8Array.from(atob(htmlBase64), (c) => c.charCodeAt(0));
+  const file = new File([bytes], "signed-document.html", { type: "text/html; charset=utf-8" });
+  const path = `signed-contracts/${proposalId}/signed-document.html`;
+  return uploadFile(file, path);
+}
+
+// Upload user avatar
+// Path: /avatars/{userId}/{filename}
+export async function uploadAvatar(
+  file: File,
+  userId: string
+): Promise<UploadResult> {
+  // Get file extension
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `avatars/${userId}/avatar.${ext}`;
+  return uploadFile(file, path);
 }

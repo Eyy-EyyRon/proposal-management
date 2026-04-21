@@ -23,12 +23,12 @@ function ClientAvatar({ name }: { name: string }) {
     .toUpperCase();
 
   const colors = [
-    "bg-violet-100 text-violet-700",
-    "bg-sky-100 text-sky-700",
-    "bg-amber-100 text-amber-700",
-    "bg-rose-100 text-rose-700",
+    "bg-[#780116]/10 text-[#780116]",
+    "bg-[#DB7C26]/10 text-[#DB7C26]",
+    "bg-[#F7B538]/20 text-[#9a7200]",
+    "bg-[#C32F27]/10 text-[#C32F27]",
     "bg-emerald-100 text-emerald-700",
-    "bg-indigo-100 text-indigo-700",
+    "bg-[#780116]/15 text-[#780116]",
   ];
   const color = colors[name.length % colors.length];
 
@@ -53,7 +53,7 @@ export function ProposalTable({ proposals }: ProposalTableProps) {
           </p>
           <Link
             href="/dashboard/create-proposal"
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-slate-800"
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#780116] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#C32F27]"
           >
             <FilePlus className="h-3.5 w-3.5" />
             Create proposal

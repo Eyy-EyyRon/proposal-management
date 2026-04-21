@@ -25,3 +25,14 @@ body {
     --foreground: #f8fafc;
   }
 }
+
+@keyframes elevationPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* Role theme background tokens */
+.theme-ceo        { background-color: #fdfcf7; }
+.theme-super_admin { background-color: #faf8ff; }
+.theme-admin      { background-color: #f0fdfc; }
+.theme-staff      { background-color: #f8fafc; }

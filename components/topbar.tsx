@@ -1,57 +1,80 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Eye, CheckCircle, XCircle, FileText } from "lucide-react";
+import { Bell, Eye, CheckCircle, XCircle, BellOff, Search, Users, LayoutTemplate, Trophy, Info, Crown, MessageSquare, User, Briefcase, ShieldAlert, ToggleLeft, ToggleRight, Lock, Clock } from "lucide-react";
+import Link from "next/link";
+import { toast } from "sonner";
+import { useAuth, useRole, useActingAsCeo, useElevation } from "@/contexts/auth-context";
+import {
+  subscribeToNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  type AppNotification,
+  type NotificationType,
+} from "@/lib/notifications";
 
 interface TopbarProps {
   title: string;
 }
 
-const mockNotifications = [
-  {
-    id: "1",
-    icon: CheckCircle,
-    iconColor: "text-emerald-500",
-    iconBg: "bg-emerald-50",
-    title: "Dana Liu accepted the proposal",
-    time: "2 hours ago",
-    read: false,
-  },
-  {
-    id: "2",
-    icon: Eye,
-    iconColor: "text-sky-500",
-    iconBg: "bg-sky-50",
-    title: "Northstar Inc. viewed your link",
-    time: "4 hours ago",
-    read: false,
-  },
-  {
-    id: "3",
-    icon: XCircle,
-    iconColor: "text-rose-500",
-    iconBg: "bg-rose-50",
-    title: "Robert Hayes declined",
-    time: "1 day ago",
-    read: true,
-  },
-  {
-    id: "4",
-    icon: FileText,
-    iconColor: "text-slate-500",
-    iconBg: "bg-slate-50",
-    title: "Proposal sent to Ariana Cole",
-    time: "1 day ago",
-    read: true,
-  },
-];
+const iconConfig: Record<NotificationType, { icon: typeof Eye; color: string; bg: string }> = {
+  viewed:           { icon: Eye,            color: "text-sky-500",     bg: "bg-sky-50" },
+  signed:           { icon: CheckCircle,    color: "text-emerald-500", bg: "bg-emerald-50" },
+  rejected:         { icon: XCircle,        color: "text-rose-500",    bg: "bg-rose-50" },
+  commented:        { icon: MessageSquare,  color: "text-blue-500",    bg: "bg-blue-50" },
+  team_joined:      { icon: Users,          color: "text-violet-500",  bg: "bg-violet-50" },
+  template_updated: { icon: LayoutTemplate, color: "text-amber-500",   bg: "bg-amber-50" },
+  major_deal:       { icon: Trophy,         color: "text-amber-600",   bg: "bg-amber-50" },
+  system:           { icon: Info,           color: "text-slate-500",   bg: "bg-slate-50" },
+  delegated_proposal: { icon: Crown,        color: "text-violet-600",  bg: "bg-violet-50" },
+  ceo_comment:      { icon: Crown,          color: "text-purple-600",  bg: "bg-purple-50" },
+  staff_action:     { icon: Briefcase,      color: "text-indigo-500",  bg: "bg-indigo-50" },
+  jit_elevation:    { icon: ShieldAlert,    color: "text-rose-600",    bg: "bg-rose-50" },
+};
+
+function timeAgo(ts: { seconds: number } | null | undefined): string {
+  if (!ts || !ts.seconds) return "";
+  const diff = Math.floor(Date.now() / 1000 - ts.seconds);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
 
 export function Topbar({ title }: TopbarProps) {
   const [open, setOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const ref = useRef<HTMLDivElement>(null);
+  const { user, profile } = useAuth();
+  const { role } = useRole();
+  const { actingAsCeo, toggleActingAsCeo, canActAsCeo } = useActingAsCeo();
+  const { isElevated, elevation, elevationTier, revokeElevation: endElevation, elevationCountdown } = useElevation();
 
-  const unreadCount = mockNotifications.filter(n => !n.read).length;
+  const initials = profile
+    ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
+    : "U";
 
+  const handleToggleActingAsCeo = async () => {
+    await toggleActingAsCeo();
+    const next = !actingAsCeo;
+    toast(next ? "CEO Identity Active" : "Returned to Admin Mode", {
+      description: next
+        ? "You are now operating with full CEO authority. All actions are logged."
+        : "Switched back to department admin identity.",
+      icon: next ? "👑" : "🔒",
+    });
+  };
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Real-time subscription
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeToNotifications(user.uid, setNotifications, 30, role);
+    return unsub;
+  }, [user, role]);
+
+  // Close on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -62,11 +85,156 @@ export function Topbar({ title }: TopbarProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  const handleMarkAllRead = async () => {
+    if (!user) return;
+    await markAllNotificationsRead(user.uid);
+  };
+
+  const handleNotificationClick = async (n: AppNotification) => {
+    if (!n.read) {
+      await markNotificationRead(n.id);
+    }
+  };
+
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200/60 bg-white px-6">
-      <h1 className="text-[15px] font-semibold text-slate-900">{title}</h1>
+    <div>
+      {/* JIT Elevation — Pending Critical (awaiting CEO) */}
+      {!isElevated && elevation?.status === "pending_approval" && (
+        <div className="flex items-center justify-between border-b border-amber-300 bg-gradient-to-r from-amber-100 to-amber-200 px-6 py-1.5">
+          <div className="flex items-center gap-2.5">
+            <Clock className="h-3.5 w-3.5 animate-pulse text-amber-700" />
+            <span className="text-[12px] font-semibold text-amber-900">
+              Critical Elevation Pending
+            </span>
+            <span className="rounded-full bg-amber-300/50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+              Awaiting CEO Approval
+            </span>
+          </div>
+          <button
+            onClick={() => endElevation("self")}
+            className="text-[11px] font-semibold text-amber-800 underline-offset-2 hover:underline"
+          >
+            Cancel Request
+          </button>
+        </div>
+      )}
+
+      {/* JIT Elevation Active Banner */}
+      {isElevated && (
+        <div className={`flex items-center justify-between border-b px-6 py-1.5 ${
+          elevationTier === "critical"
+            ? "border-rose-300 bg-gradient-to-r from-rose-500 to-rose-600"
+            : "border-orange-300 bg-gradient-to-r from-orange-400 to-amber-400"
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+            </span>
+            <span className={`text-[12px] font-bold ${
+              elevationTier === "critical" ? "text-white" : "text-orange-950"
+            }`}>
+              {elevationTier === "critical" ? "Critical Admin Mode" : "Active Admin Mode"}
+            </span>
+            <span className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold ${
+              elevationTier === "critical" ? "bg-white/20 text-white" : "bg-orange-900/20 text-orange-950"
+            }`}>
+              {elevationCountdown} remaining
+            </span>
+            {elevationTier === "critical" && (
+              <span className="rounded-full bg-rose-700/40 px-2 py-0.5 text-[10px] font-bold text-rose-100">
+                CEO-Approved
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => endElevation("self")}
+            className={`text-[11px] font-semibold underline-offset-2 hover:underline ${
+              elevationTier === "critical" ? "text-rose-100" : "text-orange-900"
+            }`}
+          >
+            Revoke Now
+          </button>
+        </div>
+      )}
+
+      {/* CEO Identity Active Banner */}
+      {actingAsCeo && (
+        <div className="flex items-center justify-between border-b border-amber-300 bg-gradient-to-r from-amber-400 to-amber-500 px-6 py-1.5">
+          <div className="flex items-center gap-2">
+            <Crown className="h-4 w-4 text-amber-900" />
+            <span className="text-[12px] font-semibold text-amber-950">
+              CEO Identity Active
+            </span>
+            <span className="rounded-full bg-amber-900/20 px-2 py-0.5 text-[10px] font-medium text-amber-950">
+              All actions are logged and attributed to CEO
+            </span>
+          </div>
+          <button
+            onClick={handleToggleActingAsCeo}
+            className="text-[11px] font-semibold text-amber-950 underline-offset-2 hover:underline"
+          >
+            Deactivate
+          </button>
+        </div>
+      )}
+
+    <header className={`flex h-14 shrink-0 items-center justify-between border-b px-6 transition-colors ${
+      actingAsCeo
+        ? "border-amber-200 bg-amber-50"
+        : role === "super_admin"
+        ? "border-violet-100 bg-white"
+        : role === "admin"
+        ? "border-indigo-100 bg-white"
+        : "border-slate-200/60 bg-white"
+    }`}>
+      <div className="flex items-center gap-3">
+        <h1 className="text-[15px] font-semibold text-slate-900">{title}</h1>
+        {role === "super_admin" && !actingAsCeo && (
+          <span className="flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+            <ShieldAlert className="h-3 w-3" />
+            Super Admin
+          </span>
+        )}
+        {role === "admin" && !actingAsCeo && (
+          <span className="flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+            <ShieldAlert className="h-3 w-3" />
+            Dept Admin
+          </span>
+        )}
+      </div>
 
       <div className="flex items-center gap-2">
+        {/* Acting-as-CEO toggle — for fullPower Dept Admin or Executive Super Admin */}
+        {canActAsCeo && (profile?.role === "admin" || profile?.role === "super_admin") && (
+          <button
+            onClick={handleToggleActingAsCeo}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition ${
+              actingAsCeo
+                ? "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+            }`}
+            title={actingAsCeo ? "Deactivate CEO Identity" : "Activate CEO Identity"}
+          >
+            {actingAsCeo ? <ToggleRight className="h-4 w-4 text-amber-600" /> : <ToggleLeft className="h-4 w-4" />}
+            {actingAsCeo ? "CEO Active" : "Act as CEO"}
+          </button>
+        )}
+
+        {/* Search trigger */}
+        <button
+          onClick={() => {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
+          }}
+          className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-[12px] text-slate-400 transition hover:border-slate-300 hover:text-slate-600 sm:inline-flex"
+        >
+          <Search className="h-3 w-3" />
+          Search…
+          <kbd className="ml-1 rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
+            ⌘K
+          </kbd>
+        </button>
+
         {/* Notifications */}
         <div ref={ref} className="relative">
           <button
@@ -79,17 +247,19 @@ export function Topbar({ title }: TopbarProps) {
           >
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" />
+              <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white ring-2 ring-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
             )}
           </button>
 
           {open && (
-            <div className="absolute right-0 top-full z-50 mt-1.5 w-80 rounded-xl border border-slate-200/80 bg-white shadow-lg shadow-slate-200/50">
+            <div className="absolute right-0 top-full z-50 mt-1.5 w-[22rem] rounded-2xl border border-slate-200/80 bg-white/90 shadow-xl shadow-slate-200/50 backdrop-blur-xl">
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <p className="text-[13px] font-semibold text-slate-900">Notifications</p>
                 {unreadCount > 0 && (
-                  <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600">
                     {unreadCount} new
                   </span>
                 )}
@@ -97,34 +267,66 @@ export function Topbar({ title }: TopbarProps) {
 
               {/* List */}
               <div className="max-h-80 overflow-y-auto">
-                {mockNotifications.map((n, i) => (
-                  <div
-                    key={n.id}
-                    className={`flex items-start gap-3 px-4 py-3 transition hover:bg-slate-50 ${
-                      i !== mockNotifications.length - 1 ? "border-b border-slate-100/60" : ""
-                    } ${!n.read ? "bg-slate-50/50" : ""}`}
-                  >
-                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${n.iconBg}`}>
-                      <n.icon className={`h-3.5 w-3.5 ${n.iconColor}`} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className={`text-[13px] leading-snug ${!n.read ? "font-medium text-slate-800" : "text-slate-600"}`}>
-                        {n.title}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">{n.time}</p>
-                    </div>
-                    {!n.read && (
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
-                    )}
+                {notifications.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-10">
+                    <BellOff className="h-6 w-6 text-slate-300" />
+                    <p className="text-[12px] text-slate-400">No notifications yet</p>
                   </div>
-                ))}
+                ) : (
+                  notifications.map((n, i) => {
+                    const cfg = iconConfig[n.type] ?? iconConfig.viewed;
+                    const Icon = cfg.icon;
+                    return (
+                      <Link
+                        href={
+                          n.type === "jit_elevation"
+                            ? "/ceo-dashboard/security"
+                            : n.proposalId
+                            ? `/dashboard/proposals/${n.proposalId}`
+                            : `/dashboard/proposals`
+                        }
+                        key={n.id}
+                        onClick={() => { handleNotificationClick(n); setOpen(false); }}
+                        className={`flex items-start gap-3 px-4 py-3 transition hover:bg-slate-50 ${
+                          i !== notifications.length - 1 ? "border-b border-slate-100/60" : ""
+                        } ${!n.read ? "bg-indigo-50/30" : ""}`}
+                      >
+                        <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${cfg.bg}`}>
+                          <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[13px] leading-snug ${!n.read ? "font-medium text-slate-800" : "text-slate-600"}`}>
+                            {n.message}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {timeAgo(n.createdAt as unknown as { seconds: number })}
+                          </p>
+                        </div>
+                        {!n.read && (
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                        )}
+                      </Link>
+                    );
+                  })
+                )}
               </div>
 
               {/* Footer */}
-              <div className="border-t border-slate-100 px-4 py-2.5">
-                <button className="w-full text-center text-[12px] font-medium text-slate-500 transition hover:text-slate-900">
+              <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
+                <button
+                  onClick={handleMarkAllRead}
+                  disabled={unreadCount === 0}
+                  className="text-[12px] font-medium text-slate-500 transition hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
                   Mark all as read
                 </button>
+                <Link
+                  href="/dashboard/notifications"
+                  onClick={() => setOpen(false)}
+                  className="text-[12px] font-medium text-indigo-600 transition hover:text-indigo-700"
+                >
+                  View all
+                </Link>
               </div>
             </div>
           )}
@@ -132,10 +334,15 @@ export function Topbar({ title }: TopbarProps) {
 
         <div className="ml-1 h-5 w-px bg-slate-200" />
 
-        <button className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white transition hover:bg-slate-800">
-          A
-        </button>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+          {profile?.avatarUrl ? (
+            <img src={profile.avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+          ) : (
+            initials
+          )}
+        </div>
       </div>
     </header>
+    </div>
   );
 }
