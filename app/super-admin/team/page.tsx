@@ -49,7 +49,7 @@ export default function TeamManagementPage() {
   const isElevated = useIsElevated();
   const isCriticallyElevated = useIsCriticallyElevated();
   const { elevation } = useElevation();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, profile } = useAuth();
   const [showElevationModal, setShowElevationModal] = useState(false);
   
   // Data states
@@ -78,6 +78,7 @@ export default function TeamManagementPage() {
   
   // Subscribe to users and departments
   useEffect(() => {
+    if (profile?.role !== "super_admin") return;
     const unsubUsers = subscribeToAllUsers((data) => {
       setUsers(data);
       setLoading(false);
@@ -94,7 +95,7 @@ export default function TeamManagementPage() {
       unsubUsers();
       unsubDepts();
     };
-  }, []);
+  }, [profile?.role]); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Filter users based on current filters
   const filteredUsers = useMemo(() => {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Shield, ShieldAlert, ShieldCheck, Clock, User, Zap, Crown, Trash2, Loader2, AlertTriangle, X, Activity, FileText } from "lucide-react";
+import { Shield, ShieldAlert, ShieldCheck, Clock, User, Zap, Crown, Trash2, Loader2, AlertTriangle, X, Activity, FileText, Users, CheckCircle } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -15,6 +15,9 @@ import {
 } from "@/lib/firestore";
 import { toast } from "sonner";
 import type { Timestamp } from "firebase/firestore";
+import { SecurityCouncil } from "@/components/security-council";
+import { PendingPromotions } from "@/components/pending-promotions";
+import { subscribeToAllProbations, type ProbationRecord } from "@/lib/firestore";
 
 function formatExpiry(ts: Timestamp | Date | undefined): string {
   if (!ts) return "—";
@@ -45,6 +48,8 @@ const TIER_LABEL: Record<string, { label: string; icon: typeof Zap; color: strin
 
 export default function CeoSecurityPage() {
   const { user, profile } = useAuth();
+  const [activeTab, setActiveTab] = useState<"jit" | "council" | "promotions">("jit");
+  const [probationCount, setProbationCount] = useState(0);
   const [elevations, setElevations] = useState<JitElevation[]>([]);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
@@ -54,9 +59,14 @@ export default function CeoSecurityPage() {
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    const unsub = subscribeToAllElevations(setElevations);
-    return unsub;
-  }, []);
+    if (profile?.role !== "ceo") return;
+    return subscribeToAllElevations(setElevations);
+  }, [profile?.role]);
+
+  useEffect(() => {
+    if (profile?.role !== "ceo") return;
+    return subscribeToAllProbations((records: ProbationRecord[]) => setProbationCount(records.length));
+  }, [profile?.role]);
 
   // Refresh countdown display every second
   useEffect(() => {
@@ -141,6 +151,57 @@ export default function CeoSecurityPage() {
 
       <div className="flex-1 overflow-y-auto bg-slate-50 px-6 py-8">
         <div className="mx-auto max-w-4xl space-y-8">
+
+          {/* Tab switcher */}
+          <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit">
+            <button
+              onClick={() => setActiveTab("jit")}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition ${
+                activeTab === "jit" ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Shield className="h-4 w-4" /> JIT Monitor
+            </button>
+            <button
+              onClick={() => setActiveTab("council")}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition ${
+                activeTab === "council" ? "bg-amber-500 text-white" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Users className="h-4 w-4" /> Security Council
+            </button>
+            <button
+              onClick={() => setActiveTab("promotions")}
+              className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition ${
+                activeTab === "promotions" ? "bg-teal-600 text-white" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Clock className="h-4 w-4" /> Pending Promotions
+              {probationCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+                  {probationCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Security Council tab */}
+          {activeTab === "council" && <SecurityCouncil />}
+
+          {/* Pending Promotions tab */}
+          {activeTab === "promotions" && (
+            probationCount === 0
+              ? (
+                <div className="rounded-2xl border border-teal-200 bg-teal-50 px-6 py-10 text-center">
+                  <CheckCircle className="mx-auto mb-3 h-10 w-10 text-teal-400" />
+                  <p className="text-[15px] font-semibold text-teal-800">No Pending Promotions</p>
+                  <p className="mt-1 text-[12px] text-teal-600">All promotions have been resolved or no probations are active.</p>
+                </div>
+              ) : <PendingPromotions />
+          )}
+
+          {/* JIT Monitor tab */}
+          {activeTab === "jit" && <>
 
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -303,6 +364,8 @@ export default function CeoSecurityPage() {
               <p className="mt-1 text-[12px] text-emerald-600">No elevation sessions are currently active.</p>
             </div>
           )}
+
+          </>}
 
         </div>
       </div>

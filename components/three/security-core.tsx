@@ -8,7 +8,7 @@ import { useElevation } from "@/contexts/auth-context";
 import { useSystemStatus } from "@/contexts/system-status-context";
 import { Activity, ShieldAlert, Zap, X } from "lucide-react";
 
-export type CoreState = "silent" | "active" | "elevated" | "critical" | "emergency";
+export type CoreState = "silent" | "active" | "elevated" | "critical" | "emergency" | "probation";
 
 // ── BPM map (spec: 60 / 120 / 180) ──────────────────────────
 const BPM: Record<CoreState, number> = {
@@ -17,6 +17,7 @@ const BPM: Record<CoreState, number> = {
   elevated:  120,
   critical:  180,
   emergency: 0,
+  probation: 90,
 };
 
 // ── Color map: cyan → orange → red → stone ──────────────────
@@ -26,6 +27,7 @@ const COLORS: Record<CoreState, { main: string; emissive: string; wire: string; 
   elevated:  { main: "#f97316", emissive: "#c2410c", wire: "#fed7aa", border: "border-orange-400" },
   critical:  { main: "#ef4444", emissive: "#b91c1c", wire: "#fca5a5", border: "border-red-500"  },
   emergency: { main: "#333333", emissive: "#111111", wire: "#444444", border: "border-stone-600" },
+  probation: { main: "#f59e0b", emissive: "#d97706", wire: "#fde68a", border: "border-amber-400" },
 };
 
 // ── Fragment data for shatter ────────────────────────────────
@@ -231,6 +233,7 @@ interface SecurityCoreProps {
   p1Overdue?: boolean;
   elevatedCount?: number;
   activeTaskCount?: number;
+  pendingPromotionCount?: number;
 }
 
 export function SecurityCore({
@@ -238,6 +241,7 @@ export function SecurityCore({
   p1Overdue = false,
   elevatedCount = 0,
   activeTaskCount = 0,
+  pendingPromotionCount = 0,
 }: SecurityCoreProps) {
   const { isElevated, isCriticallyElevated } = useElevation();
   const { systemStatus } = useSystemStatus();
@@ -248,6 +252,7 @@ export function SecurityCore({
     : p1Overdue ? "critical"
     : isCriticallyElevated ? "critical"
     : isElevated ? "elevated"
+    : pendingPromotionCount > 0 ? "probation"
     : hasActivity ? "active"
     : "silent";
 

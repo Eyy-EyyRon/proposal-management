@@ -1653,6 +1653,351 @@ export async function setUserRole(
   });
 }
 
+// ─── SECURITY COUNCIL: CEO → Super Admin appointment ────────
+// CEO-only. Peer immunity: cannot target another super_admin or root CEO.
+// Writes an immutable audit record to promotion_logs.
+export async function appointSuperAdmin(
+  targetUserId: string,
+  ceoId: string,
+  ceoName: string,
+  targetName: string,
+): Promise<void> {
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("User not found");
+  const targetData = targetSnap.data();
+  if (targetData.role === "ceo" || targetData.isRootCEO) throw new Error("Cannot modify CEO account");
+  if (targetData.role === "super_admin") throw new Error("User is already a Super Admin");
+
+  await updateDoc(targetRef, {
+    role: "super_admin",
+    isDeptAdmin: false,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "promotion_logs"), {
+    action: "appoint_super_admin",
+    actorId: ceoId,
+    actorName: ceoName,
+    actorRole: "ceo",
+    targetId: targetUserId,
+    targetName,
+    fromRole: targetData.role,
+    toRole: "super_admin",
+    department: null,
+    note: `CEO ${ceoName} appointed ${targetName} to Super Admin (Vanguard).`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Revoke Super Admin — demote back to staff. CEO-only.
+export async function revokeSuperAdmin(
+  targetUserId: string,
+  ceoId: string,
+  ceoName: string,
+  targetName: string,
+): Promise<void> {
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("User not found");
+  const targetData = targetSnap.data();
+  if (targetData.role !== "super_admin") throw new Error("User is not a Super Admin");
+
+  await updateDoc(targetRef, {
+    role: "staff",
+    isDeptAdmin: false,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "promotion_logs"), {
+    action: "revoke_super_admin",
+    actorId: ceoId,
+    actorName: ceoName,
+    actorRole: "ceo",
+    targetId: targetUserId,
+    targetName,
+    fromRole: "super_admin",
+    toRole: "staff",
+    department: null,
+    note: `CEO ${ceoName} revoked Super Admin from ${targetName}.`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// ─── PROBATIONARY PROMOTION SCHEMA ──────────────────────────
+export interface ProbationRecord {
+  id: string;           // user doc ID
+  firstName: string;
+  lastName: string;
+  email: string;
+  pendingRole: "dept_admin";
+  roleStatus: "probation";
+  probationExpiry: unknown; // Firestore Timestamp
+  assignedDepartment: string;
+  assignedDepartmentId: string | null;
+  promotedBy: string;   // Super Admin UID
+  promotedByName: string;
+  probationDurationHours: number;
+  probationStartedAt: unknown;
+}
+
+// Initiate a 12h / 24h / 48h probationary promotion — Super Admin (Critical elevation)
+// Sets the user's roleStatus to "probation" but does NOT change their role yet.
+export async function initiateProbation(
+  targetUserId: string,
+  actorId: string,
+  actorName: string,
+  targetName: string,
+  departmentName: string,
+  departmentId: string | null,
+  durationHours: 12 | 24 | 48,
+): Promise<void> {
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("User not found");
+  const targetData = targetSnap.data();
+  if (targetData.role === "ceo" || targetData.role === "super_admin")
+    throw new Error("Peer immunity: cannot initiate probation for CEO or Super Admin");
+  if (targetData.roleStatus === "probation")
+    throw new Error("User is already in probation");
+
+  const expiryMs = Date.now() + durationHours * 60 * 60 * 1000;
+  const probationExpiry = new Date(expiryMs);
+
+  await updateDoc(targetRef, {
+    pendingRole: "dept_admin",
+    roleStatus: "probation",
+    probationExpiry,
+    probationDurationHours: durationHours,
+    probationStartedAt: serverTimestamp(),
+    assignedDepartment: departmentName,
+    assignedDepartmentId: departmentId ?? null,
+    promotedBy: actorId,
+    promotedByName: actorName,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "promotion_logs"), {
+    action: "probation_initiated",
+    actorId,
+    actorName,
+    actorRole: "super_admin",
+    targetId: targetUserId,
+    targetName,
+    fromRole: targetData.role,
+    toRole: "admin",
+    department: departmentName,
+    durationHours,
+    note: `Super Admin ${actorName} initiated ${durationHours}h probation for ${targetName} → Dept Admin (${departmentName}).`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// CEO Fast-Track: skip the probation timer, promote immediately
+export async function fastTrackPromotion(
+  targetUserId: string,
+  ceoId: string,
+  ceoName: string,
+): Promise<void> {
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("User not found");
+  const targetData = targetSnap.data();
+  if (targetData.roleStatus !== "probation") throw new Error("User is not in probation");
+
+  await updateDoc(targetRef, {
+    role: "admin",
+    isDeptAdmin: true,
+    department: targetData.assignedDepartment ?? null,
+    departments: [targetData.assignedDepartment].filter(Boolean),
+    departmentId: targetData.assignedDepartmentId ?? null,
+    pendingRole: null,
+    roleStatus: "active",
+    probationExpiry: null,
+    probationStartedAt: null,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "promotion_logs"), {
+    action: "fast_track",
+    actorId: ceoId,
+    actorName: ceoName,
+    actorRole: "ceo",
+    targetId: targetUserId,
+    targetName: `${targetData.firstName ?? ""} ${targetData.lastName ?? ""}`.trim(),
+    fromRole: targetData.role,
+    toRole: "admin",
+    department: targetData.assignedDepartment ?? null,
+    note: `CEO ${ceoName} fast-tracked ${targetData.firstName} ${targetData.lastName} to Dept Admin (${targetData.assignedDepartment}).`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// CEO Veto: revert to staff, clear all probation fields
+export async function vetoProbation(
+  targetUserId: string,
+  ceoId: string,
+  ceoName: string,
+): Promise<void> {
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("User not found");
+  const targetData = targetSnap.data();
+  if (targetData.roleStatus !== "probation") throw new Error("User is not in probation");
+
+  await updateDoc(targetRef, {
+    role: "staff",
+    isDeptAdmin: false,
+    pendingRole: null,
+    roleStatus: "active",
+    probationExpiry: null,
+    probationStartedAt: null,
+    probationDurationHours: null,
+    assignedDepartment: null,
+    assignedDepartmentId: null,
+    promotedBy: null,
+    promotedByName: null,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "promotion_logs"), {
+    action: "veto",
+    actorId: ceoId,
+    actorName: ceoName,
+    actorRole: "ceo",
+    targetId: targetUserId,
+    targetName: `${targetData.firstName ?? ""} ${targetData.lastName ?? ""}`.trim(),
+    fromRole: targetData.role,
+    toRole: "staff",
+    department: null,
+    note: `CEO ${ceoName} vetoed the promotion of ${targetData.firstName} ${targetData.lastName} — reverted to Staff.`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Subscribe to all users currently in probation (for CEO oversight hub)
+export function subscribeToAllProbations(
+  callback: (records: ProbationRecord[]) => void,
+): () => void {
+  const q = query(
+    collection(db, "users"),
+    where("roleStatus", "==", "probation"),
+  );
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProbationRecord)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+// ─── PERSONNEL HUB: Super Admin → Dept Admin promotion ──────
+// Requires Critical JIT elevation. Peer-immune: cannot touch CEO or super_admin.
+export async function promoteToDeptAdmin(
+  targetUserId: string,
+  actorId: string,
+  actorName: string,
+  targetName: string,
+  departmentName: string,
+  departmentId: string | null,
+): Promise<void> {
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("User not found");
+  const targetData = targetSnap.data();
+  if (targetData.role === "ceo" || targetData.role === "super_admin")
+    throw new Error("Peer immunity: cannot modify CEO or Super Admin accounts");
+
+  await updateDoc(targetRef, {
+    role: "admin",
+    isDeptAdmin: true,
+    department: departmentName,
+    departments: [departmentName],
+    departmentId: departmentId ?? null,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "promotion_logs"), {
+    action: "promote_to_dept_admin",
+    actorId,
+    actorName,
+    actorRole: "super_admin",
+    targetId: targetUserId,
+    targetName,
+    fromRole: targetData.role,
+    toRole: "admin",
+    department: departmentName,
+    note: `Super Admin ${actorName} promoted ${targetName} to Dept Admin and assigned to ${departmentName}.`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Demote Dept Admin back to Staff. Super Admin (Critical elevation) only.
+export async function demoteToStaff(
+  targetUserId: string,
+  actorId: string,
+  actorName: string,
+  targetName: string,
+): Promise<void> {
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("User not found");
+  const targetData = targetSnap.data();
+  if (targetData.role === "ceo" || targetData.role === "super_admin")
+    throw new Error("Peer immunity: cannot modify CEO or Super Admin accounts");
+
+  await updateDoc(targetRef, {
+    role: "staff",
+    isDeptAdmin: false,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "promotion_logs"), {
+    action: "demote_to_staff",
+    actorId,
+    actorName,
+    actorRole: "super_admin",
+    targetId: targetUserId,
+    targetName,
+    fromRole: targetData.role,
+    toRole: "staff",
+    department: null,
+    note: `Super Admin ${actorName} demoted ${targetName} to Staff.`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// Subscribe to promotion logs (CEO + Super Admin audit view)
+export function subscribeToPromotionLogs(
+  callback: (logs: PromotionLog[]) => void,
+  limitCount = 50,
+): () => void {
+  const q = query(
+    collection(db, "promotion_logs"),
+    orderBy("createdAt", "desc"),
+    firestoreLimit(limitCount),
+  );
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PromotionLog)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+export interface PromotionLog {
+  id: string;
+  action: "appoint_super_admin" | "revoke_super_admin" | "promote_to_dept_admin" | "demote_to_staff";
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  targetId: string;
+  targetName: string;
+  fromRole: string;
+  toRole: string;
+  department: string | null;
+  note: string;
+  createdAt: unknown;
+}
+
 // ─── ORPHAN PROTECTION ───────────────────────────────────────
 // Returns active (non-superseded, non-archived, non-deleted) proposals
 // that are owned by or sent by the given user. Used to block staff deactivation.
@@ -1709,9 +2054,7 @@ export function subscribeToAllUsers(
       const users = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as TeamMember);
       callback(users);
     },
-    (error) => {
-      console.error("Error subscribing to users:", error);
-    }
+    (err) => { if (err.code !== "permission-denied") console.error("subscribeToAllUsers:", err); }
   );
 }
 
@@ -2363,9 +2706,11 @@ export function subscribeToSuccessionRequests(
     collection(db, "succession_requests"),
     orderBy("requestedAt", "desc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SuccessionRequest));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SuccessionRequest)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // ─── THRESHOLD ALERTS (Pending CEO Approval) ─────────────────
@@ -2409,9 +2754,11 @@ export function subscribeToPendingApprovals(
     where("isDeleted", "==", false),
     orderBy("createdAt", "desc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Proposal)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // ─── GLOBAL PRICING FLOORS (CEO-Only Setting) ────────────────
@@ -2528,9 +2875,11 @@ export function subscribeToSharingLogs(
     orderBy("createdAt", "desc"),
     firestoreLimit(limitCount)
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SharingLogEntry));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SharingLogEntry)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // ─── IMMUTABLE ANALYTICS (Audit-Log Derived) ─────────────────
@@ -2736,7 +3085,7 @@ export async function createTask(data: {
       byName: data.requesterName,
       to: data.adminId,
       toName: data.adminName,
-      at: serverTimestamp(),
+      at: new Date().toISOString(),
     }],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -2983,9 +3332,11 @@ export function subscribeToSuperAdminTasks(
     where("status", "in", ["drafting", "verifying", "revision_requested", "ready_to_send"]),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // Super Admin: verification queue — all depts (broad oversight)
@@ -2997,9 +3348,11 @@ export function subscribeToVerificationQueueSuperAdmin(
     where("status", "==", "verifying"),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // CEO: tasks that are ready_to_send (the "Talking Inbox")
@@ -3011,9 +3364,11 @@ export function subscribeToReadyToSendTasks(
     where("status", "==", "ready_to_send"),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // CEO: all active tasks (for oversight)
@@ -3025,9 +3380,11 @@ export function subscribeToAllActiveTasks(
     where("status", "in", ["drafting", "verifying", "changes_requested", "revision_requested", "ready_to_send"]),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // Dept Admin: verification queue — tasks in verifying status for their dept
@@ -3042,9 +3399,11 @@ export function subscribeToVerificationQueue(
     where("department", "==", department),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // Admin: tasks assigned to them
@@ -3058,9 +3417,11 @@ export function subscribeToAdminTasks(
     where("status", "in", ["drafting", "verifying", "revision_requested", "ready_to_send"]),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // Dept Admin: tasks assigned to them for verification
@@ -3074,9 +3435,11 @@ export function subscribeToDeptAdminTasks(
     where("status", "in", ["drafting", "verifying", "revision_requested"]),  
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // Staff: tasks assigned to them
@@ -3090,9 +3453,11 @@ export function subscribeToStaffTasks(
     where("status", "in", ["drafting", "revision_requested"]),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // Single task subscription
@@ -3220,9 +3585,11 @@ export function subscribeToSentTasksForCeo(
     where("status", "==", "sent"),
     orderBy("updatedAt", "desc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
-  });
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
 }
 
 // ─── DEPT ADMIN: dept-scoped subscription (all active tasks) ─
@@ -3240,7 +3607,92 @@ export function subscribeToDeptScopedTasks(
     where("status", "in", ["drafting", "verifying", "revision_requested", "changes_requested"]),
     orderBy("dueAt", "asc")
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask));
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ProposalTask)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── SNIPPET VAULT ────────────────────────────────────────────
+// Managed by Dept Admins; read-only for Staff
+// ═══════════════════════════════════════════════════════════════
+
+export interface Snippet {
+  id: string;
+  title: string;
+  body: string;
+  category: string;       // e.g. "About Us", "Terms", "Pricing"
+  department: string;     // dept scope; "" = org-wide
+  createdBy: string;      // UID of dept admin who created it
+  createdAt: unknown;
+  updatedAt: unknown;
+}
+
+export async function createSnippet(data: Omit<Snippet, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  const ref = await addDoc(collection(db, "snippets"), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
+  return ref.id;
+}
+
+export async function updateSnippet(snippetId: string, data: Partial<Pick<Snippet, "title" | "body" | "category">>): Promise<void> {
+  await updateDoc(doc(db, "snippets", snippetId), { ...data, updatedAt: serverTimestamp() });
+}
+
+export async function deleteSnippet(snippetId: string): Promise<void> {
+  await deleteDoc(doc(db, "snippets", snippetId));
+}
+
+export function subscribeToSnippets(
+  department: string,
+  callback: (snippets: Snippet[]) => void
+): () => void {
+  // Fetch org-wide ("") AND department-specific snippets
+  const q = query(
+    collection(db, "snippets"),
+    where("department", "in", ["", department]),
+    orderBy("category", "asc")
+  );
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Snippet)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── PET PEEVES (CEO/Super Admin Forbidden Word Dictionary) ───
+// ═══════════════════════════════════════════════════════════════
+
+export interface PetPeeve {
+  id: string;
+  forbidden: string;    // the word/phrase to flag
+  suggestion: string;   // the preferred replacement
+  severity: "warn" | "error";   // gold=warn, red=error
+  createdBy: string;
+  createdAt: unknown;
+}
+
+export function subscribeToPetPeeves(
+  callback: (peeves: PetPeeve[]) => void
+): () => void {
+  const q = query(collection(db, "petPeeves"), orderBy("severity", "asc"));
+  return onSnapshot(
+    q,
+    (snap) => { callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PetPeeve)); },
+    (err) => { if (err.code !== "permission-denied") console.error(err); }
+  );
+}
+
+export async function createPetPeeve(data: Omit<PetPeeve, "id" | "createdAt">): Promise<string> {
+  const ref = await addDoc(collection(db, "petPeeves"), { ...data, createdAt: serverTimestamp() });
+  return ref.id;
+}
+
+export async function deletePetPeeve(id: string): Promise<void> {
+  await deleteDoc(doc(db, "petPeeves", id));
 }

@@ -16,8 +16,8 @@ import {
   XCircle,
 } from "lucide-react";
 import {
-  updateUserProfile,
-  type UpdateProfileData,
+  updateUserProfile, subscribeToPetPeeves, createPetPeeve, deletePetPeeve,
+  type UpdateProfileData, type PetPeeve,
 } from "@/lib/firestore";
 import { uploadAvatar } from "@/lib/storage";
 import { useAuth, useElevation } from "@/contexts/auth-context";
@@ -27,8 +27,13 @@ import { JitElevationModal } from "@/components/jit-elevation-modal";
 export default function SettingsPage() {
   const { user, profile } = useAuth();
   const { isElevated, elevation, elevationCountdown, revokeElevation } = useElevation();
-  const [activeTab, setActiveTab] = useState<"profile" | "general" | "notifications" | "security" | "appearance">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "general" | "notifications" | "security" | "appearance" | "petpeeves">("profile");
   const [showElevationModal, setShowElevationModal] = useState(false);
+  const [petPeeves, setPetPeeves] = useState<PetPeeve[]>([]);
+  const [ppForm, setPpForm] = useState({ forbidden: "", suggestion: "", severity: "warn" as PetPeeve["severity"] });
+  const [ppSaving, setPpSaving] = useState(false);
+
+  useEffect(() => subscribeToPetPeeves(setPetPeeves), []);
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col space-y-8 px-8 pb-10 pt-12 lg:px-10">
@@ -99,6 +104,17 @@ export default function SettingsPage() {
           >
             <Palette className={`h-4 w-4 transition-opacity duration-150 ${activeTab === "appearance" ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`} />
             Appearance
+          </button>
+          <button
+            onClick={() => setActiveTab("petpeeves")}
+            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-300 ease-out ${
+              activeTab === "petpeeves"
+                ? "bg-[#800020]/10 text-[#800020] shadow-[inset_0_0_0_1px_rgba(128,0,32,0.08)]"
+                : "text-slate-600 hover:bg-slate-50 hover:text-[#5f0018]"
+            }`}
+          >
+            <Lock className={`h-4 w-4 transition-opacity duration-150 ${activeTab === "petpeeves" ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`} />
+            Pet Peeve Dict.
           </button>
         </div>
 
@@ -282,6 +298,73 @@ export default function SettingsPage() {
             isOpen={showElevationModal}
             onClose={() => setShowElevationModal(false)}
           />
+
+          {activeTab === "petpeeves" && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100">
+                  <Lock className="h-5 w-5 text-[#780116]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-400">Pet Peeve Dictionary</h3>
+                  <p className="text-[13px] text-slate-500">Forbidden words the Magic Linter flags in all Staff proposals</p>
+                </div>
+              </div>
+              <div className="rounded-xl border border-rose-200/60 bg-rose-50/30 p-4 space-y-3">
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-[#780116]">Add a Forbidden Word</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-[12px] font-medium text-slate-600">Forbidden phrase</label>
+                    <input value={ppForm.forbidden} onChange={(e) => setPpForm((p) => ({ ...p, forbidden: e.target.value }))} placeholder="e.g. cheap"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[12px] font-medium text-slate-600">Preferred replacement</label>
+                    <input value={ppForm.suggestion} onChange={(e) => setPpForm((p) => ({ ...p, suggestion: e.target.value }))} placeholder="e.g. affordable"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select value={ppForm.severity} onChange={(e) => setPpForm((p) => ({ ...p, severity: e.target.value as PetPeeve["severity"] }))}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none">
+                    <option value="warn">⚠️ Warn (Gold)</option>
+                    <option value="error">🔴 Error (Red)</option>
+                  </select>
+                  <button disabled={ppSaving || !ppForm.forbidden.trim() || !ppForm.suggestion.trim()}
+                    onClick={async () => {
+                      if (!user) return;
+                      setPpSaving(true);
+                      try { await createPetPeeve({ ...ppForm, createdBy: user.uid }); setPpForm({ forbidden: "", suggestion: "", severity: "warn" }); }
+                      finally { setPpSaving(false); }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#780116] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#C32F27] disabled:opacity-50">
+                    {ppSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Add
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {petPeeves.length === 0 ? (
+                  <p className="text-center text-[13px] text-slate-400 py-8">No forbidden words yet.</p>
+                ) : petPeeves.map((pp) => (
+                  <div key={pp.id} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
+                    pp.severity === "error" ? "border-rose-200/60 bg-rose-50/40" : "border-amber-200/60 bg-amber-50/30"
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                        pp.severity === "error" ? "text-rose-600" : "text-amber-600"
+                      }`}>{pp.severity === "error" ? "Error" : "Warn"}</span>
+                      <span className="font-mono text-[13px] text-slate-700">"{pp.forbidden}"</span>
+                      <span className="text-[13px] text-slate-400">→</span>
+                      <span className="text-[13px] text-slate-600">"{pp.suggestion}"</span>
+                    </div>
+                    <button onClick={() => deletePetPeeve(pp.id)} className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                      <XCircle className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {activeTab === "appearance" && (
             <div className="space-y-6">

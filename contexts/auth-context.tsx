@@ -51,6 +51,13 @@ export interface UserProfile {
   isExecutiveAdmin?: boolean;  // true for super_admin granted "Act as CEO" by CEO
   createdAt: unknown;
   updatedAt: unknown;
+  // ── Probationary promotion fields ─────────────────────────
+  roleStatus?: "active" | "probation";
+  pendingRole?: "dept_admin" | null;
+  probationExpiry?: unknown;        // Firestore Timestamp
+  probationDurationHours?: number;
+  assignedDepartment?: string | null;
+  promotedByName?: string | null;
 }
 
 interface AuthContextValue {
@@ -206,6 +213,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 isExecutiveAdmin: data.isExecutiveAdmin ?? false,
                 createdAt: data.createdAt,
                 updatedAt: data.updatedAt,
+                roleStatus: data.roleStatus ?? "active",
+                pendingRole: data.pendingRole ?? null,
+                probationExpiry: data.probationExpiry ?? null,
+                probationDurationHours: data.probationDurationHours ?? null,
+                assignedDepartment: data.assignedDepartment ?? null,
+                promotedByName: data.promotedByName ?? null,
               };
               setProfile(newProfile);
 

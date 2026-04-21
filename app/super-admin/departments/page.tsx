@@ -13,7 +13,7 @@ import {
   MoreHorizontal,
   Lock,
 } from "lucide-react";
-import { useIsElevated } from "@/contexts/auth-context";
+import { useIsElevated, useAuth } from "@/contexts/auth-context";
 import { JITGuard } from "@/components/jit-guard";
 import { JitElevationModal } from "@/components/jit-elevation-modal";
 import {
@@ -29,6 +29,7 @@ type ViewMode = "grid" | "detail";
 
 export default function DepartmentsPage() {
   const isElevated = useIsElevated();
+  const { profile } = useAuth();
   const [departments, setDepartments] = useState<FirestoreDepartment[]>([]);
   const [users, setUsers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +47,7 @@ export default function DepartmentsPage() {
   const [showElevationModal, setShowElevationModal] = useState(false);
 
   useEffect(() => {
+    if (profile?.role !== "super_admin") return;
     const unsubDepts = subscribeToDepartmentsList((data) => {
       setDepartments(data);
       setLoading(false);
@@ -59,7 +61,7 @@ export default function DepartmentsPage() {
       unsubDepts();
       unsubUsers();
     };
-  }, []);
+  }, [profile?.role]);
 
   const getDepartmentUsers = (deptName: string): TeamMember[] => {
     return users.filter(

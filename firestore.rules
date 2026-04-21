@@ -129,7 +129,13 @@ service cloud.firestore {
     match /users/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
 
-      allow read: if isOwner(userId) || isAdminOrCeo();
+      // get (single doc): owner or admin/CEO
+      allow get: if isOwner(userId) || isAdminOrCeo();
+
+      // list (collection queries like getAdminUsers, team pages):
+      // resource.data unavailable — restrict to admin/CEO only at the rule level;
+      // app-layer queries further filter by role/department.
+      allow list: if isAdminOrCeo();
 
       allow update: if
         // ── IMMORTALITY RULE ──────────────────────────────────────────────
@@ -176,6 +182,29 @@ service cloud.firestore {
             isSuperAdmin()
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["departments", "department", "departmentId", "updatedAt"])
+          )
+          ||
+          // ── PROBATION: Super Admin (Critical elevation) initiates probationary promotion ──
+          // Writes probation fields without changing role yet. Peer-immune.
+          (
+            isSuperAdmin() && hasCriticalElevation()
+            && !isRootCeo(userId)
+            && resource.data.role in ["staff", "admin"]
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["pendingRole", "roleStatus", "probationExpiry", "probationDurationHours",
+                          "probationStartedAt", "assignedDepartment", "assignedDepartmentId",
+                          "promotedBy", "promotedByName", "updatedAt"])
+          )
+          ||
+          // ── FAST-TRACK / VETO: CEO resolves a probationary promotion ─────────────────────
+          (
+            isCeo()
+            && !isRootCeo(userId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["role", "isDeptAdmin", "department", "departments", "departmentId",
+                          "pendingRole", "roleStatus", "probationExpiry", "probationStartedAt",
+                          "probationDurationHours", "assignedDepartment", "assignedDepartmentId",
+                          "promotedBy", "promotedByName", "updatedAt"])
           )
           ||
           // CEO / super-admin (with Critical elevation): assign role + isDeptAdmin.
@@ -270,13 +299,17 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
 
-      // CEO/Admin can read all templates (including drafts)
-      // Staff can only read published templates
-      allow read: if isSignedIn()
+      // get (single doc): CEO/Admin see all; staff see published only
+      allow get: if isSignedIn()
         && (
           isAdminOrCeo()
           || resource.data.get('isPublished', true) == true
         );
+
+      // list (collection query): resource.data is unavailable on list queries.
+      // App-layer queries already filter by userId / isPublished / isDeleted.
+      // Allow all signed-in users — the query itself enforces visibility.
+      allow list: if isSignedIn();
 
       allow update, delete: if isSignedIn()
         && (
@@ -535,7 +568,8 @@ service cloud.firestore {
       // Read: anyone in the task chain (requester, admin, deptAdmin, assignee), CEO, or Super Admin
       allow read: if isSignedIn()
         && (
-          isSuperAdmin()  // Super Admin has system-wide oversight
+          isCeo()         // CEO has full visibility over all tasks
+          || isSuperAdmin()  // Super Admin has system-wide oversight
           || resource.data.requesterId == request.auth.uid
           || resource.data.adminId == request.auth.uid
           || resource.data.deptAdminId == request.auth.uid
@@ -545,9 +579,9 @@ service cloud.firestore {
       // List: signed-in users (app filters by role; rules can't filter "in" on list)
       allow list: if isSignedIn();
 
-      // Create: CEO, Super Admin, or Dept Admin can initiate a task
+      // Create: CEO, Super Admin, or Admin can initiate a task
       allow create: if isSignedIn()
-        && (isSuperAdmin() || isAdmin())
+        && (isCeo() || isSuperAdmin() || isAdmin())
         && request.resource.data.status == "drafting"
         && request.resource.data.requesterId == request.auth.uid;
 
@@ -654,6 +688,37 @@ service cloud.firestore {
     match /system_purge_logs/{logId} {
       allow create: if isSignedIn() && getUserRole() == "ceo";
       allow read:   if isSignedIn() && getUserRole() == "ceo";
+      allow update, delete: if false;
+    }
+
+    // ─── SNIPPET VAULT ───────────────────────────────────────
+    // All signed-in users can read snippets (staff uses them).
+    // Only Admins (dept admin), CEO, and Super Admin can create/update/delete.
+    match /snippets/{snippetId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && (isAdminOrCeo() || getUserRole() == "super_admin");
+      allow delete: if isSignedIn()
+        && (isAdminOrCeo() || getUserRole() == "super_admin");
+    }
+
+    // ─── PET PEEVE DICTIONARY ────────────────────────────────
+    // All signed-in users can read (Magic Linter needs it for all roles).
+    // Only CEO and Super Admin can create/delete entries.
+    match /petPeeves/{peevId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isSignedIn()
+        && (isCeo() || getUserRole() == "super_admin");
+      allow update: if false; // pet peeves are delete-and-recreate only
+    }
+
+    // ─── PROMOTION LOGS (Immutable Audit Trail) ──────────────
+    // Written by CEO (appoint/revoke super_admin) and super_admin (promote/demote dept admin).
+    // Never updatable or deletable. CEO and super_admins can read all.
+    match /promotion_logs/{logId} {
+      allow create: if isSignedIn()
+        && (isCeo() || (isSuperAdmin() && hasCriticalElevation()));
+      allow read: if isSignedIn() && (isCeo() || isSuperAdmin());
       allow update, delete: if false;
     }
 
