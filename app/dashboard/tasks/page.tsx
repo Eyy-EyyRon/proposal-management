@@ -3,11 +3,14 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Topbar } from "@/components/topbar";
 import { Breadcrumb } from "@/components/breadcrumb";
-import { LazyUrgencyShard } from "@/components/three/lazy-three";
+import { LazyUrgencyShard, LazyDataStream } from "@/components/three/lazy-three";
 import { TaskCard } from "@/components/task-card";
 import { AssignTaskModal } from "@/components/assign-task-modal";
 import { VerifyTaskModal } from "@/components/verify-task-modal";
+import { GhostPreview } from "@/components/ghost-preview";
 import { useAuth, useRole } from "@/contexts/auth-context";
+import { useProbationGuard } from "@/hooks/use-probation-guard";
+import { ProbationaryBanner } from "@/components/probationary-banner";
 import {
   subscribeToAdminTasks,
   subscribeToDeptAdminTasks,
@@ -17,12 +20,14 @@ import {
   subscribeToStaffTasks,
   subscribeToVerificationQueue,
   submitTaskForReview,
+  subscribeToPetPeeves,
   type ProposalTask,
+  type PetPeeve,
 } from "@/lib/firestore";
 import { toast } from "@/components/providers/toast";
 import {
   Loader2, Inbox, UserPlus, CheckCircle, Send, AlertTriangle,
-  ShieldCheck, Clock, RefreshCw, Pin, Building2,
+  ShieldCheck, Clock, RefreshCw, Pin, Building2, Eye, Lock,
 } from "lucide-react";
 
 function toDueMs(dueAt: unknown): number {
@@ -38,6 +43,7 @@ function toDueMs(dueAt: unknown): number {
 export default function TasksPage() {
   const { user, profile } = useAuth();
   const { isAdmin, isStaff, isSuperAdmin } = useRole();
+  const { isOnProbation, blockIfOnProbation } = useProbationGuard();
   const [tasks, setTasks] = useState<ProposalTask[]>([]);
   const [verificationQueue, setVerificationQueue] = useState<ProposalTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +51,10 @@ export default function TasksPage() {
   // Modals
   const [assignModal, setAssignModal] = useState<{ task: ProposalTask; level: "deptAdmin" | "staff" } | null>(null);
   const [verifyModal, setVerifyModal] = useState<ProposalTask | null>(null);
+  const [ghostTask, setGhostTask] = useState<ProposalTask | null>(null);
+  const [petPeeves, setPetPeeves] = useState<PetPeeve[]>([]);
+
+  useEffect(() => subscribeToPetPeeves(setPetPeeves), []);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   // SLA breach toast refs (prevent duplicate toasts)
@@ -241,12 +251,31 @@ export default function TasksPage() {
   };
 
   const renderVerifyActions = (task: ProposalTask) => (
-    <button
-      onClick={() => setVerifyModal(task)}
-      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-emerald-700 active:scale-95"
-    >
-      <CheckCircle className="h-3.5 w-3.5" /> Verify & Promote to CEO
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => setGhostTask(task)}
+        title="Quick Look — Ghost Preview"
+        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-900 hover:text-white active:scale-95"
+      >
+        <Eye className="h-3.5 w-3.5" /> Quick Look
+      </button>
+      {isOnProbation ? (
+        <div
+          title="Locked during probationary training"
+          className="flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-600 opacity-70 select-none"
+          onClick={() => blockIfOnProbation((msg) => toast.error(msg))}
+        >
+          <Clock className="h-3.5 w-3.5" /> Locked — Probation
+        </div>
+      ) : (
+        <button
+          onClick={() => setVerifyModal(task)}
+          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-emerald-700 active:scale-95"
+        >
+          <CheckCircle className="h-3.5 w-3.5" /> Verify & Promote to CEO
+        </button>
+      )}
+    </div>
   );
 
   const renderStaffActions = (task: ProposalTask) => {
@@ -270,9 +299,16 @@ export default function TasksPage() {
 
   return (
     <main className="flex min-h-screen flex-col">
+      {/* Data Stream — Dept Admin only: particles drift toward verification queue, density = queue size */}
+      {(isAdmin && !isSuperAdmin) && (
+        <div className="pointer-events-none fixed inset-0 z-0 opacity-70">
+          <LazyDataStream queueSize={verificationQueue.length} targetX={0} targetY={-2.5} />
+        </div>
+      )}
       <Topbar title={isSuperAdmin ? "System Task Board" : isAdmin ? "Task Board" : "My Tasks"} />
 
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="relative z-10 flex flex-1 flex-col gap-6 p-6">
+        <ProbationaryBanner />
         {/* Page header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
@@ -488,6 +524,26 @@ export default function TasksPage() {
           task={verifyModal}
         />
       )}
+      {ghostTask && (() => {
+        const syntheticFields = [
+          { id: "client", name: "Client", required: true },
+          { id: "email",  name: "Email",  required: false },
+          { id: "brief",  name: "Brief",  required: true },
+        ];
+        const syntheticValues: Record<string, string> = {
+          client: ghostTask.clientName ?? "",
+          email:  ghostTask.clientEmail ?? "",
+          brief:  ghostTask.briefDescription ?? "",
+        };
+        return (
+          <GhostPreview
+            fieldValues={syntheticValues}
+            templateFields={syntheticFields}
+            petPeeves={petPeeves}
+            onClose={() => setGhostTask(null)}
+          />
+        );
+      })()}
     </main>
   );
 }

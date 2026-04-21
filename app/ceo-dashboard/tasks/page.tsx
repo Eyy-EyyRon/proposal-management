@@ -37,6 +37,7 @@ export default function CeoTasksPage() {
   const { confirm, modalProps } = useConfirmModal();
 
   useEffect(() => {
+    if (profile?.role !== "ceo") return;
     const unsub1 = subscribeToReadyToSendTasks((tasks) => {
       setReadyTasks(tasks);
       setLoading(false);
@@ -44,7 +45,7 @@ export default function CeoTasksPage() {
     const unsub2 = subscribeToAllActiveTasks(setAllTasks);
     const unsub3 = subscribeToSentTasksForCeo(setSentTasks);
     return () => { unsub1(); unsub2(); unsub3(); };
-  }, []);
+  }, [profile?.role]);
 
   const inProgressTasks = useMemo(
     () => allTasks.filter((t) => t.status !== "ready_to_send"),

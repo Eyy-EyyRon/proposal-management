@@ -409,3 +409,72 @@ export const scheduledElevationCleanup = onSchedule(
     );
   }
 );
+
+// ─── FINALIZE PROBATIONARY PROMOTIONS (hourly) ───────────────
+// Every hour: find users whose probation has expired and activate them.
+export const finalizePromotions = onSchedule(
+  {schedule: "every 60 minutes", timeZone: "UTC"},
+  async () => {
+    const now = Timestamp.now();
+
+    // Query users in probation whose expiry is in the past
+    const snap = await db.collection("users")
+      .where("roleStatus", "==", "probation")
+      .where("probationExpiry", "<=", now)
+      .get();
+
+    if (snap.empty) {
+      logger.info("finalizePromotions: no expired probations found.");
+      return;
+    }
+
+    const batch = db.batch();
+    const logEntries: Promise<FirebaseFirestore.DocumentReference>[] = [];
+
+    snap.docs.forEach((doc) => {
+      const d = doc.data();
+      const targetName = `${d.firstName ?? ""} ${d.lastName ?? ""}`.trim();
+      const dept = d.assignedDepartment ?? null;
+
+      // Activate the user as Dept Admin
+      batch.update(doc.ref, {
+        role: "admin",
+        isDeptAdmin: true,
+        department: dept,
+        departments: dept ? [dept] : [],
+        departmentId: d.assignedDepartmentId ?? null,
+        pendingRole: null,
+        roleStatus: "active",
+        probationExpiry: null,
+        probationStartedAt: null,
+        probationDurationHours: null,
+        assignedDepartment: null,
+        assignedDepartmentId: null,
+        promotedBy: null,
+        promotedByName: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      logEntries.push(
+        db.collection("promotion_logs").add({
+          action: "probation_ascension",
+          actorId: "system",
+          actorName: "Automated Scheduler",
+          actorRole: "system",
+          targetId: doc.id,
+          targetName,
+          fromRole: d.role,
+          toRole: "admin",
+          department: dept,
+          note: `Probation period ended. ${targetName} automatically promoted to Dept Admin (${dept}).`,
+          createdAt: FieldValue.serverTimestamp(),
+        })
+      );
+
+      logger.info(`finalizePromotions: activating ${targetName} → Dept Admin (${dept})`);
+    });
+
+    await Promise.all([batch.commit(), ...logEntries]);
+    logger.info(`finalizePromotions: activated ${snap.size} user(s).`);
+  }
+);

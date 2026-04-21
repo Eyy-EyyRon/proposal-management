@@ -9,6 +9,8 @@ import {
 } from "@/lib/firestore";
 import { toast } from "@/components/providers/toast";
 import { useAuth } from "@/contexts/auth-context";
+import { useProbationGuard } from "@/hooks/use-probation-guard";
+import { AlertTriangle } from "lucide-react";
 import { UrgencyBadge } from "./urgency-badge";
 
 interface VerifyTaskModalProps {
@@ -19,6 +21,7 @@ interface VerifyTaskModalProps {
 
 export function VerifyTaskModal({ isOpen, onClose, task }: VerifyTaskModalProps) {
   const { user, profile } = useAuth();
+  const { isOnProbation } = useProbationGuard();
   const [mode, setMode] = useState<"choose" | "changes">("choose");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -86,19 +89,27 @@ export function VerifyTaskModal({ isOpen, onClose, task }: VerifyTaskModalProps)
 
           {mode === "choose" ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                onClick={handleApprove}
-                disabled={saving}
-                className="flex flex-col items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center transition hover:border-emerald-300 hover:bg-emerald-50 active:scale-[0.98] disabled:opacity-50"
-              >
-                {saving ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
-                ) : (
-                  <CheckCircle className="h-5 w-5 text-emerald-500" />
-                )}
-                <span className="text-[13px] font-semibold text-emerald-700">Approve & Promote</span>
-                <span className="text-[11px] text-emerald-500">Send to CEO&rsquo;s Inbox</span>
-              </button>
+              {isOnProbation ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-5 text-center">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  <span className="text-[13px] font-semibold text-amber-700">Approve & Promote</span>
+                  <span className="text-[11px] text-amber-600">Locked during probation</span>
+                </div>
+              ) : (
+                <button
+                  onClick={handleApprove}
+                  disabled={saving}
+                  className="flex flex-col items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center transition hover:border-emerald-300 hover:bg-emerald-50 active:scale-[0.98] disabled:opacity-50"
+                >
+                  {saving ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+                  ) : (
+                    <CheckCircle className="h-5 w-5 text-emerald-500" />
+                  )}
+                  <span className="text-[13px] font-semibold text-emerald-700">Approve & Promote</span>
+                  <span className="text-[11px] text-emerald-500">Send to CEO&rsquo;s Inbox</span>
+                </button>
+              )}
               <button
                 onClick={() => setMode("changes")}
                 className="flex flex-col items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-5 text-center transition hover:border-amber-300 hover:bg-amber-50 active:scale-[0.98]"

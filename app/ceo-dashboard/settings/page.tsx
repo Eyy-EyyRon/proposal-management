@@ -13,7 +13,8 @@ import {
   Lock,
 } from "lucide-react";
 import {
-  updateUserProfile,
+  updateUserProfile, subscribeToPetPeeves, createPetPeeve, deletePetPeeve,
+  type PetPeeve,
 } from "@/lib/firestore";
 import { uploadAvatar } from "@/lib/storage";
 import { useAuth } from "@/contexts/auth-context";
@@ -21,7 +22,12 @@ import { toast } from "sonner";
 
 export default function CeoSettingsPage() {
   const { user, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "company" | "notifications" | "security" | "preferences">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "company" | "notifications" | "security" | "preferences" | "petpeeves">("profile");
+  const [petPeeves, setPetPeeves] = useState<PetPeeve[]>([]);
+  const [ppForm, setPpForm] = useState({ forbidden: "", suggestion: "", severity: "warn" as PetPeeve["severity"] });
+  const [ppSaving, setPpSaving] = useState(false);
+
+  useEffect(() => subscribeToPetPeeves(setPetPeeves), []);
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col space-y-8 px-8 pb-10 pt-12 lg:px-10">
@@ -92,6 +98,17 @@ export default function CeoSettingsPage() {
           >
             <Palette className={`h-4 w-4 transition-opacity duration-150 ${activeTab === "preferences" ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`} />
             Preferences
+          </button>
+          <button
+            onClick={() => setActiveTab("petpeeves")}
+            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-300 ease-out ${
+              activeTab === "petpeeves"
+                ? "bg-amber-500/10 text-amber-700 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.2)]"
+                : "text-slate-600 hover:bg-slate-50 hover:text-amber-600"
+            }`}
+          >
+            <Lock className={`h-4 w-4 transition-opacity duration-150 ${activeTab === "petpeeves" ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`} />
+            Pet Peeve Dict.
           </button>
         </div>
 
@@ -278,6 +295,98 @@ export default function CeoSettingsPage() {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "petpeeves" && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
+                  <Lock className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-400">Pet Peeve Dictionary</h3>
+                  <p className="text-[13px] text-slate-500">Words flagged by the Magic Linter in all Staff proposals</p>
+                </div>
+              </div>
+
+              {/* Add form */}
+              <div className="rounded-xl border border-amber-200/60 bg-amber-50/40 p-4 space-y-3">
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-amber-700">Add a Forbidden Word</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-[12px] font-medium text-slate-600">Forbidden phrase</label>
+                    <input
+                      value={ppForm.forbidden}
+                      onChange={(e) => setPpForm((p) => ({ ...p, forbidden: e.target.value }))}
+                      placeholder="e.g. cheap"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[12px] font-medium text-slate-600">Preferred replacement</label>
+                    <input
+                      value={ppForm.suggestion}
+                      onChange={(e) => setPpForm((p) => ({ ...p, suggestion: e.target.value }))}
+                      placeholder="e.g. affordable"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={ppForm.severity}
+                    onChange={(e) => setPpForm((p) => ({ ...p, severity: e.target.value as PetPeeve["severity"] }))}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-amber-400"
+                  >
+                    <option value="warn">⚠️ Warn (Gold)</option>
+                    <option value="error">🔴 Error (Red)</option>
+                  </select>
+                  <button
+                    disabled={ppSaving || !ppForm.forbidden.trim() || !ppForm.suggestion.trim()}
+                    onClick={async () => {
+                      if (!user) return;
+                      setPpSaving(true);
+                      try {
+                        await createPetPeeve({ ...ppForm, createdBy: user.uid });
+                        setPpForm({ forbidden: "", suggestion: "", severity: "warn" });
+                      } finally { setPpSaving(false); }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {ppSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* List */}
+              <div className="space-y-2">
+                {petPeeves.length === 0 ? (
+                  <p className="text-center text-[13px] text-slate-400 py-8">No forbidden words yet. Add your first above.</p>
+                ) : (
+                  petPeeves.map((pp) => (
+                    <div key={pp.id} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
+                      pp.severity === "error" ? "border-rose-200/60 bg-rose-50/40" : "border-amber-200/60 bg-amber-50/30"
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                          pp.severity === "error" ? "text-rose-600" : "text-amber-600"
+                        }`}>{pp.severity === "error" ? "Error" : "Warn"}</span>
+                        <span className="font-mono text-[13px] text-slate-700">"{pp.forbidden}"</span>
+                        <span className="text-[13px] text-slate-400">→</span>
+                        <span className="text-[13px] text-slate-600">"{pp.suggestion}"</span>
+                      </div>
+                      <button
+                        onClick={() => deletePetPeeve(pp.id)}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500"
+                      >
+                        <Shield className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   X, Loader2, Send, AlertTriangle, Clock, User, Building2,
   FileText, ChevronRight, ChevronLeft, CheckCircle, Calendar,
-  Zap, Flag, Minus,
+  Zap, Flag, Minus, Globe, EyeOff,
 } from "lucide-react";
 import {
   createTask,
@@ -109,12 +109,26 @@ export function CreateTaskModal({
     return unsub;
   }, [isOpen]);
 
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !user) return;
     let cancelled = false;
-    getAllTemplates().then((t) => { if (!cancelled) setTemplates(t); });
+    setTemplatesLoading(true);
+    getAllTemplates()
+      .then((t) => {
+        if (!cancelled) {
+          // CEO/SA see all; others see published only
+          const visible = (profile?.role === "ceo" || profile?.role === "super_admin")
+            ? t
+            : t.filter((tmpl) => tmpl.isPublished);
+          setTemplates(visible);
+        }
+      })
+      .catch((err) => { console.error("[CreateTaskModal] template load failed:", err); })
+      .finally(() => { if (!cancelled) setTemplatesLoading(false); });
     return () => { cancelled = true; };
-  }, [isOpen]);
+  }, [isOpen, user, profile?.role]);
 
   useEffect(() => {
     if (isOpen) {
@@ -170,6 +184,7 @@ export function CreateTaskModal({
     const selectedTemplate = templates.find((t) => t.id === templateId);
     const requesterName = `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() || (isSuperAdmin ? "Super Admin" : "CEO");
     const selectedAdmin = admins.find((a) => a.id === selectedAdminId);
+    // selectedAdminId === "" means "Any admin" was intentionally chosen — that is valid
     const assignedAdminId = selectedAdmin?.id ?? user.uid;
     const assignedAdminName = selectedAdmin
       ? `${selectedAdmin.firstName} ${selectedAdmin.lastName}`.trim()
@@ -327,16 +342,28 @@ export function CreateTaskModal({
               </div>
               <div>
                 <label className="mb-1 block text-[12px] font-medium text-slate-500">Template</label>
-                <select
-                  value={templateId}
-                  onChange={(e) => setTemplateId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[13px] text-slate-700 outline-none transition focus:border-violet-400"
-                >
-                  <option value="">No template</option>
-                  {templates.filter((t) => t.isPublished).map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                {templatesLoading ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] text-slate-400">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading templates…
+                  </div>
+                ) : templates.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[12px] text-slate-400">
+                    No templates available
+                  </div>
+                ) : (
+                  <select
+                    value={templateId}
+                    onChange={(e) => setTemplateId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[13px] text-slate-700 outline-none transition focus:border-violet-400"
+                  >
+                    <option value="">No template</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}{!t.isPublished ? " (Draft)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 

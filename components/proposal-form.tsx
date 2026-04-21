@@ -24,23 +24,34 @@ interface ProposalFormProps {
   }) => Promise<void>;
   submitting?: boolean;
   actingAsName?: string | null;
+  onLiveChange?: (fieldValues: Record<string, string>, fields: Template["fields"]) => void;
+  externalFieldValues?: Record<string, string>;
 }
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100";
 
-export function ProposalForm({ templates, onSubmit, submitting = false, actingAsName }: ProposalFormProps) {
+export function ProposalForm({ templates, onSubmit, submitting = false, actingAsName, onLiveChange, externalFieldValues }: ProposalFormProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [accessCode, setAccessCode] = useState("");
 
   const handleTemplateSelect = (template: Template) => {
     setSelectedTemplate(template);
-    setFieldValues({});
+    const reset = {};
+    setFieldValues(reset);
+    onLiveChange?.(reset, template.fields);
   };
 
+  // Merge external values (from snippet inserts) into local state
+  const mergedValues = externalFieldValues
+    ? { ...fieldValues, ...externalFieldValues }
+    : fieldValues;
+
   const handleFieldChange = (fieldId: string, value: string) => {
-    setFieldValues(prev => ({ ...prev, [fieldId]: value }));
+    const updated = { ...mergedValues, [fieldId]: value };
+    setFieldValues(updated);
+    if (selectedTemplate) onLiveChange?.(updated, selectedTemplate.fields);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -141,7 +152,7 @@ export function ProposalForm({ templates, onSubmit, submitting = false, actingAs
                 </label>
                 <input
                   type={inputType(field.type)}
-                  value={fieldValues[field.id] || ""}
+                  value={mergedValues[field.id] || ""}
                   onChange={(e) => handleFieldChange(field.id, e.target.value)}
                   placeholder={field.type === "date" ? "" : field.name}
                   required={field.required}

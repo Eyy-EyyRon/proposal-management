@@ -67,7 +67,7 @@ export default function TemplatesPage() {
 
     (async () => {
       try {
-        const data = isStaff ? await getAllTemplates() : await getUserTemplates(user.uid);
+        const data = canManageTemplates ? await getAllTemplates() : await getUserTemplates(user.uid);
         if (!cancelled) setTemplates(data);
       } catch (err) {
         if (!cancelled) {

@@ -12,9 +12,15 @@ import { useAuth, useRole, useActingAsCeo } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import { 
   getUserTemplates, getAllTemplates, createProposal, getOrgSettings, getAvailableIdentities,
-  checkDelegationActive,
-  type Template, type OrgSettings, type TeamMember 
+  checkDelegationActive, subscribeToPetPeeves,
+  type Template, type OrgSettings, type TeamMember, type PetPeeve
 } from "@/lib/firestore";
+import { AnimatePresence } from "framer-motion";
+import { Wand2, BookOpen, Smartphone } from "lucide-react";
+import { MagicLinter } from "@/components/magic-linter";
+import { SnippetVault } from "@/components/snippet-vault";
+import { ProposalHealthGauge } from "@/components/proposal-health-gauge";
+import { GhostPreview } from "@/components/ghost-preview";
 
 export default function CreateProposalPage() {
   const { user, profile } = useAuth();
@@ -38,6 +44,30 @@ export default function CreateProposalPage() {
   const [availableIdentities, setAvailableIdentities] = useState<TeamMember[]>([]);
   const [selectedIdentity, setSelectedIdentity] = useState<string>("self"); // "self" or userId of CEO
   const [isDelegated, setIsDelegated] = useState(false);
+
+  // Productivity tools
+  const [liveFieldValues, setLiveFieldValues] = useState<Record<string, string>>({});
+  const [liveFields, setLiveFields]   = useState<Array<{ id: string; name: string; required: boolean }>>([]);
+  const [petPeeves,  setPetPeeves]    = useState<PetPeeve[]>([]);
+  const [showLinter,  setShowLinter]  = useState(false);
+  const [showVault,   setShowVault]   = useState(false);
+  const [showGhost,   setShowGhost]   = useState(false);
+  const [externalFieldValues, setExternalFieldValues] = useState<Record<string, string>>({});
+
+  // Pet peeves live subscription
+  useEffect(() => subscribeToPetPeeves(setPetPeeves), []);
+
+  // Ctrl+/ shortcut for snippet vault
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setShowVault((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // Fetch user's templates, org settings, and available identities (for delegation)
   useEffect(() => {
@@ -431,36 +461,132 @@ export default function CreateProposalPage() {
             </div>
           )}
 
-          {/* Form */}
-          <div className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur">
-            {loadingTemplates ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          {/* Toolbar: linter toggle + vault toggle + health gauge */}
+          {liveFields.length > 0 && (
+            <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowLinter((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
+                    showLinter
+                      ? "bg-amber-100 text-amber-700"
+                      : "border border-slate-200 text-slate-600 hover:bg-amber-50 hover:text-amber-600"
+                  }`}
+                >
+                  <Wand2 className="h-3.5 w-3.5" />
+                  Magic Linter
+                </button>
+                <button
+                  onClick={() => setShowVault((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
+                    showVault
+                      ? "bg-violet-100 text-violet-700"
+                      : "border border-slate-200 text-slate-600 hover:bg-violet-50 hover:text-violet-600"
+                  }`}
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  Snippets
+                  <kbd className="ml-1 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-normal text-slate-400">Ctrl /</kbd>
+                </button>
+                <button
+                  onClick={() => setShowGhost(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-900 hover:text-white"
+                >
+                  <Smartphone className="h-3.5 w-3.5" />
+                  Ghost Preview
+                </button>
               </div>
-            ) : formTemplates.length === 0 ? (
-              <div className="py-12 text-center">
-                <p className="text-[13px] font-medium text-slate-700">No templates yet</p>
-                <p className="mt-1 text-[13px] text-slate-500">
-                  <Link href="/dashboard/templates/new" className="text-slate-900 underline underline-offset-2">
-                    Create a template
-                  </Link>{" "}
-                  first, then come back to create a proposal.
-                </p>
-              </div>
-            ) : (
-              <ProposalForm
-                templates={formTemplates}
-                onSubmit={handleSubmit}
-                submitting={submitting}
-                actingAsName={
-                  selectedIdentity !== "self"
-                    ? availableIdentities.find((i) => i.id === selectedIdentity)
-                        ? `${availableIdentities.find((i) => i.id === selectedIdentity)!.firstName} ${availableIdentities.find((i) => i.id === selectedIdentity)!.lastName}`
-                        : null
-                    : null
-                }
+              <ProposalHealthGauge
+                fieldValues={liveFieldValues}
+                templateFields={liveFields}
+                size="md"
+              />
+            </div>
+          )}
+
+          {/* Ghost Preview modal */}
+          <AnimatePresence>
+            {showGhost && liveFields.length > 0 && (
+              <GhostPreview
+                fieldValues={liveFieldValues}
+                templateFields={liveFields}
+                petPeeves={petPeeves}
+                onClose={() => setShowGhost(false)}
               />
             )}
+          </AnimatePresence>
+
+          {/* Magic Linter panel */}
+          <AnimatePresence>
+            {showLinter && liveFields.length > 0 && (
+              <div className="mx-auto w-full max-w-3xl">
+                <MagicLinter
+                  fieldValues={liveFieldValues}
+                  templateFields={liveFields}
+                  petPeeves={petPeeves}
+                  onFixAll={(updated) => { setExternalFieldValues(updated); setLiveFieldValues(updated); }}
+                  onClose={() => setShowLinter(false)}
+                />
+              </div>
+            )}
+          </AnimatePresence>
+
+          {/* Form + Snippet Vault side-by-side */}
+          <div className="relative flex gap-0">
+            <div className={`transition-all duration-300 ${showVault ? "w-[calc(100%-288px)]" : "w-full"} mx-auto max-w-3xl`}>
+              <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+                {loadingTemplates ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                  </div>
+                ) : formTemplates.length === 0 ? (
+                  <div className="py-12 text-center">
+                    <p className="text-[13px] font-medium text-slate-700">No templates yet</p>
+                    <p className="mt-1 text-[13px] text-slate-500">
+                      <Link href="/dashboard/templates/new" className="text-slate-900 underline underline-offset-2">
+                        Create a template
+                      </Link>{" "}
+                      first, then come back to create a proposal.
+                    </p>
+                  </div>
+                ) : (
+                  <ProposalForm
+                    templates={formTemplates}
+                    onSubmit={handleSubmit}
+                    submitting={submitting}
+                    onLiveChange={(vals, fields) => { setLiveFieldValues(vals); setLiveFields(fields); }}
+                    externalFieldValues={Object.keys(externalFieldValues).length ? externalFieldValues : undefined}
+                    actingAsName={
+                      selectedIdentity !== "self"
+                        ? availableIdentities.find((i) => i.id === selectedIdentity)
+                            ? `${availableIdentities.find((i) => i.id === selectedIdentity)!.firstName} ${availableIdentities.find((i) => i.id === selectedIdentity)!.lastName}`
+                            : null
+                        : null
+                    }
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Snippet Vault side drawer */}
+            <AnimatePresence>
+              {showVault && (
+                <div className="fixed right-0 top-0 h-screen z-40">
+                  <SnippetVault
+                    department={profile?.department ?? ""}
+                    canEdit={role === "admin" || role === "super_admin"}
+                    onInsert={(text) => {
+                      const lastField = liveFields[liveFields.length - 1];
+                      if (!lastField) return;
+                      const updated = { ...externalFieldValues, [lastField.id]: (externalFieldValues[lastField.id] ?? "") + " " + text };
+                      setExternalFieldValues(updated);
+                      setLiveFieldValues((p) => ({ ...p, [lastField.id]: (p[lastField.id] ?? "") + " " + text }));
+                    }}
+                    onClose={() => setShowVault(false)}
+                  />
+                </div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>

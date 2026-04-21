@@ -278,20 +278,34 @@ function HomeContent() {
                   view === "login" ? "translate-x-0 opacity-100 z-10" : "-translate-x-12 opacity-0 pointer-events-none z-0"
                 }`}
               >
-                <div className="relative h-16 w-16 overflow-hidden rounded-xl shadow-lg">
-                  <Image
-                    src="/assets/logo.png"
-                    alt="Hyacinth Proposal System"
-                    fill
-                    sizes="64px"
-                    className="object-contain"
-                    priority
-                  />
+                {/* Branded header banner */}
+                <div className="relative -mx-8 -mt-8 mb-6 overflow-hidden rounded-t-[2rem] bg-gradient-to-br from-[#780116] via-[#8B1A1A] to-[#1e1b2e] px-8 py-7">
+                  {/* Logo as background watermark */}
+                  <div className="pointer-events-none absolute -right-6 -top-6 h-36 w-36 opacity-[0.08]">
+                    <Image src="/assets/logo.png" alt="" fill className="object-contain" />
+                  </div>
+                  <div className="pointer-events-none absolute -bottom-4 -left-4 h-28 w-28 opacity-[0.05]">
+                    <Image src="/assets/logo.png" alt="" fill className="object-contain" />
+                  </div>
+                  {/* Decorative rings */}
+                  <div className="pointer-events-none absolute right-8 top-1/2 h-24 w-24 -translate-y-1/2 rounded-full border border-white/10" />
+                  <div className="pointer-events-none absolute right-4 top-1/2 h-36 w-36 -translate-y-1/2 rounded-full border border-white/5" />
+                  {/* Brand content */}
+                  <div className="relative flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm">
+                      <div className="relative h-8 w-8">
+                        <Image src="/assets/logo.png" alt="Hyacinth" fill className="object-contain" priority />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">Hyacinth Industries</p>
+                      <h2 className="font-serif text-2xl font-medium leading-tight text-white">
+                        Welcome back
+                      </h2>
+                    </div>
+                  </div>
+                  <p className="relative mt-2.5 text-sm text-white/60">Please enter your details to sign in.</p>
                 </div>
-                <h2 className="font-serif text-3xl font-medium text-slate-900 tracking-tight">
-                  Welcome back
-                </h2>
-                <p className="mt-2 text-sm text-slate-500">Please enter your details to sign in.</p>
 
                 <button
                   type="button"
